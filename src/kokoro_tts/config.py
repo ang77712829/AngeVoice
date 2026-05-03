@@ -64,6 +64,10 @@ class TTSConfig:
     cors_origins: list = field(default_factory=lambda: ["http://localhost:8000"])
     api_key: Optional[str] = None
 
+    # 流式
+    stream_enabled: bool = True
+    stream_format: str = "pcm_s16le"  # pcm_s16le, wav
+
     @property
     def model_path(self) -> str:
         return str(self.model_dir)

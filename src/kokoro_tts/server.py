@@ -157,6 +157,54 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
             logger.error(f"TTS 合成失败: {e}")
             raise HTTPException(status_code=500, detail="合成失败，请检查参数")
 
+    # ── WebSocket 流式合成 ──
+
+    @app.websocket("/ws/v1/tts")
+    async def ws_tts(websocket):
+        from starlette.websockets import WebSocket
+
+        if not isinstance(websocket, WebSocket):
+            websocket = WebSocket(websocket)
+        await websocket.accept()
+        try:
+            msg = await websocket.receive_json()
+            text = msg.get("text", "")
+            voice = msg.get("voice", cfg.default_voice)
+            speed = msg.get("speed", cfg.default_speed)
+            fmt = msg.get("format", "pcm_s16le")
+            token = msg.get("token", "")
+
+            # API Key 验证
+            if cfg.api_key:
+                if not hmac.compare_digest(token, cfg.api_key or ""):
+                    await websocket.send_json({"type": "error", "message": "Unauthorized"})
+                    return
+
+            if not text:
+                await websocket.send_json({"type": "error", "message": "缺少 text 参数"})
+                return
+
+            if len(text) > cfg.max_text_length:
+                await websocket.send_json(
+                    {"type": "error", "message": f"文本过长，上限 {cfg.max_text_length}"}
+                )
+                return
+
+            # 逐段推送音频
+            for chunk in eng.synthesize_stream(text, voice, speed, fmt):
+                await websocket.send_json(chunk)
+        except Exception as e:
+            logger.error(f"WS TTS 错误: {e}")
+            try:
+                await websocket.send_json({"type": "error", "message": str(e)})
+            except Exception:
+                pass
+        finally:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
     return app
 
 

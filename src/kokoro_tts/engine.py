@@ -4,6 +4,7 @@
 重依赖 (numpy, torch, kokoro) 在 load() 时才导入。
 """
 
+import base64
 import logging
 import os
 import re
@@ -229,3 +230,84 @@ class TTSEngine:
             audio = np.expand_dims(audio, axis=1)
 
         return audio
+
+    def synthesize_stream(self, text, voice="zm_010", speed=1.0, format="pcm_s16le"):
+        """流式合成，逐段 yield 音频数据
+
+        Args:
+            text: 要合成的文本
+            voice: 音色名称
+            speed: 语速 (0.5-2.0)
+            format: 输出格式 (pcm_s16le, wav)
+
+        Yields:
+            dict: 包含 type, index, data 等字段的 JSON 消息
+        """
+        import numpy as np
+
+        if not self._loaded:
+            yield {"type": "error", "message": "引擎未加载，请先调用 load()"}
+            return
+
+        if len(text) > self.config.max_text_length:
+            yield {"type": "error", "message": f"文本过长 ({len(text)} 字符)，上限 {self.config.max_text_length}"}
+            return
+
+        text = self._clean_text(text)
+        if not text:
+            yield {"type": "error", "message": "清理后文本为空"}
+            return
+
+        segments = self._segment_text(text)
+        yield {
+            "type": "started",
+            "segments": len(segments),
+            "sample_rate": self.config.sample_rate,
+        }
+
+        speed_fn = self._make_speed_fn(speed)
+
+        for i, segment in enumerate(segments):
+            try:
+                wav_seg = self._synthesize_segment(
+                    self._zh_pipeline, segment, voice, speed_fn
+                )
+                if wav_seg is not None:
+                    # 展平为一维
+                    if wav_seg.ndim > 1:
+                        wav_seg = wav_seg.flatten()
+                    audio_bytes = self._encode_segment(wav_seg, format)
+                    yield {
+                        "type": "audio",
+                        "index": i,
+                        "data": base64.b64encode(audio_bytes).decode("ascii"),
+                        "format": format,
+                    }
+            except Exception as e:
+                logger.warning(f"段落 {i+1} 合成失败: {e}")
+                yield {"type": "segment_error", "index": i, "message": str(e)}
+
+        yield {"type": "done", "total_segments": len(segments)}
+
+    def _encode_segment(self, audio_array, format="pcm_s16le"):
+        """将音频 numpy 数组编码为字节
+
+        Args:
+            audio_array: 一维 float32 numpy 数组 (范围 [-1, 1])
+            format: pcm_s16le 或 wav
+
+        Returns:
+            bytes: 编码后的音频数据
+        """
+        import numpy as np
+        import soundfile as sf
+
+        if format == "pcm_s16le":
+            audio_int16 = (audio_array * 32767).astype(np.int16)
+            return audio_int16.tobytes()
+        elif format == "wav":
+            buffer = BytesIO()
+            sf.write(buffer, audio_array, self.config.sample_rate, format="WAV")
+            return buffer.getvalue()
+        else:
+            raise ValueError(f"Unsupported format: {format}")

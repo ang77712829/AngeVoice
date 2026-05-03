@@ -201,6 +201,77 @@
             text-align: center;
         }
         
+        /* 流式模式 UI */
+        .stream-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding: 12px 15px;
+            background: rgba(102, 126, 234, 0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+        }
+        
+        .stream-controls label {
+            margin-bottom: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        
+        .stream-controls input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .ws-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #888;
+            margin-left: auto;
+        }
+        
+        .ws-status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+        
+        .ws-status.connected .dot {
+            background: #4CAF50;
+        }
+        
+        .ws-status.connecting .dot {
+            background: #FF9800;
+            animation: blink 1s infinite;
+        }
+        
+        .ws-status.error .dot {
+            background: #f44336;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .stream-progress {
+            display: none;
+            margin-top: 15px;
+            padding: 10px 15px;
+            background: rgba(76, 175, 80, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            font-size: 14px;
+            color: #4CAF50;
+        }
+        
         @media (max-width: 768px) {
             .container {
                 padding: 30px;
@@ -216,6 +287,10 @@
             
             .splash-text {
                 font-size: 80px;
+            }
+            
+            .stream-controls {
+                flex-wrap: wrap;
             }
         }
     </style>
@@ -246,10 +321,21 @@
                 <input type="range" id="speed" name="speed" min="0.5" max="2.0" step="0.1" value="1.0">
                 <span id="speed-value">1.0</span>
             </div>
+            <div class="stream-controls">
+                <label>
+                    <input type="checkbox" id="stream-toggle" checked>
+                    流式播放
+                </label>
+                <span class="ws-status" id="ws-status">
+                    <span class="dot"></span>
+                    <span class="ws-status-text">未连接</span>
+                </span>
+            </div>
             <div class="button-container">
                 <button type="submit">生成语音</button>
                 <div class="loading" id="loading">生成中...</div>
             </div>
+            <div class="stream-progress" id="stream-progress"></div>
         </form>
         <div class="audio-player">
             <h3>音频播放</h3>
@@ -258,14 +344,134 @@
             </audio>
         </div>
         <div class="voice-info">
-            提示：支持中英文混合输入，模型会自动处理不同语言的发音。
+            提示：支持中英文混合输入，模型会自动处理不同语言的发音。开启流式播放可实现逐段实时合成播放。
         </div>
     </div>
     <script>
+        // KokoroPlayer: 流式 PCM 播放器
+        class KokoroPlayer {
+            constructor() {
+                this.ctx = null;
+                this.nextStartTime = 0;
+            }
+            
+            init(sampleRate = 24000) {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
+                this.nextStartTime = 0;
+            }
+            
+            resume() {
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+            
+            enqueuePCM(base64Data) {
+                if (!this.ctx) this.init();
+                this.resume();
+                
+                const raw = atob(base64Data);
+                const bytes = new Uint8Array(raw.length);
+                for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+                
+                const int16 = new Int16Array(bytes.buffer);
+                const float32 = new Float32Array(int16.length);
+                for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32767;
+                
+                const buffer = this.ctx.createBuffer(1, float32.length, this.ctx.sampleRate);
+                buffer.getChannelData(0).set(float32);
+                
+                const source = this.ctx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(this.ctx.destination);
+                
+                const startTime = Math.max(this.ctx.currentTime, this.nextStartTime);
+                source.start(startTime);
+                this.nextStartTime = startTime + buffer.duration;
+            }
+        }
+        
+        let currentPlayer = null;
+        let currentWs = null;
+        
         // 实时显示语速值
         document.getElementById('speed').addEventListener('input', function() {
             document.getElementById('speed-value').textContent = this.value;
         });
+        
+        function updateWsStatus(status, text) {
+            const el = document.getElementById('ws-status');
+            el.className = 'ws-status ' + status;
+            el.querySelector('.ws-status-text').textContent = text;
+        }
+        
+        function showStreamProgress(text) {
+            const el = document.getElementById('stream-progress');
+            el.style.display = 'block';
+            el.textContent = text;
+        }
+        
+        function hideStreamProgress() {
+            document.getElementById('stream-progress').style.display = 'none';
+        }
+        
+        function synthesizeStream(text, voice, speed) {
+            const wsUrl = `ws://${location.host}/ws/v1/tts`;
+            currentWs = new WebSocket(wsUrl);
+            
+            currentPlayer = new KokoroPlayer();
+            
+            updateWsStatus('connecting', '连接中...');
+            
+            currentWs.onopen = () => {
+                updateWsStatus('connected', '已连接');
+                currentWs.send(JSON.stringify({
+                    text: text,
+                    voice: voice,
+                    speed: parseFloat(speed),
+                    format: 'pcm_s16le'
+                }));
+            };
+            
+            currentWs.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'started') {
+                    showStreamProgress(`共 ${msg.segments} 段，正在合成...`);
+                } else if (msg.type === 'audio') {
+                    showStreamProgress(`段落 ${msg.index + 1} / ${msg.segments || '?'} 已接收`);
+                    try {
+                        currentPlayer.enqueuePCM(msg.data);
+                    } catch (err) {
+                        console.error('PCM decode error:', err);
+                    }
+                } else if (msg.type === 'segment_error') {
+                    console.warn(`段落 ${msg.index} 合成失败: ${msg.message}`);
+                } else if (msg.type === 'done') {
+                    showStreamProgress(`合成完成，共 ${msg.total_segments} 段`);
+                    currentWs.close();
+                    currentWs = null;
+                    setTimeout(hideStreamProgress, 3000);
+                } else if (msg.type === 'error') {
+                    alert('TTS 错误：' + msg.message);
+                    currentWs.close();
+                    currentWs = null;
+                    hideStreamProgress();
+                }
+            };
+            
+            currentWs.onerror = (e) => {
+                console.error('WebSocket error:', e);
+                updateWsStatus('error', '连接错误');
+                hideStreamProgress();
+            };
+            
+            currentWs.onclose = () => {
+                if (currentWs) {
+                    updateWsStatus('error', '已断开');
+                }
+                currentWs = null;
+            };
+        }
         
         document.getElementById('tts-form').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -275,12 +481,33 @@
             const speed = document.getElementById('speed').value;
             const loading = document.getElementById('loading');
             const audioPlayer = document.getElementById('audio-player');
+            const streamEnabled = document.getElementById('stream-toggle').checked;
             
             if (!text) {
                 alert('请输入文本');
                 return;
             }
             
+            // 如果有正在运行的 WebSocket，先关闭
+            if (currentWs) {
+                currentWs.close();
+                currentWs = null;
+            }
+            
+            // 流式模式
+            if (streamEnabled) {
+                loading.style.display = 'block';
+                try {
+                    synthesizeStream(text, voice, speed);
+                } catch (error) {
+                    alert('流式合成失败：' + error.message);
+                } finally {
+                    loading.style.display = 'none';
+                }
+                return;
+            }
+            
+            // 非流式模式（原逻辑）
             loading.style.display = 'block';
             
             try {
