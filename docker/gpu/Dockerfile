@@ -23,6 +23,10 @@ COPY src/ src/
 # 安装项目（不用 -e）
 RUN python3 -m pip install --no-cache-dir .
 
+# 预装 spaCy 英文模型（misaki/kokoro 依赖，避免每次启动重新下载）
+RUN python3 -m pip install --no-cache-dir \
+    en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
