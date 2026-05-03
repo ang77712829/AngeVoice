@@ -185,7 +185,8 @@ kokoro-tts-zh/
 │   └── gpu/              # GPU version
 ├── models/               # Model files (Git LFS)
 ├── pyproject.toml        # Package config
-└── README.md
+├── README.md
+└── README_EN.md
 ```
 
 ## Changelog
