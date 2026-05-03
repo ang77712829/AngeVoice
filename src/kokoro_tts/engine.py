@@ -38,8 +38,16 @@ class TTSEngine:
     def is_loaded(self) -> bool:
         return self._loaded
 
+    # HuggingFace 模型仓库 ID
+    HF_REPO = "hexgrad/Kokoro-82M-v1.1-zh"
+
     def load(self) -> "TTSEngine":
-        """加载模型和 pipeline"""
+        """加载模型和 pipeline
+
+        自动检测模型来源:
+        1. 本地 models/ 目录有模型文件 → 直接使用
+        2. 本地没有 → 从 HuggingFace Hub 自动下载
+        """
         if self._loaded:
             return self
 
@@ -47,12 +55,20 @@ class TTSEngine:
         from kokoro import KModel, KPipeline
 
         self._device = self.config.resolve_device()
-        model_path = self.config.model_path
 
-        logger.info(f"加载模型: {model_path} -> {self._device}")
+        # 检测模型来源：本地 or HuggingFace
+        local_model = self.config.model_file
+        local_config = self.config.model_dir / "config.json"
+        use_local = local_model.exists() and local_config.exists()
 
-        # 注册本地模型路径
-        KModel.MODEL_NAMES[model_path] = "kokoro-v1_1-zh.pth"
+        if use_local:
+            repo_id = str(self.config.model_dir)
+            logger.info(f"从本地加载模型: {repo_id} -> {self._device}")
+            # 注册本地路径到 MODEL_NAMES
+            KModel.MODEL_NAMES[repo_id] = local_model.name
+        else:
+            repo_id = self.HF_REPO
+            logger.info(f"本地未找到模型，从 HuggingFace 下载: {repo_id}")
 
         # 设置线程数（CPU 模式）
         if self._device == "cpu":
@@ -61,11 +77,18 @@ class TTSEngine:
             except Exception:
                 pass
 
-        # 加载模型
-        self._model = KModel(repo_id=model_path).to(self._device).eval()
+        # 加载模型（本地文件传入 config/model 参数跳过下载）
+        if use_local:
+            self._model = KModel(
+                repo_id=repo_id,
+                config=str(local_config),
+                model=str(local_model),
+            ).to(self._device).eval()
+        else:
+            self._model = KModel(repo_id=repo_id).to(self._device).eval()
 
         # 英文 pipeline（仅用于音素转换，不加载模型）
-        self._en_pipeline = KPipeline(lang_code="a", repo_id=model_path, model=False)
+        self._en_pipeline = KPipeline(lang_code="a", repo_id=repo_id, model=False)
 
         # 英文音素回调
         def en_callable(text):
@@ -80,7 +103,7 @@ class TTSEngine:
 
         # 中文 pipeline（主 pipeline）
         self._zh_pipeline = KPipeline(
-            lang_code="z", repo_id=model_path, model=self._model, en_callable=en_callable
+            lang_code="z", repo_id=repo_id, model=self._model, en_callable=en_callable
         )
 
         self._loaded = True

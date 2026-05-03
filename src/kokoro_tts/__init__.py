@@ -13,7 +13,7 @@
     kokoro-tts voices             # 列出音色
 """
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 # Lazy imports — don't force numpy/torch at package import time
 def __getattr__(name):

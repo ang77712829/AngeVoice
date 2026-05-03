@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kokoro-tts-zh"
-version = "2.0.0"
+version = "2.1.1"
 description = "轻量级中文 TTS — 基于 Kokoro v1.1 模型"
 readme = "README.md"
 license = {text = "MIT"}

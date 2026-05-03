@@ -17,6 +17,8 @@
 
 ## 快速开始
 
+> **模型自动下载**：首次运行时，如果本地没有模型文件，会自动从 HuggingFace 下载（约 330MB）。如需离线使用，请参考下方「手动下载模型」。
+
 ### pip 安装
 
 ```bash
@@ -24,40 +26,46 @@ git clone https://github.com/ang77712829/kokoro-tts-zh.git
 cd kokoro-tts-zh
 pip install -e .
 
-# 启动服务
+# 启动服务（首次会自动下载模型）
 kokoro-tts serve --port 8000
 
 # 命令行合成
 kokoro-tts synth "你好世界" -o hello.wav -v zm_010
+
+# 查看可用音色
+kokoro-tts voices
 ```
 
 ### Docker 部署
 
 ```bash
-# CPU 版本（端口 8100）
-cd docker/cpu && docker-compose up -d
+# CPU 版本（端口 8100，首次自动下载模型）
+cd docker/cpu && docker compose up -d
 
-# GPU 版本（端口 8101）
-cd docker/gpu && docker-compose up -d
+# GPU 版本（端口 8101，需要 nvidia-container-toolkit）
+cd docker/gpu && docker compose up -d
 ```
 
-构建自定义镜像：
+### 手动下载模型（离线使用）
+
+如果需要离线部署或自动下载太慢，可以手动下载模型文件：
 
 ```bash
-# CPU
-docker build -f docker/cpu/Dockerfile -t kokoro-tts:cpu .
-docker run -d -p 8000:8000 -v $(pwd)/models:/app/models kokoro-tts:cpu
+# 安装 huggingface_hub CLI
+pip install huggingface_hub
 
-# GPU（需要 nvidia-docker）
-docker build -f docker/gpu/Dockerfile -t kokoro-tts:gpu .
-docker run -d --gpus all -p 8000:8000 -v $(pwd)/models:/app/models kokoro-tts:gpu
+# 下载模型到 models/ 目录
+huggingface-cli download hexgrad/Kokoro-82M-v1.1-zh   --local-dir models/   --include "config.json" "kokoro-v1_1-zh.pth" "voices/*.pt"
 ```
 
-### 直接运行
+或使用 Git LFS：
 
 ```bash
-python run-tts.py           # 启动服务
-python run-tts.py voices    # 查看音色
+git lfs install
+git clone https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh /tmp/kokoro-models
+cp /tmp/kokoro-models/{config.json,kokoro-v1_1-zh.pth} models/
+cp /tmp/kokoro-models/voices/*.pt models/voices/
+rm -rf /tmp/kokoro-models
 ```
 
 ## API 接口
@@ -190,6 +198,15 @@ kokoro-tts-zh/
 ```
 
 ## 更新日志
+
+### v2.1.2 (2026-05-04)
+
+**新增**
+- 🚀 模型自动下载：本地无模型时自动从 HuggingFace 下载（~330MB）
+- 📖 新增「手动下载模型」离线部署文档
+- 🔧 修复 Docker Compose 配置（healthcheck、卷挂载、环境变量）
+- 🔧 GPU Docker CUDA 11.7.1 → 12.1.1
+- 🔧 版本号统一为 2.1.2
 
 ### v2.1.1 (2026-05-03)
 

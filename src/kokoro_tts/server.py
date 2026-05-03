@@ -41,7 +41,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     app = FastAPI(
         title="Kokoro TTS",
         description="轻量级中文 TTS 服务 (Kokoro v1.1)",
-        version="2.1.0",
+        version="2.1.1",
         lifespan=lifespan,
     )
 
