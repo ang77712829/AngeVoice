@@ -57,9 +57,14 @@ class TTSEngine:
         self._device = self.config.resolve_device()
 
         # 检测模型来源：本地 or HuggingFace
+        # Git LFS 指针文件只有约 134 字节，实际模型约 330MB
         local_model = self.config.model_file
         local_config = self.config.model_dir / "config.json"
-        use_local = local_model.exists() and local_config.exists()
+        use_local = (
+            local_model.exists()
+            and local_config.exists()
+            and local_model.stat().st_size > 1000  # 排除 LFS 指针
+        )
 
         if use_local:
             repo_id = str(self.config.model_dir)
