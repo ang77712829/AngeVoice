@@ -5,14 +5,24 @@ services:
       dockerfile: docker/gpu/Dockerfile
     ports:
       - "8101:8000"
+    volumes:
+      - ../../models:/app/models:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - KOKORO_HOST=0.0.0.0
+      - KOKORO_PORT=8000
+      - KOKORO_DEVICE=cuda
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    restart: always
-    runtime: nvidia
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         reservations:
           devices:
             - capabilities: [gpu]
+    restart: always

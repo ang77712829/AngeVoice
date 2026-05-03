@@ -5,6 +5,17 @@ services:
       dockerfile: docker/cpu/Dockerfile
     ports:
       - "8100:8000"
+    volumes:
+      - ../../models:/app/models:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - KOKORO_HOST=0.0.0.0
+      - KOKORO_PORT=8000
+      - KOKORO_DEVICE=cpu
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: always
