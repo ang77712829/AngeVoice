@@ -1,4 +1,24 @@
 # 更新日志 (CHANGELOG)
+## v2.0.1 (2026-05-03)
+
+### 安全修复
+- **API Key 时序攻击防护**：`server.py` 中 token 比较改用 `hmac.compare_digest()`，防止时序侧信道攻击
+- **CORS 可配置化**：默认从 `["*"]`（全开）改为 `["http://localhost:8000"]`，支持 `KOKORO_CORS_ORIGINS` 环境变量自定义
+- **错误信息脱敏**：API 返回的错误信息不再暴露内部异常堆栈，仅记录到日志
+- **请求体大小限制**：合成文本超过 10000 字符时返回 400，防止 OOM
+
+### Bug 修复
+- **`import os` 遗漏**：`engine.py` 中 `os.cpu_count()` 缺少 `import os`，运行必报 `NameError`，已修复
+- **重复 `en_callable` 定义**：`tts-project-cpu/app/main.py` 中同一函数定义两次，删除冗余版本并保留 try/except 保护
+- **缺失 `static/` 目录**：CPU/GPU 版本挂载不存在的 `app/static` 目录会崩溃，已创建 `.gitkeep`
+- **无效 fallback 逻辑**：`engine.py` 中 fallback 使用完全相同参数重试，第一次失败第二次必然也失败，已移除
+
+### 清理
+- **删除 `Dockerfile.new`**：引用不存在的 `requirements.txt` 和 `templates/` 目录，启动命令路径错误，且已有 `docker/cpu/` 和 `docker/gpu/` 正常工作
+- **Python 版本统一**：`pyproject.toml` 统一为 `>=3.10`
+- **添加 MIT LICENSE 文件**
+
+---
 
 ## v1.1 (2026-05-02)
 
