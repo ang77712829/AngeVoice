@@ -161,10 +161,6 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
 
     @app.websocket("/ws/v1/tts")
     async def ws_tts(websocket):
-        from starlette.websockets import WebSocket
-
-        if not isinstance(websocket, WebSocket):
-            websocket = WebSocket(websocket)
         await websocket.accept()
         try:
             msg = await websocket.receive_json()

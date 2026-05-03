@@ -393,6 +393,7 @@
         
         let currentPlayer = null;
         let currentWs = null;
+        let totalSegments = 0;
         
         // 实时显示语速值
         document.getElementById('speed').addEventListener('input', function() {
@@ -416,7 +417,8 @@
         }
         
         function synthesizeStream(text, voice, speed) {
-            const wsUrl = `ws://${location.host}/ws/v1/tts`;
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${proto}//${location.host}/ws/v1/tts`;
             currentWs = new WebSocket(wsUrl);
             
             currentPlayer = new KokoroPlayer();
@@ -436,9 +438,10 @@
             currentWs.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'started') {
+                    totalSegments = msg.segments;
                     showStreamProgress(`共 ${msg.segments} 段，正在合成...`);
                 } else if (msg.type === 'audio') {
-                    showStreamProgress(`段落 ${msg.index + 1} / ${msg.segments || '?'} 已接收`);
+                    showStreamProgress(`段落 ${msg.index + 1} / ${totalSegments} 已接收`);
                     try {
                         currentPlayer.enqueuePCM(msg.data);
                     } catch (err) {

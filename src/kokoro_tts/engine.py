@@ -231,14 +231,14 @@ class TTSEngine:
 
         return audio
 
-    def synthesize_stream(self, text, voice="zm_010", speed=1.0, format="pcm_s16le"):
+    def synthesize_stream(self, text, voice="zm_010", speed=1.0, fmt="pcm_s16le"):
         """流式合成，逐段 yield 音频数据
 
         Args:
             text: 要合成的文本
             voice: 音色名称
             speed: 语速 (0.5-2.0)
-            format: 输出格式 (pcm_s16le, wav)
+            fmt: 输出格式 (pcm_s16le, wav)
 
         Yields:
             dict: 包含 type, index, data 等字段的 JSON 消息
@@ -276,12 +276,12 @@ class TTSEngine:
                     # 展平为一维
                     if wav_seg.ndim > 1:
                         wav_seg = wav_seg.flatten()
-                    audio_bytes = self._encode_segment(wav_seg, format)
+                    audio_bytes = self._encode_segment(wav_seg, fmt)
                     yield {
                         "type": "audio",
                         "index": i,
                         "data": base64.b64encode(audio_bytes).decode("ascii"),
-                        "format": format,
+                        "format": fmt,
                     }
             except Exception as e:
                 logger.warning(f"段落 {i+1} 合成失败: {e}")

@@ -163,7 +163,7 @@ class TestSynthesizeStream:
             mock_pipe.return_value = iter([mock_result])
 
             # 使用 wav 格式
-            results = list(engine.synthesize_stream("你好", format="wav"))
+            results = list(engine.synthesize_stream("你好", fmt="wav"))
             audio_msgs = [r for r in results if r["type"] == "audio"]
             if audio_msgs:
                 decoded = base64.b64decode(audio_msgs[0]["data"])
