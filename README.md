@@ -5,19 +5,19 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## ✨ 特性
+## 特性
 
-- 🎯 **中英双语** — 自动语言检测，混合文本无缝合成
-- 🖥️ **CPU/GPU 自适应** — 自动检测 CUDA，无 GPU 也能跑
-- 🔌 **OpenAI 兼容 API** — 直接替代 OpenAI TTS 接口
-- ⚡ **WebSocket 流式合成** — 逐段实时播放，低延迟体验
-- 📦 **pip 可安装** — `pip install -e .` 即可使用
-- 🐳 **Docker 一键部署** — 支持 CPU 和 GPU 两种镜像
-- 🎨 **12+ 音色** — 中文 10 个 + 英文 2 个
+- **中英双语** — 自动语言检测，混合文本无缝合成
+- **CPU/GPU 自适应** — 自动检测 CUDA，无 GPU 也能跑
+- **OpenAI 兼容 API** — 直接替代 OpenAI TTS 接口
+- **WebSocket 流式合成** — 逐段实时播放，低延迟体验
+- **pip 可安装** — `pip install -e .` 即可使用
+- **Docker 一键部署** — 支持 CPU 和 GPU 两种镜像
+- **12+ 音色** — 中文 10 个 + 英文 2 个
 
-## 🚀 快速开始
+## 快速开始
 
-### 方式一：pip 安装
+### pip 安装
 
 ```bash
 git clone https://github.com/ang77712829/kokoro-tts-zh.git
@@ -31,28 +31,36 @@ kokoro-tts serve --port 8000
 kokoro-tts synth "你好世界" -o hello.wav -v zm_010
 ```
 
-### 方式二：Docker
+### Docker 部署
 
 ```bash
-# CPU 版本
-cd docker/cpu
-docker-compose up -d
-# 服务运行在 http://localhost:8100
+# CPU 版本（端口 8100）
+cd docker/cpu && docker-compose up -d
 
-# GPU 版本
-cd docker/gpu
-docker-compose up -d
-# 服务运行在 http://localhost:8101
+# GPU 版本（端口 8101）
+cd docker/gpu && docker-compose up -d
 ```
 
-### 方式三：直接运行
+构建自定义镜像：
+
+```bash
+# CPU
+docker build -f docker/cpu/Dockerfile -t kokoro-tts:cpu .
+docker run -d -p 8000:8000 -v $(pwd)/models:/app/models kokoro-tts:cpu
+
+# GPU（需要 nvidia-docker）
+docker build -f docker/gpu/Dockerfile -t kokoro-tts:gpu .
+docker run -d --gpus all -p 8000:8000 -v $(pwd)/models:/app/models kokoro-tts:gpu
+```
+
+### 直接运行
 
 ```bash
 python run-tts.py           # 启动服务
 python run-tts.py voices    # 查看音色
 ```
 
-## 📡 API 接口
+## API 接口
 
 ### OpenAI 兼容接口
 
@@ -63,7 +71,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
   --output output.wav
 ```
 
-### 旧版接口（兼容）
+### 旧版接口
 
 ```bash
 # JSON
@@ -96,8 +104,7 @@ ws.onopen = () => {
 ws.onmessage = (e) => {
   const msg = JSON.parse(e.data);
   if (msg.type === "audio") {
-    // msg.data 是 base64 编码的 PCM 音频
-    playPCM(msg.data);
+    playPCM(msg.data);  // base64 编码的 PCM 音频
   }
 };
 ```
@@ -117,7 +124,7 @@ ws.onmessage = (e) => {
 curl http://localhost:8000/health
 ```
 
-## 🎨 可用音色
+## 可用音色
 
 运行 `kokoro-tts voices` 查看完整音色列表。
 
@@ -127,41 +134,6 @@ curl http://localhost:8000/health
 | `zf_` | 中文 | `zf_001` ~ `zf_004` |
 | `af_` | 英文 | `af_maple`, `af_sol` |
 | `bf_` | 英文 | `bf_vale` |
-
-## 📁 项目结构
-
-```
-kokoro-tts-zh/
-├── src/kokoro_tts/       # 核心包
-│   ├── __init__.py       # 包入口（懒加载）
-│   ├── config.py         # 配置管理（环境变量/默认值）
-│   ├── engine.py         # TTS 引擎（CPU/GPU 自适应）
-│   ├── server.py         # FastAPI HTTP + WebSocket 服务
-│   ├── cli.py            # 命令行工具
-│   └── templates/        # Web UI
-├── tests/                # 测试
-├── docker/               # Docker 配置
-│   ├── cpu/              # CPU 版本
-│   └── gpu/              # GPU 版本
-├── models/               # 模型文件（Git LFS）
-├── tts-project-cpu/      # 旧版 CPU 入口（兼容）
-├── tts-project-gpu/      # 旧版 GPU 入口（兼容）
-├── pyproject.toml        # 包配置
-└── README.md
-```
-
-## ⚙️ 配置
-
-环境变量（优先级高于默认值）：
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `KOKORO_MODEL_DIR` | `./models` | 模型目录 |
-| `KOKORO_HOST` | `0.0.0.0` | 监听地址 |
-| `KOKORO_PORT` | `8000` | 端口 |
-| `KOKORO_DEVICE` | `auto` | 设备 (auto/cpu/cuda) |
-| `KOKORO_API_KEY` | - | API Key（设置后需认证） |
-| `KOKORO_CORS_ORIGINS` | `http://localhost:8000` | CORS 允许来源（逗号分隔） |
 
 ## 作为库使用
 
@@ -183,16 +155,97 @@ for chunk in engine.synthesize_stream("你好世界", voice="zm_010"):
         process_audio(chunk["data"])  # base64 PCM
 ```
 
-## 📋 更新日志
+## 配置
 
-详见 [CHANGELOG.md](CHANGELOG.md)
+环境变量（优先级高于默认值）：
 
-## 🙏 致谢
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `KOKORO_MODEL_DIR` | `./models` | 模型目录 |
+| `KOKORO_HOST` | `0.0.0.0` | 监听地址 |
+| `KOKORO_PORT` | `8000` | 端口 |
+| `KOKORO_DEVICE` | `auto` | 设备 (auto/cpu/cuda) |
+| `KOKORO_API_KEY` | - | API Key（设置后需认证） |
+| `KOKORO_CORS_ORIGINS` | `http://localhost:8000` | CORS 允许来源（逗号分隔） |
+
+## 项目结构
+
+```
+kokoro-tts-zh/
+├── src/kokoro_tts/       # 核心包
+│   ├── __init__.py       # 包入口（懒加载）
+│   ├── config.py         # 配置管理
+│   ├── engine.py         # TTS 引擎
+│   ├── server.py         # FastAPI HTTP + WebSocket 服务
+│   ├── cli.py            # 命令行工具
+│   └── templates/        # Web UI
+├── tests/                # 测试
+├── docker/               # Docker 配置
+│   ├── cpu/              # CPU 版本
+│   └── gpu/              # GPU 版本
+├── models/               # 模型文件（Git LFS）
+├── pyproject.toml        # 包配置
+└── README.md
+```
+
+## 更新日志
+
+### v2.1.0 (2026-05-03)
+
+**新增**
+- WebSocket 流式语音合成（`/ws/v1/tts`），支持逐段实时播放
+- PCM s16le 和 WAV 两种音频格式
+- Web UI 流式播放开关 + WebSocket 状态指示灯
+- Docker 集成测试（17 个测试用例）
+
+**改进**
+- `engine.py`: 新增 `synthesize_stream()` 生成器方法
+- `server.py`: 新增 WebSocket 端点，含 API Key 验证
+- `config.py`: 新增 `stream_enabled`、`stream_format` 配置项
+
+### v2.0.1 (2026-05-03)
+
+**安全**
+- API Key 时序攻击防护（`hmac.compare_digest`）
+- CORS 默认关闭，支持 `KOKORO_CORS_ORIGINS` 配置
+- 错误信息脱敏，不再暴露内部异常堆栈
+- 文本长度限制（10000 字符），防止 OOM
+
+**修复**
+- `engine.py` 缺少 `import os`
+- `tts-project-cpu/main.py` 重复函数定义
+- 缺失 `static/` 目致 Docker 挂载崩溃
+- 无效 fallback 逻辑（相同参数重试）
+
+**清理**
+- 删除无用的 `Dockerfile.new`
+- Python 版本统一为 `>=3.10`
+
+### v1.1 (2026-05-02)
+
+**新增**
+- CORS 中间件支持
+- `KOKORO_MODEL_DIR` 环境变量配置
+- CPU + GPU 双版本 Docker
+
+**修复**
+- `torch.set_num_interop_threads` 重复设置保护
+
+### v1.0 (2026-02-21)
+
+**初始版本**
+- 中英文语音合成（Kokoro-82M-v1.1-zh）
+- 12+ 音色，语速调节
+- OpenAI 风格 API
+- Docker CPU/GPU 部署
+- 一键启动脚本
+
+## 致谢
 
 - [Kokoro v1.1 模型](https://huggingface.co/hexgrad/Kokoro-82M) — hexgrad
 - 原始模型 [Apache 2.0](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/LICENSE) 授权
 - 本项目 MIT 授权
 
-## 📄 License
+## License
 
 MIT
