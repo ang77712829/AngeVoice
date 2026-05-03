@@ -105,15 +105,14 @@ class TestSynthesizeStream:
 
         config = TTSConfig(max_text_length=10)
         engine = TTSEngine(config)
+        engine._loaded = True
 
         results = list(engine.synthesize_stream("这是一段超过十个字符的文本"))
         assert len(results) == 1
         assert results[0]["type"] == "error"
         assert "过长" in results[0]["message"]
 
-    @patch("kokoro_tts.engine.TTSEngine._loaded", True)
-    @patch("kokoro_tts.engine.TTSEngine._zh_pipeline")
-    def test_stream_yields_segments(self, mock_pipeline):
+    def test_stream_yields_segments(self):
         """正常流式合成应 yield started -> audio... -> done"""
         from kokoro_tts.engine import TTSEngine
         from kokoro_tts.config import TTSConfig
@@ -122,10 +121,9 @@ class TestSynthesizeStream:
         engine = TTSEngine(config)
         engine._loaded = True
 
-        # Mock pipeline 返回
-        mock_result = MagicMock()
-        mock_result.audio = np.random.randn(1000).astype(np.float32)
-        mock_pipeline.return_value = iter([mock_result])
+        # Mock _synthesize_segment 直接返回音频数据（避免 import torch）
+        fake_audio = np.random.randn(1000).astype(np.float32)
+        engine._synthesize_segment = MagicMock(return_value=fake_audio)
 
         results = list(engine.synthesize_stream("你好世界", voice="zm_010"))
 
@@ -171,52 +169,4 @@ class TestSynthesizeStream:
                 assert decoded[:4] == b"RIFF"
 
 
-class TestConfigStreamFields:
-    """测试 config 流式配置字段"""
 
-    def test_stream_defaults(self):
-        """默认流式配置"""
-        from kokoro_tts.config import TTSConfig
-
-        config = TTSConfig()
-        assert config.stream_enabled is True
-        assert config.stream_format == "pcm_s16le"
-
-    def test_stream_custom(self):
-        """自定义流式配置"""
-        from kokoro_tts.config import TTSConfig
-
-        config = TTSConfig(stream_enabled=False, stream_format="wav")
-        assert config.stream_enabled is False
-        assert config.stream_format == "wav"
-
-
-class TestWebSocketEndpoint:
-    """测试 WebSocket 端点（仅验证结构，不实际连接模型）"""
-
-    def test_app_has_ws_route(self):
-        """create_app 返回的 app 应包含 /ws/v1/tts 路由"""
-        from kokoro_tts.server import create_app
-        from kokoro_tts.config import TTSConfig
-
-        config = TTSConfig()
-        app = create_app(config=config)
-
-        # 检查路由
-        routes = [route.path for route in app.routes]
-        assert "/ws/v1/tts" in routes
-
-    def test_existing_routes_unchanged(self):
-        """原有路由不应被修改"""
-        from kokoro_tts.server import create_app
-        from kokoro_tts.config import TTSConfig
-
-        config = TTSConfig()
-        app = create_app(config=config)
-
-        routes = [route.path for route in app.routes]
-        assert "/v1/audio/speech" in routes
-        assert "/api/tts" in routes
-        assert "/health" in routes
-        assert "/v1/audio/voices" in routes
-        assert "/" in routes

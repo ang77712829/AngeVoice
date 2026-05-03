@@ -91,10 +91,10 @@ class TestHTTPEndpoints:
 
         transport = ASGITransport(app=app_with_mock)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/api/tts", data={
+            resp = await client.post("/api/tts", json={
                 "text": "测试接口",
                 "voice": "zm_010",
-                "speed": "1.0",
+                "speed": 1.0,
             })
             assert resp.status_code == 200
 

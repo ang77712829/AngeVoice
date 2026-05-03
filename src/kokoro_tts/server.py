@@ -24,15 +24,25 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     from fastapi import FastAPI, Request, HTTPException, Depends
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import HTMLResponse, StreamingResponse
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, ConfigDict, Field
 
     cfg = config or load_config()
     eng = engine or TTSEngine(cfg)
 
+    # Lifespan
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app):
+        eng.load()
+        logger.info(f"Kokoro TTS 服务启动 (device={eng._device})")
+        yield
+
     app = FastAPI(
         title="Kokoro TTS",
         description="轻量级中文 TTS 服务 (Kokoro v1.1)",
-        version="2.0.0",
+        version="2.1.0",
+        lifespan=lifespan,
     )
 
     # CORS
@@ -59,8 +69,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
         speed: float = Field(default=1.0, ge=0.5, le=2.0, description="语速")
         response_format: str = Field(default="wav", description="音频格式")
 
-        class Config:
-            populate_by_name = True
+        model_config = ConfigDict(populate_by_name=True)
 
     # API Key 验证
     async def verify_api_key(request: Request):
@@ -71,11 +80,6 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
                 raise HTTPException(status_code=401, detail="Invalid API key")
 
     # ── 路由 ──
-
-    @app.on_event("startup")
-    async def startup():
-        eng.load()
-        logger.info(f"Kokoro TTS 服务启动 (device={eng._device})")
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
