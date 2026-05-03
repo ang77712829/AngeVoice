@@ -16,7 +16,7 @@ COPY src/ src/
 COPY models/ models/
 
 # 安装项目
-RUN pip3 install --no-cache-dir -e .
+RUN pip3 install --no-cache-dir .
 
 EXPOSE 8000
 
