@@ -15,6 +15,7 @@ Kokoro TTS is a lightweight but powerful Chinese speech synthesis system based o
 - ✅ Docker containerized deployment
 - ✅ RESTful API interface
 - ✅ Support for OpenAI-style API calls
+- ✅ WebSocket streaming synthesis (real-time playback)
 - ✅ Support for integration with third-party applications like Tavern AI
 - ✅ Automatic dependency management
 
@@ -116,7 +117,7 @@ Kokoro TTS is a lightweight but powerful Chinese speech synthesis system based o
 
 ### OpenAI-style API
 
-#### POST /api/tts
+#### POST /v1/audio/speech
 
 **Request Parameters**:
 - `input`: Text to synthesize (equivalent to text parameter)
@@ -131,6 +132,34 @@ Kokoro TTS is a lightweight but powerful Chinese speech synthesis system based o
   "speed": 1.0
 }
 ```
+
+### WebSocket Streaming API
+
+Real-time streaming synthesis via WebSocket:
+
+```javascript
+const ws = new WebSocket("ws://localhost:8000/ws/v1/tts");
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    text: "Hello, this is streaming synthesis.",
+    voice: "zm_010",
+    speed: 1.0,
+    format: "pcm_s16le"
+  }));
+};
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === "audio") {
+    playPCM(msg.data);  // base64 encoded PCM audio
+  }
+};
+```
+
+Message protocol:
+- `started` → segment count and sample rate
+- `audio` → base64 PCM/WAV audio data
+- `done` → synthesis complete
+- `error` → error message
 
 ## Docker Deployment
 

@@ -1,4 +1,24 @@
 # 更新日志 (CHANGELOG)
+
+## v2.1.0 (2026-05-03)
+
+### 新增功能
+- **WebSocket 流式语音合成**：新增 `/ws/v1/tts` WebSocket 端点，支持逐段实时合成播放
+  - 段级流式（~100字/段），延迟 100-300ms
+  - 支持 PCM s16le 和 WAV 两种音频格式
+  - base64 编码传输，前端 AudioContext 排队播放
+- **Web UI 流式播放**：前端新增流式播放开关、WebSocket 状态指示灯、流式进度显示
+- **Docker 集成测试**：新增 17 个端到端测试（HTTP/WebSocket/编码/配置/流式逻辑）
+
+### 技术实现
+- `engine.py`: 新增 `synthesize_stream()` 生成器方法，逐段 yield 音频数据
+- `server.py`: 新增 `/ws/v1/tts` WebSocket 端点，含 API Key 验证
+- `config.py`: 新增 `stream_enabled`、`stream_format` 配置项
+- `pyproject.toml`: 新增 `websockets>=12.0` 依赖
+- `docker/cpu/Dockerfile`: 适配新包结构，支持测试模式
+
+---
+
 ## v2.0.1 (2026-05-03)
 
 ### 安全修复

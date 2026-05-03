@@ -10,6 +10,7 @@
 - 📦 **pip 可安装** — `pip install -e .` 即可使用
 - 🐳 **Docker 一键部署** — 支持 CPU 和 GPU 两种镜像
 - 🎨 **12+ 音色** — 中文 10 个 + 英文 2 个
+- ⚡ **WebSocket 流式合成** — 逐段实时播放，低延迟体验
 
 ## 🚀 快速开始
 
@@ -76,6 +77,35 @@ curl "http://localhost:8000/api/tts?text=你好世界&voice=zm_010" --output out
 curl -X POST http://localhost:8000/api/tts -F "text=你好世界" --output output.wav
 ```
 
+### WebSocket 流式接口
+
+通过 WebSocket 实现逐段实时合成播放：
+
+```javascript
+const ws = new WebSocket("ws://localhost:8000/ws/v1/tts");
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    text: "你好世界，这是一段流式合成的语音。",
+    voice: "zm_010",
+    speed: 1.0,
+    format: "pcm_s16le"
+  }));
+};
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === "audio") {
+    // msg.data 是 base64 编码的 PCM 音频
+    playPCM(msg.data);
+  }
+};
+```
+
+消息协议：
+- `started` → 包含段数和采样率
+- `audio` → base64 PCM/WAV 音频数据
+- `done` → 合成完成
+- `error` → 错误信息
+
 ### 健康检查
 
 ```bash
@@ -94,7 +124,7 @@ kokoro-tts-zh/
 │   ├── __init__.py       # 包入口（懒加载）
 │   ├── config.py         # 配置管理（环境变量/默认值）
 │   ├── engine.py         # TTS 引擎（CPU/GPU 自适应）
-│   ├── server.py         # FastAPI HTTP 服务
+│   ├── server.py         # FastAPI HTTP + WebSocket 服务
 │   ├── cli.py            # 命令行工具
 │   └── templates/        # Web UI
 ├── tests/                # 测试
@@ -131,6 +161,12 @@ wav_bytes = engine.synthesize("你好世界", voice="zm_010", speed=1.0)
 
 # 合成到文件
 engine.synthesize_file("你好世界", output_path="output.wav")
+
+# 流式合成（逐段 yield）
+for chunk in engine.synthesize_stream("你好世界", voice="zm_010"):
+    if chunk["type"] == "audio":
+        # chunk["data"] 是 base64 编码的 PCM 音频
+        process_audio(chunk["data"])
 ```
 
 ## 🙏 致谢
