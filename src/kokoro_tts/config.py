@@ -61,7 +61,7 @@ class TTSConfig:
     default_voice: str = "zm_010"
 
     # 安全
-    cors_origins: list = field(default_factory=lambda: ["http://localhost:8000"])
+    cors_origins: list = field(default_factory=lambda: ["*"])
     api_key: Optional[str] = None
 
     # 流式
