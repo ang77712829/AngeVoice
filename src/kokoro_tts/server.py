@@ -85,7 +85,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     async def index(request: Request):
         if templates:
             voices = cfg.get_voices()
-            return templates.TemplateResponse("index.html", {"request": request, "voices": voices})
+            return templates.TemplateResponse(request, "index.html", {"voices": voices})
         return HTMLResponse("<h1>Kokoro TTS</h1><p>API 文档: <a href='/docs'>/docs</a></p>")
 
     @app.get("/health")
