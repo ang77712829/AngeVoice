@@ -4,6 +4,7 @@
 FastAPI 在启动时才导入。
 """
 
+import hmac
 import logging
 from io import BytesIO
 from pathlib import Path
@@ -66,7 +67,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
         if cfg.api_key:
             auth = request.headers.get("Authorization", "")
             token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
-            if token != cfg.api_key:
+            if not hmac.compare_digest(token, cfg.api_key or ""):
                 raise HTTPException(status_code=401, detail="Invalid API key")
 
     # ── 路由 ──
@@ -110,7 +111,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"TTS 合成失败: {e}")
-            raise HTTPException(status_code=500, detail=f"合成失败: {e}")
+            raise HTTPException(status_code=500, detail="合成失败，请检查参数")
 
     @app.post("/api/tts")
     async def tts_post(request: Request, _=Depends(verify_api_key)):
@@ -130,6 +131,8 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
 
         if not text:
             raise HTTPException(status_code=400, detail="缺少 text 参数")
+        if len(text) > cfg.max_text_length:
+            raise HTTPException(status_code=400, detail=f"文本过长，上限 {cfg.max_text_length} 字符")
 
         try:
             audio_bytes = eng.synthesize(text=text, voice=voice, speed=speed)
@@ -138,7 +141,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"TTS 合成失败: {e}")
-            raise HTTPException(status_code=500, detail=f"合成失败: {e}")
+            raise HTTPException(status_code=500, detail="合成失败，请检查参数")
 
     @app.get("/api/tts")
     async def tts_get(text: str, voice: str = "zm_010", speed: float = 1.0, _=Depends(verify_api_key)):
@@ -151,7 +154,8 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"合成失败: {e}")
+            logger.error(f"TTS 合成失败: {e}")
+            raise HTTPException(status_code=500, detail="合成失败，请检查参数")
 
     return app
 

@@ -61,7 +61,7 @@ class TTSConfig:
     default_voice: str = "zm_010"
 
     # 安全
-    cors_origins: list = field(default_factory=lambda: ["*"])
+    cors_origins: list = field(default_factory=lambda: ["http://localhost:8000"])
     api_key: Optional[str] = None
 
     @property
@@ -118,6 +118,8 @@ def load_config(
         config.device = os.environ["KOKORO_DEVICE"]
     if os.environ.get("KOKORO_API_KEY"):
         config.api_key = os.environ["KOKORO_API_KEY"]
+    if os.environ.get("KOKORO_CORS_ORIGINS"):
+        config.cors_origins = [o.strip() for o in os.environ["KOKORO_CORS_ORIGINS"].split(",")]
 
     # 函数参数覆盖一切
     if model_dir:

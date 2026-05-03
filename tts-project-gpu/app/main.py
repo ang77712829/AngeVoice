@@ -57,6 +57,17 @@ KModel.MODEL_NAMES[MODEL_DIR] = 'kokoro-v1_1-zh.pth'
 
 app = FastAPI()
 
+# API Key 验证（通过 KOKORO_API_KEY 环境变量配置）
+KOKORO_API_KEY = os.environ.get("KOKORO_API_KEY")
+
+def verify_api_key(request: Request):
+    if KOKORO_API_KEY:
+        auth = request.headers.get("Authorization", "")
+        token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
+        if token != KOKORO_API_KEY:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=401, content={"error": "Invalid API key"})
+
 # 添加 CORS 中间件
 app.add_middleware(
     CORSMiddleware,
@@ -199,11 +210,17 @@ async def tts_post(
     return await process_tts(text, voice, speed)
 
 @app.get("/api/tts")
-async def tts_get(text: str, voice: str = "zf_001", speed: float = 1.0):
+async def tts_get(request: Request, text: str, voice: str = "zf_001", speed: float = 1.0):
+    key_err = verify_api_key(request)
+    if key_err:
+        return key_err
     return await process_tts(text, voice, speed)
 
 @app.get("/api/tts/tts")
-async def tts_get_tts(text: str, character: str = None, voice: str = "zf_001", speed: float = 1.0, emotion: str = "default"):
+async def tts_get_tts(request: Request, text: str, character: str = None, voice: str = "zf_001", speed: float = 1.0, emotion: str = "default"):
+    key_err = verify_api_key(request)
+    if key_err:
+        return key_err
     # 解析character参数
     if character:
         # 解码URL编码的字符串

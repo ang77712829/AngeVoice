@@ -5,6 +5,7 @@
 """
 
 import logging
+import os
 import re
 from io import BytesIO
 from pathlib import Path
@@ -197,13 +198,7 @@ class TTSEngine:
                 if wav_seg is not None:
                     all_wavs.append(wav_seg)
             except Exception as e:
-                logger.warning(f"段落 {i+1} 合成失败: {e}，尝试 fallback")
-                try:
-                    wav_seg = self._synthesize_segment(pipeline, segment, voice, speed_fn)
-                    if wav_seg is not None:
-                        all_wavs.append(wav_seg)
-                except Exception as e2:
-                    logger.error(f"段落 {i+1} fallback 也失败: {e2}")
+                logger.warning(f"段落 {i+1} 合成失败: {e}")
 
         if not all_wavs:
             raise RuntimeError("所有段落合成均失败，无有效音频数据")
