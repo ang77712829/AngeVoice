@@ -1,12 +1,14 @@
 name: Container Images
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       publish:
         description: 'Push images to registries'
         required: false
-        default: 'false'
+        default: 'true'
         type: choice
         options:
           - 'false'
@@ -48,13 +50,13 @@ jobs:
         id: publish
         shell: bash
         run: |
-          if [[ "${{ github.event.inputs.publish }}" == "true" ]]; then
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event.inputs.publish }}" == "true" ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
-
-      # ── Login to registries ──
 
       - name: Login to GHCR
         if: steps.publish.outputs.enabled == 'true'
@@ -71,8 +73,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # ── Metadata: generate tags ──
-
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -84,8 +84,6 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
             type=sha,prefix=sha-
-
-      # ── Build & Push ──
 
       - name: Build image
         uses: docker/build-push-action@v6
@@ -103,5 +101,5 @@ jobs:
         if: steps.publish.outputs.enabled != 'true'
         run: |
           echo "Images were built for validation only."
-          echo "Push is enabled only for manual workflow_dispatch with publish=true."
+          echo "Push is enabled for v* tags or manual workflow_dispatch with publish=true."
           echo "Registries: GHCR, Docker Hub"
