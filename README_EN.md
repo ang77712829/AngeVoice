@@ -1,251 +1,303 @@
 # Kokoro TTS Chinese Speech Synthesis
 
-> Lightweight Chinese TTS based on [Kokoro v1.1](https://huggingface.co/hexgrad/Kokoro-82M), with HTTP API + WebSocket streaming support
+> Lightweight Chinese TTS service based on [Kokoro v1.1](https://huggingface.co/hexgrad/Kokoro-82M), with OpenAI-compatible API, segment streaming, batch synthesis, cache, and Docker deployment.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## Features
 
-- **Bilingual** — Auto language detection, seamless Chinese/English mixed synthesis
-- **CPU/GPU Adaptive** — Auto CUDA detection, works without GPU
-- **OpenAI Compatible API** — Drop-in replacement for OpenAI TTS
-- **WebSocket Streaming** — Real-time segment-by-segment playback
-- **pip Installable** — `pip install -e .` and you're ready
-- **Docker Deploy** — CPU and GPU images included
-- **12+ Voices** — 10 Chinese + 2 English
+- **Chinese/English mixed input** — Chinese pipeline with English G2P callback
+- **OpenAI-compatible API** — `/v1/audio/speech` with `model/input/voice/speed/response_format`
+- **Segment streaming** — WebSocket segment-by-segment synthesis with JSON/base64 and optional binary audio frames
+- **Service features** — LRU cache, request IDs, request status, `/stats`, `/requests`, timeout control
+- **Batch synthesis** — `/v1/audio/batch` returns a ZIP package for multi-segment audio generation
+- **Admin APIs** — Optional cache clearing, voice listing, and `.pt` voice upload
+- **Optional MP3** — WAV/PCM by default; enable `KOKORO_MP3_ENABLED=true` for MP3 conversion
+- **Docker deployment** — CPU/GPU Compose templates with inline configuration comments
+- **Deployment profiles** — General service profile and legacy/conservative profile, see [docs/SERVICE_PROFILES.md](docs/SERVICE_PROFILES.md)
+- **100+ voices** — Actual voice list is available via `kokoro-tts voices`
 
 ## Quick Start
 
-### pip Install
+### pip install
 
 ```bash
 git clone https://github.com/ang77712829/kokoro-tts-zh.git
 cd kokoro-tts-zh
 pip install -e .
 
-# Start server
 kokoro-tts serve --port 8000
-
-# CLI synthesis
 kokoro-tts synth "Hello world" -o hello.wav -v zm_010
+kokoro-tts voices
 ```
 
 ### Docker
 
 ```bash
-# CPU (port 8100)
-cd docker/cpu && docker-compose up -d
+# CPU, default port 8100
+cd docker/cpu && docker compose up -d
 
-# GPU (port 8101)
-cd docker/gpu && docker-compose up -d
+# GPU, default port 8101, requires nvidia-container-toolkit
+cd docker/gpu && docker compose up -d
 ```
 
-Custom build:
+For development hot reload, uncomment the source mount in the Compose file:
 
-```bash
-# CPU
-docker build -f docker/cpu/Dockerfile -t kokoro-tts:cpu .
-docker run -d -p 8000:8000 -v $(pwd)/models:/app/models kokoro-tts:cpu
-
-# GPU (requires nvidia-docker)
-docker build -f docker/gpu/Dockerfile -t kokoro-tts:gpu .
-docker run -d --gpus all -p 8000:8000 -v $(pwd)/models:/app/models kokoro-tts:gpu
+```yaml
+- ../../src:/app/src:ro
 ```
 
-### Direct Run
+For production, build a fixed image:
 
 ```bash
-python run-tts.py           # Start server
-python run-tts.py voices    # List voices
+docker compose up -d --build
+```
+
+### Manual model download
+
+```bash
+pip install huggingface_hub
+huggingface-cli download hexgrad/Kokoro-82M-v1.1-zh \
+  --local-dir models/ \
+  --include "config.json" "kokoro-v1_1-zh.pth" "voices/*.pt"
 ```
 
 ## API
 
-### OpenAI Compatible
+### OpenAI-compatible speech
 
 ```bash
 curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
-  -d '{"input": "Hello world", "voice": "zm_010"}' \
+  -d '{"model":"kokoro","input":"Hello world","voice":"zm_010","response_format":"wav"}' \
   --output output.wav
+```
+
+Supported formats:
+
+| Format | Content-Type | Notes |
+|---|---|---|
+| `wav` | `audio/wav` | Default and most compatible |
+| `pcm` | `audio/pcm` | Raw PCM s16le |
+| `mp3` | `audio/mpeg` | Requires `KOKORO_MP3_ENABLED=true` and ffmpeg |
+
+Check runtime format support:
+
+```bash
+curl http://localhost:8000/v1/audio/formats
 ```
 
 ### Legacy API
 
 ```bash
-# JSON
 curl -X POST http://localhost:8000/api/tts \
   -H "Content-Type: application/json" \
-  -d '{"text": "Hello world", "voice": "zm_010"}' \
+  -d '{"text":"Hello world","voice":"zm_010","format":"wav"}' \
   --output output.wav
 
-# GET
-curl "http://localhost:8000/api/tts?text=Hello+world&voice=zm_010" --output output.wav
-
-# Form
-curl -X POST http://localhost:8000/api/tts -F "text=Hello world" --output output.wav
+curl "http://localhost:8000/api/tts?text=Hello+world&voice=zm_010&response_format=wav" --output output.wav
 ```
 
-### WebSocket Streaming
+### Batch synthesis
 
-Real-time segment-by-segment synthesis:
+```bash
+curl -X POST http://localhost:8000/v1/audio/batch \
+  -H "Content-Type: application/json" \
+  -d '{"voice":"zm_010","speed":1.0,"response_format":"wav","items":[{"text":"First segment","filename":"001"},{"text":"Second segment","filename":"002"}]}' \
+  --output batch.zip
+```
+
+The ZIP package contains generated audio files and `manifest.json`.
+
+### WebSocket streaming
 
 ```javascript
 const ws = new WebSocket("ws://localhost:8000/ws/v1/tts");
+
 ws.onopen = () => {
   ws.send(JSON.stringify({
     text: "Hello, this is streaming synthesis.",
     voice: "zm_010",
     speed: 1.0,
-    format: "pcm_s16le"  // or "wav"
+    format: "pcm_s16le",
+    binary: false
   }));
 };
+
 ws.onmessage = (e) => {
+  if (typeof e.data !== "string") {
+    // Raw binary audio frame when binary=true
+    return;
+  }
   const msg = JSON.parse(e.data);
   if (msg.type === "audio") {
-    playPCM(msg.data);  // base64 encoded PCM audio
+    playPCM(msg.data);
   }
 };
+
+// Cancel remaining segments
+ws.send(JSON.stringify({ type: "cancel" }));
+// or ws.send(JSON.stringify({ type: "stop" }));
 ```
 
-**Message Protocol:**
+Message types:
 
-| Type | Description | Fields |
-|------|-------------|--------|
-| `started` | Synthesis started | `segments`, `sample_rate` |
-| `audio` | Audio data | `index`, `data` (base64), `format` |
-| `done` | Synthesis complete | `total_segments` |
-| `error` | Error | `message` |
+| Type | Description |
+|---|---|
+| `started` | Synthesis started |
+| `audio` | Audio data |
+| `segment_error` | Segment failed |
+| `done` | Synthesis completed |
+| `cancelled` | Synthesis cancelled |
+| `error` | Error |
 
-### Health Check
+### Service status
 
 ```bash
 curl http://localhost:8000/health
+curl http://localhost:8000/stats
+curl http://localhost:8000/requests
 ```
 
-## Available Voices
+### Admin APIs
 
-Run `kokoro-tts voices` for full list.
+Admin APIs are disabled by default. Enable them with an API key:
 
-| Prefix | Language | Examples |
-|--------|----------|----------|
-| `zm_` | Chinese | `zm_010` |
-| `zf_` | Chinese | `zf_001` ~ `zf_004` |
-| `af_` | English | `af_maple`, `af_sol` |
-| `bf_` | English | `bf_vale` |
+```bash
+KOKORO_ADMIN_ENABLED=true
+KOKORO_API_KEY=change-me
+```
 
-## Library Usage
+```bash
+curl -X DELETE http://localhost:8000/admin/cache \
+  -H "Authorization: Bearer change-me"
 
-```python
-from kokoro_tts import TTSEngine
+curl http://localhost:8000/admin/voices \
+  -H "Authorization: Bearer change-me"
+```
 
-engine = TTSEngine()
-engine.load()
+Voice upload also requires:
 
-# Synthesize to memory
-wav_bytes = engine.synthesize("Hello world", voice="zm_010", speed=1.0)
+```bash
+KOKORO_VOICE_UPLOAD_ENABLED=true
+```
 
-# Synthesize to file
-engine.synthesize_file("Hello world", output_path="output.wav")
+For Docker deployments, mount the voices directory as writable:
 
-# Streaming synthesis (segment-by-segment)
-for chunk in engine.synthesize_stream("Hello world", voice="zm_010"):
-    if chunk["type"] == "audio":
-        process_audio(chunk["data"])  # base64 PCM
+```yaml
+- ../../models/voices:/app/models/voices:rw
 ```
 
 ## Configuration
 
-Environment variables (override defaults):
-
 | Variable | Default | Description |
-|----------|---------|-------------|
+|---|---|---|
 | `KOKORO_MODEL_DIR` | `./models` | Model directory |
 | `KOKORO_HOST` | `0.0.0.0` | Listen address |
-| `KOKORO_PORT` | `8000` | Port |
-| `KOKORO_DEVICE` | `auto` | Device (auto/cpu/cuda) |
-| `KOKORO_API_KEY` | - | API Key (auth required when set) |
-| `KOKORO_CORS_ORIGINS` | `http://localhost:8000` | CORS origins (comma-separated) |
+| `KOKORO_PORT` | `8000` | Service port |
+| `KOKORO_DEVICE` | `auto` | `auto` / `cpu` / `cuda` |
+| `KOKORO_WORKERS` | `1` | Uvicorn workers; keep `1` for GPU deployments |
+| `KOKORO_MAX_CONCURRENT_REQUESTS` | `1` | Max in-process synthesis concurrency |
+| `KOKORO_MAX_TEXT_LENGTH` | `10000` | Max input text length |
+| `KOKORO_SEGMENT_LENGTH` | `100` | Target segment length |
+| `KOKORO_DEFAULT_VOICE` | `zm_010` | Default voice |
+| `KOKORO_DEFAULT_SPEED` | `1.0` | Default speed |
+| `KOKORO_STREAM_FORMAT` | `pcm_s16le` | Default WebSocket stream format |
+| `KOKORO_STREAM_BINARY_ENABLED` | `true` | Enable binary WebSocket audio frames |
+| `KOKORO_CACHE_ENABLED` | `true` | Enable LRU audio cache |
+| `KOKORO_CACHE_MAX_ITEMS` | `128` | Cache item limit |
+| `KOKORO_QUEUE_STATUS_ENABLED` | `true` | Enable `/requests` |
+| `KOKORO_METRICS_ENABLED` | `true` | Enable `/stats` |
+| `KOKORO_REQUEST_TIMEOUT_SECONDS` | `300` | Synthesis timeout |
+| `KOKORO_BATCH_ENABLED` | `true` | Enable batch synthesis |
+| `KOKORO_BATCH_MAX_ITEMS` | `20` | Max batch items |
+| `KOKORO_ADMIN_ENABLED` | `false` | Enable admin APIs |
+| `KOKORO_VOICE_UPLOAD_ENABLED` | `false` | Enable `.pt` voice upload |
+| `KOKORO_MP3_ENABLED` | `false` | Enable MP3 output |
+| `KOKORO_MP3_BITRATE` | `192k` | MP3 bitrate |
+| `KOKORO_API_KEY` | - | Bearer API key |
+| `KOKORO_CORS_ORIGINS` | `http://localhost:8000` | Comma-separated CORS origins |
+
+## Testing
+
+```bash
+pip install -e '.[dev]'
+pytest
+```
+
+Service smoke tests:
+
+```bash
+chmod +x scripts/smoke_test.sh scripts/loop_test.sh
+BASE_URL=http://127.0.0.1:8101 ./scripts/smoke_test.sh
+N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
+```
 
 ## Project Structure
 
-```
+```text
 kokoro-tts-zh/
-├── src/kokoro_tts/       # Core package
-│   ├── __init__.py       # Package entry (lazy load)
-│   ├── config.py         # Configuration
-│   ├── engine.py         # TTS engine
-│   ├── server.py         # FastAPI HTTP + WebSocket
-│   ├── cli.py            # CLI tool
-│   └── templates/        # Web UI
-├── tests/                # Tests
-├── docker/               # Docker configs
-│   ├── cpu/              # CPU version
-│   └── gpu/              # GPU version
-├── models/               # Model files (Git LFS)
-├── pyproject.toml        # Package config
+├── src/kokoro_tts/
+│   ├── config.py
+│   ├── engine.py
+│   ├── server.py
+│   ├── service_extras.py
+│   ├── cli.py
+│   └── templates/
+├── scripts/
+├── tests/
+├── docker/
+├── docs/
+├── models/
+├── pyproject.toml
 ├── README.md
 └── README_EN.md
 ```
 
 ## Changelog
 
-### v2.1.0 (2026-05-03)
+### v2.4.0 (2026-05-04)
 
 **Added**
-- WebSocket streaming synthesis (`/ws/v1/tts`) for real-time playback
-- PCM s16le and WAV audio format support
-- Web UI streaming toggle + WebSocket status indicator
-- Docker integration tests (17 test cases)
+- `/v1/audio/batch` batch ZIP synthesis with `manifest.json`
+- `/v1/audio/formats` runtime format query
+- Admin APIs: `/admin/cache`, `/admin/voices`, `/admin/voices/upload`
+- Optional MP3 output behind `KOKORO_MP3_ENABLED=true`
+- WebSocket `cancel` / `stop` control frames
+- ffmpeg in CPU/GPU Docker images for optional MP3 conversion
+- Fully documented Compose templates for runtime tuning and development mounts
 
-**Improved**
-- `engine.py`: New `synthesize_stream()` generator method
-- `server.py`: New WebSocket endpoint with API Key auth
-- `config.py`: New `stream_enabled`, `stream_format` config options
-
-### v2.0.1 (2026-05-03)
-
-**Security**
-- API Key timing attack prevention (`hmac.compare_digest`)
-- CORS disabled by default, configurable via `KOKORO_CORS_ORIGINS`
-- Error messages sanitized (no internal stack traces)
-- Text length limit (10,000 chars) to prevent OOM
-
-**Fixed**
-- Missing `import os` in `engine.py`
-- Duplicate function definition in `tts-project-cpu/main.py`
-- Missing `static/` directory causing Docker mount crash
-- Invalid fallback logic (retry with identical params)
-
-**Removed**
-- Unused `Dockerfile.new`
-- Python version unified to `>=3.10`
-
-### v1.1 (2026-05-02)
+### v2.3.0 (2026-05-04)
 
 **Added**
-- CORS middleware support
-- `KOKORO_MODEL_DIR` environment variable
-- CPU + GPU Docker images
+- `/stats`, `/requests`, request IDs, request status tracking, and service metrics
+- In-memory LRU audio cache
+- Optional binary WebSocket audio frames
+- Request timeout control
+- General and conservative deployment profiles
+
+### v2.1.3 (2026-05-04)
 
 **Fixed**
-- `torch.set_num_interop_threads` duplicate setting protection
+- Correct audio format handling
+- Move synchronous synthesis off the FastAPI event loop
+- Shared input validation
+- Long text hard splitting fallback
+- PCM clipping and segment boundary smoothing
 
 ### v1.0 (2026-02-21)
 
-**Initial Release**
-- Chinese + English speech synthesis (Kokoro-82M-v1.1-zh)
-- 12+ voices, speech rate control
+**Initial release**
+- Chinese/English synthesis
 - OpenAI-style API
 - Docker CPU/GPU deployment
-- One-click startup script
 
 ## Acknowledgements
 
 - [Kokoro v1.1 Model](https://huggingface.co/hexgrad/Kokoro-82M) — hexgrad
-- Original model [Apache 2.0](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/LICENSE) licensed
-- This project MIT licensed
+- Original model licensed under Apache 2.0
+- This project is MIT licensed
 
 ## License
 
