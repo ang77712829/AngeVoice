@@ -578,7 +578,7 @@
 
         function synthesizeStream(text, voice, speed) {
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${proto}//${location.host}/v1/stream?voice=${encodeURIComponent(voice)}&speed=${encodeURIComponent(speed)}`;
+            const wsUrl = `${proto}//${location.host}/ws/v1/tts`;
             downloadBtn.style.display = 'none';
             isPlaying = true;
             updateStopButton();
