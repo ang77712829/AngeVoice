@@ -62,14 +62,12 @@ def normalize_text_for_tts(text: str) -> str:
     if not text:
         return text
 
-    # Dates: 2026-05-04 / 2026/05/04
     def repl_date(match):
         year, month, day = match.groups()
         return f"{_spell_digits(year)}年{_read_small_int(int(month))}月{_read_small_int(int(day))}日"
 
     text = re.sub(r"\b(20\d{2}|19\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b", repl_date, text)
 
-    # Money: ¥123.45 / 123元 / 123.45元
     def repl_money(match):
         prefix, amount, suffix = match.groups()
         if not prefix and not suffix:
@@ -86,14 +84,12 @@ def normalize_text_for_tts(text: str) -> str:
 
     text = re.sub(r"(¥|￥)?\b(\d{1,5}(?:\.\d{1,2})?)\b(元)?", repl_money, text)
 
-    # Percentages: 12.5%
     def repl_percent(match):
         value = match.group(1)
         return "百分之" + _spell_digits(value.replace(".", "点"))
 
     text = re.sub(r"\b(\d+(?:\.\d+)?)%", repl_percent, text)
 
-    # Mainland China mobile numbers: 1XXXXXXXXXX
     def repl_mobile(match):
         number = match.group(0)
         return "，".join([
@@ -104,7 +100,6 @@ def normalize_text_for_tts(text: str) -> str:
 
     text = re.sub(r"(?<!\d)1[3-9]\d{9}(?!\d)", repl_mobile, text)
 
-    # Long IDs / bank card-like numbers. Keep short numbers untouched.
     def repl_long_number(match):
         number = match.group(0)
         grouped = [number[i : i + 4] for i in range(0, len(number), 4)]
@@ -289,14 +284,18 @@ class TTSEngine:
 
     def _synthesize_segment(self, pipeline, segment: str, voice: str, speed_fn):
         import numpy as np
-        import torch
+
+        try:
+            import torch
+        except ImportError:  # Unit tests and lightweight CI do not need torch.
+            torch = None
 
         generator = pipeline(segment, voice=voice, speed=speed_fn)
         result = next(generator)
         audio = result.audio
         if audio is None:
             return None
-        if isinstance(audio, torch.Tensor):
+        if torch is not None and isinstance(audio, torch.Tensor):
             audio = audio.detach().cpu().numpy()
         if not isinstance(audio, np.ndarray):
             return None
