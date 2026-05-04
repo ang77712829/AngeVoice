@@ -502,6 +502,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
         normalize_response_format=_normalize_response_format,
         mark_request=_mark_request,
         finish_request=_finish_request,
+        increment_stat=_inc_stat,
     )
 
     return app
