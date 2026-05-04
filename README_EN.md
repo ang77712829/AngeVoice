@@ -53,10 +53,7 @@ Ideal use cases:
 
 ```bash
 git clone https://github.com/ang77712829/AngeVoice.git
-cd AngeVoice/docker
-bash select-registry.sh
-
-cd gpu
+cd AngeVoice/docker/gpu
 sudo docker compose up -d
 ```
 
@@ -64,10 +61,8 @@ Supported registries:
 
 | Registry | Address |
 |---|---|
-|---|---|
-| Docker Hub | `docker.io/maxblack777/angevoice-gpu` |
 | GHCR | `ghcr.io/ang77712829/angevoice-gpu` |
-| CNB | `cr.ccs.tencentyun.com/angeangeange/angevoice-gpu` |
+| Docker Hub | `docker.io/maxblack777/angevoice-gpu` |
 
 **Option 2: Build locally**
 
@@ -82,9 +77,8 @@ Visit: `http://localhost:8101`
 ### Docker CPU / Legacy GPU
 
 ```bash
-# After running select-registry.sh above, just cd to the profile
-cd cpu && sudo docker compose up -d           # port 8100
-cd ../legacy-gpu && sudo docker compose up -d  # port 8102, CUDA 11.8
+cd docker/cpu && sudo docker compose up -d           # port 8100
+cd docker/legacy-gpu && sudo docker compose up -d    # port 8102, CUDA 11.8
 ```
 
 Or build locally:
@@ -303,7 +297,7 @@ python scripts/benchmark_streaming.py \
 
 ## Docker Images & Publishing
 
-CI automatically pushes to three registries. Regular `main` pushes only verify builds; pushing a `v*` tag or manually triggering with `publish=true` publishes images.
+CI automatically pushes to two registries (GHCR + Docker Hub). Regular `main` pushes only verify builds; pushing a `v*` tag or manually triggering with `publish=true` publishes images.
 
 Expected image names:
 
@@ -314,9 +308,7 @@ ghcr.io/ang77712829/angevoice-legacy-gpu:latest
 docker.io/maxblack777/angevoice-cpu:latest
 docker.io/maxblack777/angevoice-gpu:latest
 docker.io/maxblack777/angevoice-legacy-gpu:latest
-cr.ccs.tencentyun.com/angeangeange/angevoice-cpu:latest
-cr.ccs.tencentyun.com/angeangeange/angevoice-gpu:latest
-cr.ccs.tencentyun.com/angeangeange/angevoice-legacy-gpu:latest
+
 ```
 
 
