@@ -10,6 +10,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-cpu%20%7C%20gpu%20%7C%20legacy--gpu-2496ED.svg)](docker)
 
+**🌐 Language / 语言**
+
+[**English**](README_EN.md) | **中文** (当前)
+
 </div>
 
 ---

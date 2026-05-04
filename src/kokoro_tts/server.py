@@ -512,6 +512,7 @@ def run_server(config: Optional[TTSConfig] = None):
     import uvicorn
 
     cfg = config or load_config()
-    app = create_app(config=cfg)
+    eng = TTSEngine(cfg)
+    app = create_app(config=cfg, engine=eng)
     logger.info(f"Starting AngeVoice service: {cfg.host}:{cfg.port}")
     uvicorn.run(app, host=cfg.host, port=cfg.port, workers=cfg.workers)
