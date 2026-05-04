@@ -2,9 +2,9 @@
 
 import json
 import struct
-import base64
 import zipfile
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -35,7 +35,7 @@ def app_with_mock(mock_engine):
     from kokoro_tts.config import TTSConfig
     from kokoro_tts.server import create_app
 
-    config = TTSConfig(model_dir="/nonexistent")
+    config = TTSConfig(model_dir=Path("/nonexistent"))
     return create_app(config=config, engine=mock_engine)
 
 
@@ -78,18 +78,13 @@ class TestHTTPEndpoints:
 
     @pytest.mark.asyncio
     async def test_openai_tts_empty_text(self, app_with_mock):
-        """空文本应返回 400"""
         transport = ASGITransport(app=app_with_mock)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/v1/audio/speech", json={
-                "text": "",
-                "voice": "zm_010",
-            })
+            resp = await client.post("/v1/audio/speech", json={"text": "", "voice": "zm_010"})
             assert resp.status_code == 400
 
     @pytest.mark.asyncio
     async def test_openai_tts_mp3_disabled(self, app_with_mock):
-        """MP3 默认关闭时应返回 400，而不是继续合成。"""
         transport = ASGITransport(app=app_with_mock)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/v1/audio/speech", json={
@@ -107,11 +102,7 @@ class TestHTTPEndpoints:
 
         transport = ASGITransport(app=app_with_mock)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/api/tts", json={
-                "text": "测试接口",
-                "voice": "zm_010",
-                "speed": 1.0,
-            })
+            resp = await client.post("/api/tts", json={"text": "测试接口", "voice": "zm_010", "speed": 1.0})
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -146,10 +137,7 @@ class TestHTTPEndpoints:
             resp = await client.post("/v1/audio/batch", json={
                 "voice": "zm_010",
                 "response_format": "wav",
-                "items": [
-                    {"text": "第一段", "filename": "001"},
-                    {"text": "第二段", "filename": "002"},
-                ],
+                "items": [{"text": "第一段", "filename": "001"}, {"text": "第二段", "filename": "002"}],
             })
             assert resp.status_code == 200
             assert resp.headers["content-type"] == "application/zip"
@@ -174,7 +162,7 @@ class TestHTTPEndpoints:
         from kokoro_tts.config import TTSConfig
         from kokoro_tts.server import create_app
 
-        app = create_app(config=TTSConfig(model_dir="/nonexistent", api_key="secret"), engine=mock_engine)
+        app = create_app(config=TTSConfig(model_dir=Path("/nonexistent"), api_key="secret"), engine=mock_engine)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/stats")
@@ -187,7 +175,7 @@ class TestHTTPEndpoints:
         from kokoro_tts.config import TTSConfig
         from kokoro_tts.server import create_app
 
-        app = create_app(config=TTSConfig(model_dir="/nonexistent", admin_enabled=True, api_key="secret"), engine=mock_engine)
+        app = create_app(config=TTSConfig(model_dir=Path("/nonexistent"), admin_enabled=True, api_key="secret"), engine=mock_engine)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.delete("/admin/cache", headers={"Authorization": "Bearer secret"})
@@ -196,7 +184,6 @@ class TestHTTPEndpoints:
 
     @pytest.mark.asyncio
     async def test_routes_intact(self, app_with_mock):
-        """验证所有原有路由未被破坏"""
         routes = [route.path for route in app_with_mock.routes]
         assert "/v1/audio/speech" in routes
         assert "/api/tts" in routes
@@ -211,40 +198,27 @@ class TestHTTPEndpoints:
 
 
 class TestWebSocketStructure:
-    """WebSocket 端点结构验证"""
-
     def test_ws_route_exists(self, app_with_mock):
         routes = [route.path for route in app_with_mock.routes]
         assert "/ws/v1/tts" in routes
 
     def test_ws_handler_is_websocket(self, app_with_mock):
-        """验证 WebSocket handler 注册正确"""
         ws_routes = [r for r in app_with_mock.routes if hasattr(r, 'path') and r.path == '/ws/v1/tts']
         assert len(ws_routes) == 1
-        route = ws_routes[0]
-        assert hasattr(route, 'endpoint')
+        assert hasattr(ws_routes[0], 'endpoint')
 
 
 class TestStreamEncoding:
-    """流式编码测试"""
-
     def test_pcm_s16le_encoding(self):
-        """PCM s16le: float32 -> int16 -> bytes"""
         audio = np.array([0.0, 0.5, -0.5, 1.0, -1.0], dtype=np.float32)
         audio_int16 = (audio * 32767).astype(np.int16)
         result = audio_int16.tobytes()
-
         assert isinstance(result, bytes)
         assert len(result) == 10
         samples = struct.unpack("<5h", result)
-        assert samples[0] == 0
-        assert samples[1] == 16383
-        assert samples[2] == -16383
-        assert samples[3] == 32767
-        assert samples[4] == -32767
+        assert samples == (0, 16383, -16383, 32767, -32767)
 
     def test_wav_encoding(self):
-        """WAV 编码返回有效 RIFF 头"""
         import soundfile as sf
 
         audio = np.random.randn(24000).astype(np.float32)
@@ -252,33 +226,25 @@ class TestStreamEncoding:
         buffer = BytesIO()
         sf.write(buffer, audio, 24000, format="WAV")
         result = buffer.getvalue()
-
         assert result[:4] == b"RIFF"
         assert result[8:12] == b"WAVE"
         assert len(result) > 48000
 
     def test_pcm_roundtrip(self):
-        """PCM 编码后解码应还原"""
         original = np.array([0.0, 0.3, -0.7, 1.0, -1.0], dtype=np.float32)
         audio_int16 = (original * 32767).astype(np.int16)
         encoded = audio_int16.tobytes()
         decoded = np.frombuffer(encoded, dtype=np.int16).astype(np.float32) / 32767
-
         np.testing.assert_array_almost_equal(original, decoded, decimal=4)
 
     def test_large_audio_encoding(self):
-        """大块音频编码不崩溃"""
         audio = np.random.randn(24000 * 10).astype(np.float32)
         audio = np.clip(audio, -1.0, 1.0)
         audio_int16 = (audio * 32767).astype(np.int16)
-        result = audio_int16.tobytes()
-
-        assert len(result) == 24000 * 10 * 2
+        assert len(audio_int16.tobytes()) == 24000 * 10 * 2
 
 
 class TestConfigStreamFields:
-    """配置流式字段测试"""
-
     def test_stream_defaults(self):
         from kokoro_tts.config import TTSConfig
         config = TTSConfig()
@@ -293,8 +259,6 @@ class TestConfigStreamFields:
 
 
 class TestSynthesizeStreamLogic:
-    """synthesize_stream 逻辑测试（不需要模型）"""
-
     def test_engine_not_loaded_yields_error(self):
         from kokoro_tts.engine import TTSEngine
         from kokoro_tts.config import TTSConfig
