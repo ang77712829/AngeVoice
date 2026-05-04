@@ -10,10 +10,12 @@
 - **中英双语** — 中文 pipeline + 英文 G2P 回调，支持中英文混合输入
 - **CPU/GPU 自适应** — 自动检测 CUDA，无 GPU 也能跑
 - **OpenAI 兼容 API** — 支持 `/v1/audio/speech`，兼容 `model/input/voice/speed/response_format`
-- **WebSocket 逐段流式合成** — 按文本段落合成并实时推送 PCM/WAV 分片
+- **WebSocket 逐段流式合成** — 按文本段落合成并实时推送 PCM/WAV 分片，支持 JSON/base64 和 binary 音频帧
+- **服务化能力** — 内存 LRU 缓存、请求 ID、`/stats`、`/requests`、超时控制、队列状态
 - **输入安全校验** — 文本长度、语速、格式统一校验，避免异常请求拖垮服务
 - **pip 可安装** — `pip install -e .` 即可使用
 - **Docker 一键部署** — 支持 CPU 和 GPU 两种镜像
+- **双部署画像** — 通用服务版 + 老显卡/保守兼容版，见 [docs/SERVICE_PROFILES.md](docs/SERVICE_PROFILES.md)
 - **100+ 音色** — 中文 100 个（55 女 + 45 男）+ 英文 3 个（2 女 + 1 男）
 
 ## 快速开始
@@ -43,9 +45,11 @@ kokoro-tts voices
 # CPU 版本（端口 8100，首次自动下载模型）
 cd docker/cpu && docker compose up -d
 
-# GPU 版本（端口 8101，需要 nvidia-container-toolkit）
+# GPU 通用服务版（端口 8101，需要 nvidia-container-toolkit）
 cd docker/gpu && docker compose up -d
 ```
+
+老显卡、旧驱动、NAS 或保守环境请参考：[服务画像说明](docs/SERVICE_PROFILES.md)。
 
 ### 手动下载模型（离线使用）
 
@@ -118,10 +122,15 @@ ws.onopen = () => {
     text: "你好世界，这是一段流式合成的语音。",
     voice: "zm_010",
     speed: 1.0,
-    format: "pcm_s16le"  // 或 "wav"
+    format: "pcm_s16le",
+    binary: false
   }));
 };
 ws.onmessage = (e) => {
+  if (typeof e.data !== "string") {
+    // binary=true 时，这里会收到原始音频帧
+    return;
+  }
   const msg = JSON.parse(e.data);
   if (msg.type === "audio") {
     playPCM(msg.data);  // base64 编码的 PCM 音频
@@ -133,16 +142,18 @@ ws.onmessage = (e) => {
 
 | 类型 | 说明 | 字段 |
 |------|------|------|
-| `started` | 合成开始 | `segments`, `sample_rate`, `channels`, `format`, `dtype` |
-| `audio` | 音频数据 | `index`, `data`（base64）, `format`, `sample_rate`, `channels` |
-| `segment_error` | 单段失败 | `index`, `message` |
-| `done` | 合成完成 | `total_segments` |
-| `error` | 错误 | `message` |
+| `started` | 合成开始 | `request_id`, `segments`, `sample_rate`, `channels`, `format`, `dtype` |
+| `audio` | 音频数据 | `request_id`, `index`, `data`（base64）, `format`, `sample_rate`, `channels` |
+| `segment_error` | 单段失败 | `request_id`, `index`, `message` |
+| `done` | 合成完成 | `request_id`, `total_segments` |
+| `error` | 错误 | `request_id`, `message` |
 
-### 健康检查
+### 健康检查 / 服务状态
 
 ```bash
 curl http://localhost:8000/health
+curl http://localhost:8000/stats
+curl http://localhost:8000/requests
 ```
 
 ## 可用音色
@@ -193,6 +204,12 @@ for chunk in engine.synthesize_stream("你好世界", voice="zm_010"):
 | `KOKORO_DEFAULT_VOICE` | `zm_010` | 默认音色 |
 | `KOKORO_DEFAULT_SPEED` | `1.0` | 默认语速 |
 | `KOKORO_STREAM_FORMAT` | `pcm_s16le` | WebSocket 默认格式 |
+| `KOKORO_STREAM_BINARY_ENABLED` | `true` | 是否允许 WebSocket binary 音频帧 |
+| `KOKORO_CACHE_ENABLED` | `true` | 是否启用内存 LRU 音频缓存 |
+| `KOKORO_CACHE_MAX_ITEMS` | `128` | 最大缓存条目数 |
+| `KOKORO_QUEUE_STATUS_ENABLED` | `true` | 是否启用 `/requests` 状态接口 |
+| `KOKORO_METRICS_ENABLED` | `true` | 是否启用 `/stats` 统计接口 |
+| `KOKORO_REQUEST_TIMEOUT_SECONDS` | `300` | 单次合成超时时间 |
 | `KOKORO_API_KEY` | - | API Key（设置后需认证） |
 | `KOKORO_CORS_ORIGINS` | `http://localhost:8000` | CORS 允许来源（逗号分隔） |
 
@@ -210,7 +227,8 @@ kokoro-tts-zh/
 ├── tests/                # 测试
 ├── docker/               # Docker 配置
 │   ├── cpu/              # CPU 版本
-│   └── gpu/              # GPU 版本
+│   └── gpu/              # GPU 通用服务版
+├── docs/                 # 服务画像和部署说明
 ├── models/               # 模型文件（Git LFS）
 ├── pyproject.toml        # 包配置
 ├── README.md
@@ -218,6 +236,20 @@ kokoro-tts-zh/
 ```
 
 ## 更新日志
+
+### v2.3.0 (2026-05-04)
+
+**新增**
+- 服务化版本：新增 `/stats`、`/requests`、请求 ID、请求状态追踪和基础统计
+- 新增内存 LRU 音频缓存，重复文本/音色/语速/格式请求可直接命中缓存
+- WebSocket 支持可选 binary 音频帧，降低 base64 开销
+- 新增请求超时控制，避免长任务无限挂起
+- 新增通用服务版和老显卡/保守兼容版两套部署画像说明
+
+**改进**
+- HTTP 响应增加 `X-Request-ID`
+- `/health` 返回缓存状态和并发配置
+- 扩展环境变量，支持开关缓存、metrics、queue status、binary stream 等服务特性
 
 ### v2.1.3 (2026-05-04)
 
