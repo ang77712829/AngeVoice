@@ -3,8 +3,10 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # 系统依赖
+# ffmpeg 用于可选 MP3 转码；未开启 KOKORO_MP3_ENABLED 时不会影响默认路径
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # CPU 版 PyTorch
