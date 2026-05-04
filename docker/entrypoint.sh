@@ -1,5 +1,5 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starting Kokoro TTS server..."
+echo "🚀 Starting AngeVoice service..."
 exec kokoro-tts serve
