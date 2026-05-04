@@ -1,10 +1,10 @@
 #!/bin/bash
 # select-registry.sh — 测试三个 registry 连通速度，选最快的写入 .env
-# 用法: bash select-registry.sh [v2.4.0]
+# 用法: bash select-registry.sh
 
 set -euo pipefail
 
-VERSION="${1:-latest}"
+VERSION="latest"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 registries=(

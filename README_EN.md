@@ -61,7 +61,7 @@ Visit: `http://localhost:8101`
 
 ```bash
 # Auto-select the fastest registry (same as above)
-cd docker && bash select-registry.sh v2.4.0
+cd docker && bash select-registry.sh latest
 
 # CPU, default port 8100
 cd cpu && sudo docker compose up -d
@@ -284,15 +284,15 @@ CI automatically pushes to three registries. Regular `main` pushes only verify b
 Expected image names:
 
 ```text
-ghcr.io/ang77712829/angevoice-cpu:v2.4.0
-ghcr.io/ang77712829/angevoice-gpu:v2.4.0
-ghcr.io/ang77712829/angevoice-legacy-gpu:v2.4.0
-docker.io/maxblack777/angevoice-cpu:v2.4.0
-docker.io/maxblack777/angevoice-gpu:v2.4.0
-docker.io/maxblack777/angevoice-legacy-gpu:v2.4.0
-cr.ccs.tencentyun.com/angeangeange/angevoice-cpu:v2.4.0
-cr.ccs.tencentyun.com/angeangeange/angevoice-gpu:v2.4.0
-cr.ccs.tencentyun.com/angeangeange/angevoice-legacy-gpu:v2.4.0
+ghcr.io/ang77712829/angevoice-cpu:latest
+ghcr.io/ang77712829/angevoice-gpu:latest
+ghcr.io/ang77712829/angevoice-legacy-gpu:latest
+docker.io/maxblack777/angevoice-cpu:latest
+docker.io/maxblack777/angevoice-gpu:latest
+docker.io/maxblack777/angevoice-legacy-gpu:latest
+cr.ccs.tencentyun.com/angeangeange/angevoice-cpu:latest
+cr.ccs.tencentyun.com/angeangeange/angevoice-gpu:latest
+cr.ccs.tencentyun.com/angeangeange/angevoice-legacy-gpu:latest
 ```
 
 
@@ -334,7 +334,7 @@ AngeVoice/
 ## Changelog
 
 <details>
-<summary><strong>v2.4.0</strong></summary>
+<summary><strong>latest</strong></summary>
 
 ### Added
 
