@@ -14,8 +14,9 @@
 - **批量合成** — `/v1/audio/batch` 可批量生成 ZIP，适合有声书和分段配音
 - **管理接口** — 可选开启缓存清理、音色列表、`.pt` 音色上传
 - **可选 MP3** — 默认 WAV/PCM，开启 `KOKORO_MP3_ENABLED=true` 后支持 MP3 转码
-- **Docker 部署** — CPU/GPU Compose 模板内置常用环境变量和调试注释
+- **Docker 部署** — CPU/GPU/Legacy GPU Compose 模板内置常用环境变量和调试注释
 - **部署画像** — 通用服务版与老显卡/保守兼容版，见 [docs/SERVICE_PROFILES.md](docs/SERVICE_PROFILES.md)
+- **长期路线图** — 见 [docs/ROADMAP.md](docs/ROADMAP.md)
 - **100+ 音色** — 中文 100 个左右 + 英文音色，实际列表以 `kokoro-tts voices` 为准
 
 ## 快速开始
@@ -42,6 +43,9 @@ cd docker/cpu && docker compose up -d
 
 # GPU 版本，默认端口 8101，需要 nvidia-container-toolkit
 cd docker/gpu && docker compose up -d
+
+# Legacy GPU / 老显卡保守兼容版，默认端口 8102，使用 CUDA 11.8
+cd docker/legacy-gpu && docker compose up -d --build
 ```
 
 开发/测试环境想要 `git pull + restart` 生效，可以在 Compose 中取消注释源码挂载：
@@ -261,8 +265,11 @@ kokoro-tts-zh/
 │   └── templates/        # Web UI
 ├── scripts/              # 冒烟/稳定性测试脚本
 ├── tests/                # 单元测试
-├── docker/               # CPU/GPU Docker 配置
-├── docs/                 # 部署画像和服务功能说明
+├── docker/               # CPU/GPU/Legacy GPU Docker 配置
+│   ├── cpu/
+│   ├── gpu/
+│   └── legacy-gpu/
+├── docs/                 # 部署画像、服务功能说明和路线图
 ├── models/               # 模型文件目录
 ├── pyproject.toml
 ├── README.md
@@ -279,7 +286,9 @@ kokoro-tts-zh/
 - 新增管理接口：`/admin/cache`、`/admin/voices`、`/admin/voices/upload`
 - 新增可选 MP3 输出，需开启 `KOKORO_MP3_ENABLED=true`
 - 新增 WebSocket `cancel` / `stop` 控制帧，用于停止后续段落合成
-- Docker CPU/GPU 镜像加入 `ffmpeg`，用于可选 MP3 转码
+- Docker CPU/GPU/Legacy GPU 镜像加入 `ffmpeg`，用于可选 MP3 转码
+- 新增 Legacy GPU CUDA 11.8 镜像与中英双语部署说明
+- 新增 [docs/ROADMAP.md](docs/ROADMAP.md) 长期路线图
 - Compose 模板补充完整环境变量注释、源码热更新挂载和 voices 可写挂载说明
 
 **改进**
