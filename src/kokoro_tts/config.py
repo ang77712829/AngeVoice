@@ -41,6 +41,28 @@ def _find_models_dir() -> Path:
     return fallback
 
 
+def _get_env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning(f"忽略无效整数环境变量 {name}={value!r}")
+        return default
+
+
+def _get_env_float(name: str, default: float) -> float:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        logger.warning(f"忽略无效浮点环境变量 {name}={value!r}")
+        return default
+
+
 @dataclass
 class TTSConfig:
     """TTS 配置"""
@@ -52,6 +74,7 @@ class TTSConfig:
     host: str = "0.0.0.0"
     port: int = 8000
     workers: int = 1
+    max_concurrent_requests: int = 1
 
     # 合成参数
     sample_rate: int = 24000
@@ -61,7 +84,7 @@ class TTSConfig:
     default_voice: str = "zm_010"
 
     # 安全
-    cors_origins: list = field(default_factory=lambda: ["*"])
+    cors_origins: list = field(default_factory=lambda: ["http://localhost:8000"])
     api_key: Optional[str] = None
 
     # 流式
@@ -117,13 +140,40 @@ def load_config(
     if os.environ.get("KOKORO_HOST"):
         config.host = os.environ["KOKORO_HOST"]
     if os.environ.get("KOKORO_PORT"):
-        config.port = int(os.environ["KOKORO_PORT"])
+        config.port = _get_env_int("KOKORO_PORT", config.port)
     if os.environ.get("KOKORO_DEVICE"):
         config.device = os.environ["KOKORO_DEVICE"]
+    if os.environ.get("KOKORO_WORKERS"):
+        config.workers = max(1, _get_env_int("KOKORO_WORKERS", config.workers))
+    if os.environ.get("KOKORO_MAX_CONCURRENT_REQUESTS"):
+        config.max_concurrent_requests = max(
+            1,
+            _get_env_int(
+                "KOKORO_MAX_CONCURRENT_REQUESTS", config.max_concurrent_requests
+            ),
+        )
+    if os.environ.get("KOKORO_MAX_TEXT_LENGTH"):
+        config.max_text_length = max(
+            1, _get_env_int("KOKORO_MAX_TEXT_LENGTH", config.max_text_length)
+        )
+    if os.environ.get("KOKORO_SEGMENT_LENGTH"):
+        config.segment_length = max(
+            20, _get_env_int("KOKORO_SEGMENT_LENGTH", config.segment_length)
+        )
+    if os.environ.get("KOKORO_DEFAULT_SPEED"):
+        config.default_speed = _get_env_float(
+            "KOKORO_DEFAULT_SPEED", config.default_speed
+        )
+    if os.environ.get("KOKORO_DEFAULT_VOICE"):
+        config.default_voice = os.environ["KOKORO_DEFAULT_VOICE"]
     if os.environ.get("KOKORO_API_KEY"):
         config.api_key = os.environ["KOKORO_API_KEY"]
     if os.environ.get("KOKORO_CORS_ORIGINS"):
-        config.cors_origins = [o.strip() for o in os.environ["KOKORO_CORS_ORIGINS"].split(",")]
+        config.cors_origins = [
+            o.strip() for o in os.environ["KOKORO_CORS_ORIGINS"].split(",") if o.strip()
+        ]
+    if os.environ.get("KOKORO_STREAM_FORMAT"):
+        config.stream_format = os.environ["KOKORO_STREAM_FORMAT"]
 
     # 函数参数覆盖一切
     if model_dir:
@@ -135,7 +185,7 @@ def load_config(
     if port:
         config.port = port
     for k, v in kwargs.items():
-        if hasattr(config, k):
+        if v is not None and hasattr(config, k):
             setattr(config, k, v)
 
     return config
