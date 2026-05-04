@@ -7,10 +7,11 @@
 
 ## 特性
 
-- **中英双语** — 自动语言检测，混合文本无缝合成
+- **中英双语** — 中文 pipeline + 英文 G2P 回调，支持中英文混合输入
 - **CPU/GPU 自适应** — 自动检测 CUDA，无 GPU 也能跑
-- **OpenAI 兼容 API** — 直接替代 OpenAI TTS 接口
-- **WebSocket 流式合成** — 逐段实时播放，低延迟体验
+- **OpenAI 兼容 API** — 支持 `/v1/audio/speech`，兼容 `model/input/voice/speed/response_format`
+- **WebSocket 逐段流式合成** — 按文本段落合成并实时推送 PCM/WAV 分片
+- **输入安全校验** — 文本长度、语速、格式统一校验，避免异常请求拖垮服务
 - **pip 可安装** — `pip install -e .` 即可使用
 - **Docker 一键部署** — 支持 CPU 和 GPU 两种镜像
 - **100+ 音色** — 中文 100 个（55 女 + 45 男）+ 英文 3 个（2 女 + 1 男）
@@ -55,7 +56,9 @@ cd docker/gpu && docker compose up -d
 pip install huggingface_hub
 
 # 下载模型到 models/ 目录
-huggingface-cli download hexgrad/Kokoro-82M-v1.1-zh   --local-dir models/   --include "config.json" "kokoro-v1_1-zh.pth" "voices/*.pt"
+huggingface-cli download hexgrad/Kokoro-82M-v1.1-zh \
+  --local-dir models/ \
+  --include "config.json" "kokoro-v1_1-zh.pth" "voices/*.pt"
 ```
 
 或使用 Git LFS：
@@ -75,9 +78,18 @@ rm -rf /tmp/kokoro-models
 ```bash
 curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
-  -d '{"input": "你好世界", "voice": "zm_010"}' \
+  -d '{"model":"kokoro","input":"你好世界","voice":"zm_010","response_format":"wav"}' \
   --output output.wav
 ```
+
+当前 `response_format` 支持：
+
+| 格式 | Content-Type | 说明 |
+|------|--------------|------|
+| `wav` | `audio/wav` | 默认格式，兼容性最好 |
+| `pcm` | `audio/pcm` | 原始 PCM s16le，适合流式/低开销场景 |
+
+> 暂不伪装支持 MP3。如果需要 MP3，请在外层接入 ffmpeg 转码。
 
 ### 旧版接口
 
@@ -85,11 +97,11 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 # JSON
 curl -X POST http://localhost:8000/api/tts \
   -H "Content-Type: application/json" \
-  -d '{"text": "你好世界", "voice": "zm_010"}' \
+  -d '{"text": "你好世界", "voice": "zm_010", "format":"wav"}' \
   --output output.wav
 
 # GET
-curl "http://localhost:8000/api/tts?text=你好世界&voice=zm_010" --output output.wav
+curl "http://localhost:8000/api/tts?text=你好世界&voice=zm_010&response_format=wav" --output output.wav
 
 # Form
 curl -X POST http://localhost:8000/api/tts -F "text=你好世界" --output output.wav
@@ -97,7 +109,7 @@ curl -X POST http://localhost:8000/api/tts -F "text=你好世界" --output outpu
 
 ### WebSocket 流式接口
 
-通过 WebSocket 实现逐段实时合成播放：
+通过 WebSocket 实现逐段实时合成播放。服务端会按标点和长度切分文本，每段合成完成后立即推送音频分片：
 
 ```javascript
 const ws = new WebSocket("ws://localhost:8000/ws/v1/tts");
@@ -121,8 +133,9 @@ ws.onmessage = (e) => {
 
 | 类型 | 说明 | 字段 |
 |------|------|------|
-| `started` | 合成开始 | `segments`（段数）, `sample_rate` |
-| `audio` | 音频数据 | `index`, `data`（base64）, `format` |
+| `started` | 合成开始 | `segments`, `sample_rate`, `channels`, `format`, `dtype` |
+| `audio` | 音频数据 | `index`, `data`（base64）, `format`, `sample_rate`, `channels` |
+| `segment_error` | 单段失败 | `index`, `message` |
 | `done` | 合成完成 | `total_segments` |
 | `error` | 错误 | `message` |
 
@@ -173,6 +186,13 @@ for chunk in engine.synthesize_stream("你好世界", voice="zm_010"):
 | `KOKORO_HOST` | `0.0.0.0` | 监听地址 |
 | `KOKORO_PORT` | `8000` | 端口 |
 | `KOKORO_DEVICE` | `auto` | 设备 (auto/cpu/cuda) |
+| `KOKORO_WORKERS` | `1` | Uvicorn worker 数 |
+| `KOKORO_MAX_CONCURRENT_REQUESTS` | `1` | 同一进程内最大合成并发 |
+| `KOKORO_MAX_TEXT_LENGTH` | `10000` | 单次请求最大文本长度 |
+| `KOKORO_SEGMENT_LENGTH` | `100` | 文本切分目标长度 |
+| `KOKORO_DEFAULT_VOICE` | `zm_010` | 默认音色 |
+| `KOKORO_DEFAULT_SPEED` | `1.0` | 默认语速 |
+| `KOKORO_STREAM_FORMAT` | `pcm_s16le` | WebSocket 默认格式 |
 | `KOKORO_API_KEY` | - | API Key（设置后需认证） |
 | `KOKORO_CORS_ORIGINS` | `http://localhost:8000` | CORS 允许来源（逗号分隔） |
 
@@ -198,6 +218,22 @@ kokoro-tts-zh/
 ```
 
 ## 更新日志
+
+### v2.1.3 (2026-05-04)
+
+**修复**
+- 修复 `response_format=mp3` 被错误标记为 `audio/mpeg` 的问题；当前仅声明支持 `wav`/`pcm`
+- 将同步推理放入线程池，并增加进程内并发限制，避免阻塞 FastAPI 事件循环
+- 统一校验文本、音色、语速和输出格式，改善错误响应
+- 文本分段支持无标点长文本硬切，避免超长单段导致失败
+- PCM 编码前进行 `nan_to_num` 和 `clip`，避免 int16 溢出爆音
+- 段落边界增加轻量淡入淡出和短静音，减少拼接 click/pop
+- Docker 启动脚本不再每次启动重复安装包
+- 统一版本号为 `2.1.3`
+
+**新增**
+- `KOKORO_WORKERS`、`KOKORO_MAX_CONCURRENT_REQUESTS`、`KOKORO_MAX_TEXT_LENGTH`、`KOKORO_SEGMENT_LENGTH` 等环境变量
+- WebSocket `started`/`audio` 消息增加 `sample_rate`、`channels` 等元信息
 
 ### v2.1.2 (2026-05-04)
 
