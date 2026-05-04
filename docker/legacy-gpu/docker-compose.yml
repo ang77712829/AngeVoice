@@ -60,6 +60,8 @@ services:
       # Batch synthesis.
       - KOKORO_BATCH_ENABLED=true
       - KOKORO_BATCH_MAX_ITEMS=10
+      # Keep legacy GPU batch conservative by default.
+      - KOKORO_BATCH_CONCURRENCY=1
 
       # Admin APIs are disabled by default. Enable only with an API key.
       # - KOKORO_ADMIN_ENABLED=true
@@ -67,6 +69,7 @@ services:
 
       # Voice upload is disabled by default. Requires writable voices mount.
       # - KOKORO_VOICE_UPLOAD_ENABLED=true
+      # - KOKORO_VOICE_UPLOAD_MAX_BYTES=10485760
 
       # MP3 is disabled by default. ffmpeg is included in this image.
       # - KOKORO_MP3_ENABLED=true
@@ -86,7 +89,7 @@ services:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 90s
+      retries: 6
+      start_period: 150s
 
     restart: always
