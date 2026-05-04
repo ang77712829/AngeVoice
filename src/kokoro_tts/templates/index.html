@@ -132,6 +132,9 @@
             transition: border-color .22s ease, box-shadow .22s ease, background .22s ease;
         }
         textarea { min-height: 180px; resize: vertical; padding: 18px; line-height: 1.7; }
+        .char-counter { text-align: right; font-size: 13px; color: var(--muted); margin-top: 4px; font-weight: 600; }
+        .char-counter.warning { color: #ff8c42; }
+        .char-counter.danger { color: var(--danger); }
         select, input[type="search"] { padding: 14px 16px; }
         textarea:focus, select:focus, input[type="search"]:focus { border-color: rgba(109,93,252,.58); box-shadow: 0 0 0 5px rgba(109,93,252,.11); background: #fff; }
         .voice-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; }
@@ -179,6 +182,7 @@
         .stream-progress { display: none; margin-top: 14px; padding: 12px 15px; border: 1px solid rgba(53,196,107,.22); background: rgba(53,196,107,.09); color: #19864a; border-radius: 16px; font-size: 14px; font-weight: 760; }
         .audio-player { margin-top: 26px; padding: 22px; border-radius: 22px; border: 1px solid var(--border); background: linear-gradient(180deg, rgba(109,93,252,.08), rgba(255,255,255,.54)); }
         .audio-player h3 { margin-bottom: 12px; }
+        .audio-actions { display: flex; gap: 10px; margin-top: 12px; }
         audio { width: 100%; }
         .voice-info { margin-top: 18px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.7; }
         @media (max-width: 760px) {
@@ -219,7 +223,8 @@
         <form id="tts-form" class="form-grid">
             <div class="form-group">
                 <label for="text">输入文本</label>
-                <textarea id="text" name="text" placeholder="请输入要转换为语音的文本...">AngeVoice 是基于 Kokoro v1.1 模型构建的轻量级中文 TTS 服务，适合本地语音合成、Web 流式播放和 OpenAI 兼容接口调用。</textarea>
+                <textarea id="text" name="text" placeholder="请输入要转换为语音的文本..." maxlength="10000">AngeVoice 是基于 Kokoro v1.1 模型构建的轻量级中文 TTS 服务，适合本地语音合成、Web 流式播放和 OpenAI 兼容接口调用。</textarea>
+                <div class="char-counter" id="char-counter"><span id="char-count">0</span> / 10000 字</div>
             </div>
             <div class="form-group">
                 <label for="voice">选择声音</label>
@@ -260,14 +265,17 @@
         <div class="audio-player">
             <h3>音频播放</h3>
             <audio id="audio-player" controls>您的浏览器不支持音频播放。</audio>
+            <div class="audio-actions">
+                <button type="button" class="btn-secondary" id="download-btn" style="display:none">下载音频</button>
+            </div>
         </div>
         <div class="voice-info">提示：支持中英文混合输入。流式播放模式支持逐段实时合成；点击“停止生成”可中断后续段落。音色分类基于 Kokoro 音色名前缀，仅用于前端筛选。</div>
     </main>
 
     <script>
         class KokoroPlayer {
-            constructor() { this.ctx = null; this.nextStartTime = 0; this.sources = []; }
-            init(sampleRate = 24000) { this.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate }); this.nextStartTime = 0; }
+            constructor() { this.ctx = null; this.nextStartTime = 0; this.sources = []; this.pcmChunks = []; }
+            init(sampleRate = 24000) { this.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate }); this.nextStartTime = 0; this.pcmChunks = []; }
             resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
             stop() { this.sources.forEach(s => { try { s.stop(); } catch (_) {} }); this.sources = []; this.nextStartTime = this.ctx ? this.ctx.currentTime : 0; }
             enqueuePCM(base64Data) {
@@ -276,6 +284,7 @@
                 const raw = atob(base64Data);
                 const bytes = new Uint8Array(raw.length);
                 for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+                this.pcmChunks.push(bytes);
                 const int16 = new Int16Array(bytes.buffer);
                 const float32 = new Float32Array(int16.length);
                 for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32767;
@@ -288,7 +297,25 @@
                 source.start(startTime);
                 this.nextStartTime = startTime + buffer.duration;
                 this.sources.push(source);
-                source.onended = () => { this.sources = this.sources.filter(s => s !== source); };
+                source.onended = () => { this.sources = this.sources.filter(s !== source); checkPlaybackDone(); };
+            }
+            buildWavBlob() {
+                if (this.pcmChunks.length === 0) return null;
+                const totalLen = this.pcmChunks.reduce((sum, c) => sum + c.length, 0);
+                const pcm = new Uint8Array(totalLen);
+                let offset = 0;
+                this.pcmChunks.forEach(c => { pcm.set(c, offset); offset += c.length; });
+                const sampleRate = this.ctx ? this.ctx.sampleRate : 24000;
+                const wav = new ArrayBuffer(44 + pcm.length);
+                const v = new DataView(wav);
+                const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+                w(0, 'RIFF'); v.setUint32(4, 36 + pcm.length, true); w(8, 'WAVE');
+                w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+                v.setUint16(22, 1, true); v.setUint32(24, sampleRate, true);
+                v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+                w(36, 'data'); v.setUint32(40, pcm.length, true);
+                new Uint8Array(wav, 44).set(pcm);
+                return new Blob([wav], { type: 'audio/wav' });
             }
         }
 
@@ -297,6 +324,8 @@
         let currentRequestId = null;
         let totalSegments = 0;
         let activeVoiceFilter = 'all';
+        let isPlaying = false;
+        let isSynthesizing = false;
 
         const VOICE_FAVORITES_KEY = 'angevoice.favoriteVoices.v1';
         const VOICE_RECENT_KEY = 'angevoice.recentVoices.v1';
@@ -313,6 +342,10 @@
         const voiceTabs = document.getElementById('voice-tabs');
         const voiceMeta = document.getElementById('voice-meta');
         const favoriteVoiceBtn = document.getElementById('favorite-voice-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const textEl = document.getElementById('text');
+        const charCountEl = document.getElementById('char-count');
+        const charCounterEl = document.getElementById('char-counter');
         const allVoices = Array.from(voiceSelect.options).map(option => option.value);
 
         const voiceGroups = [
@@ -435,7 +468,8 @@
         function setBusy(busy) {
             loadingEl.style.display = busy ? 'block' : 'none';
             generateBtn.disabled = busy;
-            stopBtn.disabled = !busy;
+            isSynthesizing = busy;
+            updateStopButton();
         }
         function updateWsStatus(status, text) {
             const el = document.getElementById('ws-status');
@@ -452,20 +486,69 @@
         }
         function hideStreamProgress() { document.getElementById('stream-progress').style.display = 'none'; }
 
+        function checkPlaybackDone() {
+            if (currentPlayer && currentPlayer.sources.length === 0) {
+                isPlaying = false;
+                updateStopButton();
+                showDownloadBtn();
+            }
+        }
+        function updateStopButton() {
+            if (isSynthesizing) {
+                stopBtn.textContent = '停止生成';
+                stopBtn.disabled = false;
+            } else if (isPlaying) {
+                stopBtn.textContent = '停止播放';
+                stopBtn.disabled = false;
+            } else {
+                stopBtn.textContent = '停止';
+                stopBtn.disabled = true;
+            }
+        }
+        function showDownloadBtn() {
+            if (currentPlayer) {
+                const blob = currentPlayer.buildWavBlob();
+                if (blob) {
+                    downloadBtn.style.display = 'inline-block';
+                    downloadBtn.onclick = () => {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = 'angevoice_output.wav';
+                        document.body.appendChild(a); a.click(); a.remove();
+                        URL.revokeObjectURL(url);
+                    };
+                }
+            }
+        }
+        function updateCharCount() {
+            const len = textEl.value.length;
+            charCountEl.textContent = len;
+            charCounterEl.classList.remove('warning', 'danger');
+            if (len > 9000) charCounterEl.classList.add('danger');
+            else if (len > 7000) charCounterEl.classList.add('warning');
+        }
+
         async function stopCurrentSynthesis() {
-            if (currentPlayer) currentPlayer.stop();
-            if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-                try { currentWs.send(JSON.stringify({ type: 'cancel' })); } catch (_) {}
+            if (isSynthesizing) {
+                if (currentPlayer) currentPlayer.stop();
+                if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+                    try { currentWs.send(JSON.stringify({ type: 'cancel' })); } catch (_) {}
+                }
+                if (currentRequestId) {
+                    fetch(`/v1/audio/requests/${currentRequestId}/cancel`, { method: 'POST' }).catch(() => {});
+                }
+                showStreamProgress('已发送停止指令，正在停止后续段落...', 'danger');
+            } else if (isPlaying) {
+                if (currentPlayer) currentPlayer.stop();
+                isPlaying = false;
+                updateStopButton();
+                showDownloadBtn();
             }
-            if (currentRequestId) {
-                fetch(`/v1/audio/requests/${currentRequestId}/cancel`, { method: 'POST' }).catch(() => {});
-            }
-            showStreamProgress('已发送停止指令，正在停止后续段落...', 'danger');
-            stopBtn.disabled = true;
         }
 
         async function synthesizeHttp(text, voice, speed, autoplay = true) {
             setBusy(true);
+            downloadBtn.style.display = 'none';
             try {
                 const formData = new FormData();
                 formData.append('text', text);
@@ -480,6 +563,12 @@
                 const blob = await response.blob();
                 audioPlayer.src = URL.createObjectURL(blob);
                 if (autoplay) audioPlayer.play();
+                downloadBtn.style.display = 'inline-block';
+                downloadBtn.onclick = () => {
+                    const a = document.createElement('a');
+                    a.href = audioPlayer.src; a.download = 'angevoice_output.mp3';
+                    document.body.appendChild(a); a.click(); a.remove();
+                };
             } catch (error) {
                 alert('生成语音失败：' + error.message);
             } finally {
@@ -489,12 +578,15 @@
 
         function synthesizeStream(text, voice, speed) {
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${proto}//${location.host}/ws/v1/tts`;
-            currentWs = new WebSocket(wsUrl);
+            const wsUrl = `${proto}//${location.host}/v1/stream?voice=${encodeURIComponent(voice)}&speed=${encodeURIComponent(speed)}`;
+            downloadBtn.style.display = 'none';
+            isPlaying = true;
+            updateStopButton();
             currentPlayer = new KokoroPlayer();
             currentRequestId = null;
             setBusy(true);
             updateWsStatus('connecting', '连接中...');
+            currentWs = new WebSocket(wsUrl);
 
             currentWs.onopen = () => {
                 updateWsStatus('connected', '已连接');
@@ -534,7 +626,10 @@
             }
             currentWs = null;
             setBusy(false);
+            if (isError) { isPlaying = false; }
+            updateStopButton();
             updateWsStatus(isError ? 'error' : '', isError ? '连接异常' : '未连接');
+            if (!isError) showDownloadBtn();
         }
 
         document.getElementById('tts-form').addEventListener('submit', async function(e) {
@@ -553,6 +648,8 @@
 
         renderVoiceTabs();
         filterVoiceOptions();
+        updateCharCount();
+        textEl.addEventListener('input', updateCharCount);
     </script>
 </body>
 </html>
