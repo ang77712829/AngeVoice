@@ -1,21 +1,21 @@
-"""Kokoro TTS — 轻量级中文语音合成
+"""AngeVoice — lightweight Chinese TTS service built on Kokoro v1.1.
 
-用法:
-    # 作为库
+Usage:
+    # Library
     from kokoro_tts import TTSEngine
     engine = TTSEngine()
     engine.load()
     wav_bytes = engine.synthesize("你好世界")
 
-    # 命令行
-    kokoro-tts serve              # 启动 HTTP 服务
-    kokoro-tts synth "你好" -o out.wav  # 直接合成
-    kokoro-tts voices             # 列出音色
+    # CLI
+    kokoro-tts serve
+    kokoro-tts synth "你好" -o out.wav
+    kokoro-tts voices
 """
 
-__version__ = "2.1.1"
+__version__ = "2.4.0"
 
-# Lazy imports — don't force numpy/torch at package import time
+# Lazy imports — don't force numpy/torch at package import time.
 def __getattr__(name):
     if name == "TTSEngine":
         from .engine import TTSEngine
