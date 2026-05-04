@@ -1,9 +1,6 @@
 name: Container Images
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       publish:
@@ -51,9 +48,7 @@ jobs:
         id: publish
         shell: bash
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${{ github.event.inputs.publish }}" == "true" ]]; then
+          if [[ "${{ github.event.inputs.publish }}" == "true" ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -108,5 +103,5 @@ jobs:
         if: steps.publish.outputs.enabled != 'true'
         run: |
           echo "Images were built for validation only."
-          echo "Push is enabled only for v* tags or manual workflow_dispatch with publish=true."
+          echo "Push is enabled only for manual workflow_dispatch with publish=true."
           echo "Registries: GHCR, Docker Hub"
