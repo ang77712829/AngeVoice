@@ -5,8 +5,13 @@ FastAPI 在启动时才导入。
 """
 
 import asyncio
+import base64
+import hashlib
 import hmac
 import logging
+import time
+import uuid
+from collections import OrderedDict
 from io import BytesIO
 from pathlib import Path
 from typing import Optional
@@ -31,6 +36,63 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     cfg = config or load_config()
     eng = engine or TTSEngine(cfg)
     tts_semaphore = asyncio.Semaphore(max(1, int(cfg.max_concurrent_requests)))
+    tts_cache: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+    active_requests: dict[str, dict] = {}
+    stats = {
+        "requests_total": 0,
+        "requests_ok": 0,
+        "requests_error": 0,
+        "cache_hits": 0,
+        "cache_misses": 0,
+        "characters_total": 0,
+        "audio_bytes_total": 0,
+        "synthesis_seconds_total": 0.0,
+        "started_at": time.time(),
+    }
+
+    def _new_request_id() -> str:
+        return uuid.uuid4().hex[:12]
+
+    def _cache_key(text: str, voice: str, speed: float, fmt: str) -> str:
+        payload = f"{voice}\0{float(speed):.3f}\0{fmt}\0{text}".encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    def _cache_get(key: str):
+        if not cfg.cache_enabled or cfg.cache_max_items <= 0:
+            return None
+        item = tts_cache.get(key)
+        if item is None:
+            stats["cache_misses"] += 1
+            return None
+        tts_cache.move_to_end(key)
+        stats["cache_hits"] += 1
+        return item
+
+    def _cache_set(key: str, value: tuple[bytes, str]) -> None:
+        if not cfg.cache_enabled or cfg.cache_max_items <= 0:
+            return
+        tts_cache[key] = value
+        tts_cache.move_to_end(key)
+        while len(tts_cache) > cfg.cache_max_items:
+            tts_cache.popitem(last=False)
+
+    def _mark_request(request_id: str, status: str, **extra) -> None:
+        if not cfg.queue_status_enabled:
+            return
+        item = active_requests.setdefault(
+            request_id,
+            {"id": request_id, "created_at": time.time(), "status": status},
+        )
+        item.update({"status": status, "updated_at": time.time(), **extra})
+
+    def _finish_request(request_id: str, status: str, **extra) -> None:
+        _mark_request(request_id, status, **extra)
+        if cfg.queue_status_enabled:
+            # 保留最近状态，避免无限增长
+            if len(active_requests) > 100:
+                oldest = sorted(active_requests.items(), key=lambda kv: kv[1].get("updated_at", 0))[:20]
+                for key, _ in oldest:
+                    active_requests.pop(key, None)
 
     # Lifespan
     from contextlib import asynccontextmanager
@@ -44,7 +106,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     app = FastAPI(
         title="Kokoro TTS",
         description="轻量级中文 TTS 服务 (Kokoro v1.1)",
-        version="2.1.3",
+        version="2.3.0",
         lifespan=lifespan,
     )
 
@@ -94,20 +156,41 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
 
     def _synthesize_response_bytes(text: str, voice: str, speed: float, fmt: str) -> tuple[bytes, str]:
         fmt = _normalize_response_format(fmt)
+        key = _cache_key(text, voice, speed, fmt)
+        cached = _cache_get(key)
+        if cached is not None:
+            return cached
+
         if fmt == "pcm":
             wav = eng.synthesize_array(text=text, voice=voice, speed=speed)
-            return eng._encode_segment(wav, "pcm_s16le"), "audio/pcm"
-        return eng.synthesize(text=text, voice=voice, speed=speed), "audio/wav"
+            result = (eng._encode_segment(wav, "pcm_s16le"), "audio/pcm")
+        else:
+            result = (eng.synthesize(text=text, voice=voice, speed=speed), "audio/wav")
+        _cache_set(key, result)
+        return result
 
-    async def _synthesize_response_threaded(text: str, voice: str, speed: float, fmt: str):
-        async with tts_semaphore:
-            return await run_in_threadpool(
-                _synthesize_response_bytes,
-                text,
-                voice,
-                speed,
-                fmt,
-            )
+    async def _synthesize_response_threaded(text: str, voice: str, speed: float, fmt: str, request_id: str):
+        start = time.perf_counter()
+        stats["requests_total"] += 1
+        stats["characters_total"] += len(text or "")
+        _mark_request(request_id, "queued", voice=voice, format=fmt, chars=len(text or ""))
+        try:
+            async with tts_semaphore:
+                _mark_request(request_id, "running")
+                result = await asyncio.wait_for(
+                    run_in_threadpool(_synthesize_response_bytes, text, voice, speed, fmt),
+                    timeout=cfg.request_timeout_seconds,
+                )
+            elapsed = time.perf_counter() - start
+            stats["requests_ok"] += 1
+            stats["audio_bytes_total"] += len(result[0])
+            stats["synthesis_seconds_total"] += elapsed
+            _finish_request(request_id, "done", elapsed_seconds=round(elapsed, 3), bytes=len(result[0]))
+            return result
+        except Exception as exc:
+            stats["requests_error"] += 1
+            _finish_request(request_id, "error", error=str(exc))
+            raise
 
     async def _verify_ws_key(websocket: WebSocket, token: str = "") -> bool:
         if not cfg.api_key:
@@ -135,23 +218,51 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
             "voices": cfg.get_voices(),
             "sample_rate": cfg.sample_rate,
             "max_concurrent_requests": cfg.max_concurrent_requests,
+            "cache_enabled": cfg.cache_enabled,
+            "cache_items": len(tts_cache),
         }
 
     @app.get("/v1/audio/voices")
     async def list_voices():
         return {"voices": cfg.get_voices()}
 
+    @app.get("/stats")
+    async def get_stats(_=Depends(verify_api_key)):
+        if not cfg.metrics_enabled:
+            raise HTTPException(status_code=404, detail="Metrics disabled")
+        uptime = time.time() - stats["started_at"]
+        return {
+            **stats,
+            "uptime_seconds": round(uptime, 3),
+            "cache_items": len(tts_cache),
+            "active_requests": len([r for r in active_requests.values() if r.get("status") in {"queued", "running"}]),
+        }
+
+    @app.get("/requests")
+    async def get_requests(_=Depends(verify_api_key)):
+        if not cfg.queue_status_enabled:
+            raise HTTPException(status_code=404, detail="Queue status disabled")
+        return {"requests": list(active_requests.values())[-100:]}
+
     @app.post("/v1/audio/speech")
     async def openai_tts(req: TTSRequest, _=Depends(verify_api_key)):
         """OpenAI 兼容 TTS 接口"""
+        request_id = _new_request_id()
         try:
             audio_bytes, media_type = await _synthesize_response_threaded(
                 text=req.input,
                 voice=req.voice,
                 speed=req.speed,
                 fmt=req.response_format,
+                request_id=request_id,
             )
-            return StreamingResponse(BytesIO(audio_bytes), media_type=media_type)
+            return StreamingResponse(
+                BytesIO(audio_bytes),
+                media_type=media_type,
+                headers={"X-Request-ID": request_id},
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="合成超时")
         except HTTPException:
             raise
         except ValueError as e:
@@ -163,6 +274,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     @app.post("/api/tts")
     async def tts_post(request: Request, _=Depends(verify_api_key)):
         """兼容旧版接口（支持 JSON 和 Form）"""
+        request_id = _new_request_id()
         content_type = request.headers.get("Content-Type", "")
 
         if "application/json" in content_type:
@@ -189,8 +301,15 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
                 voice=voice,
                 speed=float(speed),
                 fmt=fmt,
+                request_id=request_id,
             )
-            return StreamingResponse(BytesIO(audio_bytes), media_type=media_type)
+            return StreamingResponse(
+                BytesIO(audio_bytes),
+                media_type=media_type,
+                headers={"X-Request-ID": request_id},
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="合成超时")
         except HTTPException:
             raise
         except ValueError as e:
@@ -208,6 +327,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
         _=Depends(verify_api_key),
     ):
         """GET 方式调用"""
+        request_id = _new_request_id()
         if not text:
             raise HTTPException(status_code=400, detail="缺少 text 参数")
         try:
@@ -216,8 +336,15 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
                 voice=voice,
                 speed=speed,
                 fmt=response_format,
+                request_id=request_id,
             )
-            return StreamingResponse(BytesIO(audio_bytes), media_type=media_type)
+            return StreamingResponse(
+                BytesIO(audio_bytes),
+                media_type=media_type,
+                headers={"X-Request-ID": request_id},
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="合成超时")
         except HTTPException:
             raise
         except ValueError as e:
@@ -231,6 +358,8 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     @app.websocket("/ws/v1/tts")
     async def ws_tts(websocket: WebSocket):
         await websocket.accept()
+        request_id = _new_request_id()
+        producer_task = None
         try:
             msg = await websocket.receive_json()
             text = msg.get("text", "")
@@ -238,57 +367,88 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
             speed = msg.get("speed", cfg.default_speed)
             fmt = msg.get("format", cfg.stream_format)
             token = msg.get("token", "")
+            binary = bool(msg.get("binary", False)) and cfg.stream_binary_enabled
 
             # API Key 验证：支持首帧 token 或 Authorization: Bearer
             if not await _verify_ws_key(websocket, token=token):
-                await websocket.send_json({"type": "error", "message": "Unauthorized"})
+                await websocket.send_json({"type": "error", "message": "Unauthorized", "request_id": request_id})
                 return
 
             if not cfg.stream_enabled:
-                await websocket.send_json({"type": "error", "message": "流式合成未启用"})
+                await websocket.send_json({"type": "error", "message": "流式合成未启用", "request_id": request_id})
                 return
 
             if not text:
-                await websocket.send_json({"type": "error", "message": "缺少 text 参数"})
+                await websocket.send_json({"type": "error", "message": "缺少 text 参数", "request_id": request_id})
                 return
 
             if len(text) > cfg.max_text_length:
                 await websocket.send_json(
-                    {"type": "error", "message": f"文本过长，上限 {cfg.max_text_length}"}
+                    {"type": "error", "message": f"文本过长，上限 {cfg.max_text_length}", "request_id": request_id}
                 )
                 return
 
             queue: asyncio.Queue = asyncio.Queue()
             loop = asyncio.get_running_loop()
             done_marker = object()
+            cancel_flag = {"cancelled": False}
 
             def producer():
                 try:
                     for chunk in eng.synthesize_stream(text, voice, speed, fmt):
+                        if cancel_flag["cancelled"]:
+                            break
                         loop.call_soon_threadsafe(queue.put_nowait, chunk)
                 except Exception as exc:
                     logger.error(f"WS TTS 生产者错误: {exc}")
                     loop.call_soon_threadsafe(
                         queue.put_nowait,
-                        {"type": "error", "message": str(exc)},
+                        {"type": "error", "message": str(exc), "request_id": request_id},
                     )
                 finally:
                     loop.call_soon_threadsafe(queue.put_nowait, done_marker)
 
+            stats["requests_total"] += 1
+            stats["characters_total"] += len(text or "")
+            start = time.perf_counter()
+            _mark_request(request_id, "queued", voice=voice, format=fmt, chars=len(text or ""), websocket=True)
+
             async with tts_semaphore:
+                _mark_request(request_id, "running")
                 producer_task = asyncio.create_task(asyncio.to_thread(producer))
                 try:
                     while True:
-                        chunk = await queue.get()
+                        chunk = await asyncio.wait_for(queue.get(), timeout=cfg.request_timeout_seconds)
                         if chunk is done_marker:
                             break
-                        await websocket.send_json(chunk)
+                        if isinstance(chunk, dict):
+                            chunk.setdefault("request_id", request_id)
+                        if binary and isinstance(chunk, dict) and chunk.get("type") == "audio":
+                            await websocket.send_json({k: v for k, v in chunk.items() if k != "data"})
+                            await websocket.send_bytes(base64.b64decode(chunk["data"]))
+                        else:
+                            await websocket.send_json(chunk)
                 finally:
+                    cancel_flag["cancelled"] = True
                     await producer_task
+
+            elapsed = time.perf_counter() - start
+            stats["requests_ok"] += 1
+            stats["synthesis_seconds_total"] += elapsed
+            _finish_request(request_id, "done", elapsed_seconds=round(elapsed, 3))
+        except asyncio.TimeoutError:
+            stats["requests_error"] += 1
+            _finish_request(request_id, "timeout")
+            try:
+                await websocket.send_json({"type": "error", "message": "合成超时", "request_id": request_id})
+            except Exception:
+                pass
         except Exception as e:
+            stats["requests_error"] += 1
+            _finish_request(request_id, "error", error=str(e))
             logger.error(f"WS TTS 错误: {e}")
             try:
-                await websocket.send_json({"type": "error", "message": str(e)})
+                await websocket.send_json({"type": "error", "message": str(e), "request_id": request_id})
             except Exception:
                 pass
         finally:
