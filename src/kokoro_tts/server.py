@@ -9,6 +9,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -37,6 +38,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     tts_cache: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
     active_requests: dict[str, dict] = {}
     cancelled_requests: set[str] = set()
+    stats_lock = threading.Lock()
     stats = {
         "requests_total": 0,
         "requests_ok": 0,
@@ -50,6 +52,14 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
         "started_at": time.time(),
     }
 
+    def _inc_stat(name: str, delta=1) -> None:
+        with stats_lock:
+            stats[name] = stats.get(name, 0) + delta
+
+    def _snapshot_stats() -> dict:
+        with stats_lock:
+            return dict(stats)
+
     def _new_request_id() -> str:
         return uuid.uuid4().hex[:12]
 
@@ -62,10 +72,10 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
             return None
         item = tts_cache.get(key)
         if item is None:
-            stats["cache_misses"] += 1
+            _inc_stat("cache_misses")
             return None
         tts_cache.move_to_end(key)
-        stats["cache_hits"] += 1
+        _inc_stat("cache_hits")
         return item
 
     def _cache_set(key: str, value: tuple[bytes, str]) -> None:
@@ -79,10 +89,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     def _mark_request(request_id: str, status: str, **extra) -> None:
         if not cfg.queue_status_enabled:
             return
-        item = active_requests.setdefault(
-            request_id,
-            {"id": request_id, "created_at": time.time(), "status": status},
-        )
+        item = active_requests.setdefault(request_id, {"id": request_id, "created_at": time.time(), "status": status})
         item.update({"status": status, "updated_at": time.time(), **extra})
 
     def _finish_request(request_id: str, status: str, **extra) -> None:
@@ -100,9 +107,22 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     def _request_cancel(request_id: str) -> bool:
         known = request_id in active_requests
         cancelled_requests.add(request_id)
-        stats["ws_cancelled_total"] = stats.get("ws_cancelled_total", 0) + 1
+        _inc_stat("ws_cancelled_total")
         _mark_request(request_id, "cancelling")
         return known
+
+    async def _run_tts_call(callable_, request_id: str):
+        try:
+            return await callable_()
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="合成超时")
+        except HTTPException:
+            raise
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception:
+            logger.exception("TTS request failed", extra={"request_id": request_id})
+            raise HTTPException(status_code=500, detail="合成失败，请检查参数")
 
     from contextlib import asynccontextmanager
 
@@ -182,8 +202,8 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
 
     async def _synthesize_response_threaded(text: str, voice: str, speed: float, fmt: str, request_id: str):
         start = time.perf_counter()
-        stats["requests_total"] += 1
-        stats["characters_total"] += len(text or "")
+        _inc_stat("requests_total")
+        _inc_stat("characters_total", len(text or ""))
         _mark_request(request_id, "queued", voice=voice, format=fmt, chars=len(text or ""))
         try:
             async with tts_semaphore:
@@ -196,15 +216,15 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
                     timeout=cfg.request_timeout_seconds,
                 )
             elapsed = time.perf_counter() - start
-            stats["requests_ok"] += 1
-            stats["audio_bytes_total"] += len(result[0])
-            stats["synthesis_seconds_total"] += elapsed
+            _inc_stat("requests_ok")
+            _inc_stat("audio_bytes_total", len(result[0]))
+            _inc_stat("synthesis_seconds_total", elapsed)
             _finish_request(request_id, "done", elapsed_seconds=round(elapsed, 3), bytes=len(result[0]))
             return result
         except Exception as exc:
             if isinstance(exc, HTTPException):
                 raise
-            stats["requests_error"] += 1
+            _inc_stat("requests_error")
             _finish_request(request_id, "error", error=str(exc))
             raise
 
@@ -248,9 +268,10 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     async def get_stats(_=Depends(verify_api_key)):
         if not cfg.metrics_enabled:
             raise HTTPException(status_code=404, detail="Metrics disabled")
-        uptime = time.time() - stats["started_at"]
+        snapshot = _snapshot_stats()
+        uptime = time.time() - snapshot["started_at"]
         return {
-            **stats,
+            **snapshot,
             "uptime_seconds": round(uptime, 3),
             "cache_items": len(tts_cache),
             "active_requests": len([r for r in active_requests.values() if r.get("status") in {"queued", "running", "cancelling"}]),
@@ -270,18 +291,11 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     @app.post("/v1/audio/speech")
     async def openai_tts(req: TTSRequest, _=Depends(verify_api_key)):
         request_id = _new_request_id()
-        try:
-            audio_bytes, media_type = await _synthesize_response_threaded(req.input, req.voice, req.speed, req.response_format, request_id)
-            return StreamingResponse(BytesIO(audio_bytes), media_type=media_type, headers={"X-Request-ID": request_id})
-        except asyncio.TimeoutError:
-            raise HTTPException(status_code=504, detail="合成超时")
-        except HTTPException:
-            raise
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            logger.error(f"TTS 合成失败: {e}")
-            raise HTTPException(status_code=500, detail="合成失败，请检查参数")
+        audio_bytes, media_type = await _run_tts_call(
+            lambda: _synthesize_response_threaded(req.input, req.voice, req.speed, req.response_format, request_id),
+            request_id,
+        )
+        return StreamingResponse(BytesIO(audio_bytes), media_type=media_type, headers={"X-Request-ID": request_id})
 
     @app.post("/api/tts")
     async def tts_post(request: Request, _=Depends(verify_api_key)):
@@ -305,36 +319,22 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
         if len(text) > cfg.max_text_length:
             raise HTTPException(status_code=400, detail=f"文本过长，上限 {cfg.max_text_length} 字符")
 
-        try:
-            audio_bytes, media_type = await _synthesize_response_threaded(text, voice, float(speed), fmt, request_id)
-            return StreamingResponse(BytesIO(audio_bytes), media_type=media_type, headers={"X-Request-ID": request_id})
-        except asyncio.TimeoutError:
-            raise HTTPException(status_code=504, detail="合成超时")
-        except HTTPException:
-            raise
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            logger.error(f"TTS 合成失败: {e}")
-            raise HTTPException(status_code=500, detail="合成失败，请检查参数")
+        audio_bytes, media_type = await _run_tts_call(
+            lambda: _synthesize_response_threaded(text, voice, float(speed), fmt, request_id),
+            request_id,
+        )
+        return StreamingResponse(BytesIO(audio_bytes), media_type=media_type, headers={"X-Request-ID": request_id})
 
     @app.get("/api/tts")
     async def tts_get(text: str, voice: str = "zm_010", speed: float = 1.0, response_format: str = "wav", _=Depends(verify_api_key)):
         request_id = _new_request_id()
         if not text:
             raise HTTPException(status_code=400, detail="缺少 text 参数")
-        try:
-            audio_bytes, media_type = await _synthesize_response_threaded(text, voice, speed, response_format, request_id)
-            return StreamingResponse(BytesIO(audio_bytes), media_type=media_type, headers={"X-Request-ID": request_id})
-        except asyncio.TimeoutError:
-            raise HTTPException(status_code=504, detail="合成超时")
-        except HTTPException:
-            raise
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            logger.error(f"TTS 合成失败: {e}")
-            raise HTTPException(status_code=500, detail="合成失败，请检查参数")
+        audio_bytes, media_type = await _run_tts_call(
+            lambda: _synthesize_response_threaded(text, voice, speed, response_format, request_id),
+            request_id,
+        )
+        return StreamingResponse(BytesIO(audio_bytes), media_type=media_type, headers={"X-Request-ID": request_id})
 
     @app.websocket("/ws/v1/tts")
     async def ws_tts(websocket: WebSocket):
@@ -414,18 +414,24 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
                         if cancel_flag["cancelled"] or _is_cancelled(request_id):
                             break
                         thread_put(chunk)
-                except Exception as exc:
-                    logger.error(f"WS TTS 生产者错误: {exc}")
+                except Exception:
+                    logger.exception("WS TTS producer failed", extra={"request_id": request_id})
                     if not cancel_flag["cancelled"]:
-                        loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(exc), "request_id": request_id})
+                        try:
+                            thread_put({"type": "error", "message": "流式合成失败", "request_id": request_id})
+                        except Exception:
+                            logger.exception("Failed to deliver WS error message", extra={"request_id": request_id})
                 finally:
                     if cancel_flag["cancelled"] or _is_cancelled(request_id):
                         loop.call_soon_threadsafe(asyncio.create_task, notify_cancelled())
                     else:
-                        loop.call_soon_threadsafe(queue.put_nowait, done_marker)
+                        try:
+                            thread_put(done_marker)
+                        except Exception:
+                            logger.exception("Failed to deliver WS completion marker", extra={"request_id": request_id})
 
-            stats["requests_total"] += 1
-            stats["characters_total"] += len(text or "")
+            _inc_stat("requests_total")
+            _inc_stat("characters_total", len(text or ""))
             start = time.perf_counter()
             _mark_request(request_id, "queued", voice=voice, format=fmt, chars=len(text or ""), websocket=True)
 
@@ -458,22 +464,22 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
             if cancel_flag["by_client"] or _is_cancelled(request_id):
                 _finish_request(request_id, "cancelled", elapsed_seconds=round(elapsed, 3))
             else:
-                stats["requests_ok"] += 1
-                stats["synthesis_seconds_total"] += elapsed
+                _inc_stat("requests_ok")
+                _inc_stat("synthesis_seconds_total", elapsed)
                 _finish_request(request_id, "done", elapsed_seconds=round(elapsed, 3))
         except asyncio.TimeoutError:
-            stats["requests_error"] += 1
+            _inc_stat("requests_error")
             _finish_request(request_id, "timeout")
             try:
                 await websocket.send_json({"type": "error", "message": "合成超时", "request_id": request_id})
             except Exception:
                 pass
-        except Exception as e:
-            stats["requests_error"] += 1
-            _finish_request(request_id, "error", error=str(e))
-            logger.error(f"WS TTS 错误: {e}")
+        except Exception:
+            _inc_stat("requests_error")
+            _finish_request(request_id, "error")
+            logger.exception("WS TTS failed", extra={"request_id": request_id})
             try:
-                await websocket.send_json({"type": "error", "message": str(e), "request_id": request_id})
+                await websocket.send_json({"type": "error", "message": "流式合成失败", "request_id": request_id})
             except Exception:
                 pass
         finally:
