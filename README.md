@@ -296,7 +296,7 @@ ghcr.io/ang77712829/angevoice-gpu:v2.4.0
 ghcr.io/ang77712829/angevoice-legacy-gpu:v2.4.0
 ```
 
-发布流程见 [docs/RELEASE.md](docs/RELEASE.md)。
+
 
 ## 项目结构
 
@@ -330,7 +330,7 @@ AngeVoice/
 - [v2.4 功能说明](docs/V2_4_FEATURES.md)
 - [Legacy GPU 部署说明](docker/legacy-gpu/README.md)
 - [路线图](docs/ROADMAP.md)
-- [发布指南](docs/RELEASE.md)
+
 
 ## 更新日志
 

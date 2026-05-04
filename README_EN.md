@@ -286,7 +286,7 @@ ghcr.io/ang77712829/angevoice-gpu:v2.4.0
 ghcr.io/ang77712829/angevoice-legacy-gpu:v2.4.0
 ```
 
-See [docs/RELEASE.md](docs/RELEASE.md) for the full release process.
+
 
 ## Project Structure
 
@@ -320,7 +320,7 @@ AngeVoice/
 - [v2.4 Features](docs/V2_4_FEATURES.md)
 - [Legacy GPU Deployment](docker/legacy-gpu/README.md)
 - [Roadmap](docs/ROADMAP.md)
-- [Release Guide](docs/RELEASE.md)
+
 
 ## Changelog
 
