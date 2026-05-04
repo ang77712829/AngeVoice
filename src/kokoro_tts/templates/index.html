@@ -3,541 +3,439 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kokoro TTS</title>
+    <title>AngeVoice</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary: #6d5dfc;
+            --primary-2: #36c8ff;
+            --accent: #ff7ad9;
+            --danger: #ff5b7f;
+            --success: #35c46b;
+            --text: #22243a;
+            --muted: #6d7085;
+            --card: rgba(255, 255, 255, 0.88);
+            --border: rgba(109, 93, 252, 0.18);
+            --shadow: 0 28px 80px rgba(40, 31, 105, 0.26);
         }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+            color: var(--text);
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
+            padding: 28px;
+            overflow-x: hidden;
+            background:
+                radial-gradient(circle at 18% 18%, rgba(255, 122, 217, 0.35), transparent 30%),
+                radial-gradient(circle at 84% 12%, rgba(54, 200, 255, 0.32), transparent 32%),
+                linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
-        
-        /* 启动动画 */
+        body::before, body::after {
+            content: "";
+            position: fixed;
+            width: 380px;
+            height: 380px;
+            border-radius: 999px;
+            filter: blur(28px);
+            opacity: 0.25;
+            pointer-events: none;
+            animation: floatOrb 10s ease-in-out infinite alternate;
+        }
+        body::before { left: -90px; bottom: 8%; background: #36c8ff; }
+        body::after { right: -80px; top: 12%; background: #ff7ad9; animation-delay: -4s; }
+        @keyframes floatOrb { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(34px, -28px, 0) scale(1.08); } }
         .splash-screen {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            inset: 0;
             z-index: 9999;
-            animation: fadeOut 2s ease-in-out forwards;
+            display: grid;
+            place-items: center;
+            background:
+                radial-gradient(circle at 50% 45%, rgba(255,255,255,.26), transparent 30%),
+                linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            animation: splashOut 1.8s ease forwards;
         }
-        
-        .splash-text {
-            font-size: 120px;
-            font-weight: bold;
-            color: white;
-            text-shadow: 0 0 30px rgba(255, 255, 255, 0.5);
-            animation: pulse 1.5s ease-in-out infinite;
+        .splash-inner { text-align: center; }
+        .splash-logo {
+            font-size: clamp(54px, 9vw, 126px);
+            line-height: 1;
+            font-weight: 950;
+            letter-spacing: -0.08em;
+            background: linear-gradient(100deg, #fff 0%, #8df0ff 30%, #ff9ee8 62%, #fff 100%);
+            background-size: 220% auto;
+            color: transparent;
+            -webkit-background-clip: text;
+            background-clip: text;
+            text-shadow: 0 18px 60px rgba(255,255,255,.35);
+            animation: shimmer 1.6s linear infinite, logoPulse 1.4s ease-in-out infinite;
         }
-        
-        @keyframes fadeOut {
-            0% {
-                opacity: 1;
-            }
-            70% {
-                opacity: 1;
-            }
-            100% {
-                opacity: 0;
-                visibility: hidden;
-            }
-        }
-        
-        @keyframes pulse {
-            0% {
-                transform: scale(1);
-            }
-            50% {
-                transform: scale(1.1);
-            }
-            100% {
-                transform: scale(1);
-            }
-        }
-        
+        .splash-subtitle { margin-top: 16px; color: rgba(255,255,255,.86); font-size: 15px; letter-spacing: .28em; text-transform: uppercase; }
+        .sound-bars { margin: 26px auto 0; display: flex; justify-content: center; align-items: end; gap: 8px; height: 38px; }
+        .sound-bars span { width: 7px; border-radius: 999px; background: rgba(255,255,255,.82); animation: barDance .9s ease-in-out infinite alternate; box-shadow: 0 0 18px rgba(255,255,255,.36); }
+        .sound-bars span:nth-child(1){height: 18px; animation-delay: 0s;}
+        .sound-bars span:nth-child(2){height: 32px; animation-delay: .12s;}
+        .sound-bars span:nth-child(3){height: 24px; animation-delay: .24s;}
+        .sound-bars span:nth-child(4){height: 36px; animation-delay: .36s;}
+        .sound-bars span:nth-child(5){height: 20px; animation-delay: .48s;}
+        @keyframes shimmer { to { background-position: 220% center; } }
+        @keyframes logoPulse { 50% { transform: scale(1.035); } }
+        @keyframes barDance { to { transform: scaleY(.45); opacity: .55; } }
+        @keyframes splashOut { 0%, 68% { opacity: 1; visibility: visible; } 100% { opacity: 0; visibility: hidden; } }
         .container {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            backdrop-filter: blur(10px);
-            padding: 40px;
-            width: 100%;
-            max-width: 800px;
-            animation: slideUp 1s ease-out forwards;
-            animation-delay: 1.5s;
+            width: min(940px, 100%);
+            position: relative;
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,.58);
+            border-radius: 28px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(22px);
+            padding: 38px;
+            animation: slideUp .95s ease-out forwards;
+            animation-delay: 1.15s;
             opacity: 0;
-            transform: translateY(30px);
+            transform: translateY(28px);
         }
-        
-        @keyframes slideUp {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
+        @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
+        .brand { text-align: center; margin-bottom: 30px; }
+        .brand-kicker { color: var(--muted); font-weight: 800; font-size: 13px; letter-spacing: .22em; text-transform: uppercase; }
         h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
-            font-size: 28px;
-            font-weight: 700;
+            margin-top: 8px;
+            font-size: clamp(38px, 5vw, 64px);
+            font-weight: 950;
+            letter-spacing: -0.065em;
+            background: linear-gradient(100deg, #5b56f6 0%, #19bfff 36%, #ff72c9 70%, #7048ff 100%);
+            background-size: 220% auto;
+            color: transparent;
+            -webkit-background-clip: text;
+            background-clip: text;
+            animation: shimmer 6s linear infinite;
         }
-        
-        .form-group {
-            margin-bottom: 25px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #555;
-            font-size: 16px;
-        }
-        
-        textarea {
+        .brand-desc { margin: 12px auto 0; max-width: 700px; color: var(--muted); font-size: 15px; line-height: 1.75; }
+        .brand-desc strong { color: #5b56f6; }
+        .mini-panels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+        .mini-panel { padding: 13px 14px; border-radius: 18px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.7); color: var(--muted); font-size: 13px; }
+        .mini-panel b { display:block; color: var(--text); margin-bottom: 3px; }
+        .form-grid { display: grid; gap: 22px; }
+        .form-group { display: grid; gap: 10px; }
+        label { font-weight: 760; color: #36384b; font-size: 15px; }
+        textarea, select {
             width: 100%;
-            height: 180px;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            resize: vertical;
+            border: 1px solid rgba(90, 91, 120, .18);
+            border-radius: 18px;
+            background: rgba(255,255,255,.78);
+            color: var(--text);
             font-size: 16px;
             font-family: inherit;
-            transition: border-color 0.3s ease;
-        }
-        
-        textarea:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            transition: border-color .22s ease, box-shadow .22s ease, background .22s ease;
         }
-        
-        select {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 16px;
-            background: white;
-            transition: border-color 0.3s ease;
-        }
-        
-        select:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        
-        .button-container {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 25px;
-        }
-        
-        button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            flex: 1;
-            max-width: 200px;
-        }
-        
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        }
-        
-        button:active {
-            transform: translateY(0);
-        }
-        
-        .loading {
-            display: none;
-            color: #667eea;
-            font-weight: 600;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        
-        .audio-player {
-            margin-top: 30px;
-            padding: 20px;
-            background: rgba(102, 126, 234, 0.05);
-            border-radius: 8px;
-            border: 1px solid rgba(102, 126, 234, 0.2);
-        }
-        
-        audio {
-            width: 100%;
-            margin-top: 10px;
-        }
-        
-        .voice-info {
-            margin-top: 15px;
-            font-size: 14px;
-            color: #666;
-            text-align: center;
-        }
-        
-        /* 流式模式 UI */
+        textarea { min-height: 180px; resize: vertical; padding: 18px; line-height: 1.7; }
+        select { padding: 14px 16px; }
+        textarea:focus, select:focus { border-color: rgba(109,93,252,.58); box-shadow: 0 0 0 5px rgba(109,93,252,.11); background: #fff; }
+        .voice-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+        .speed-row { display: flex; align-items: center; gap: 12px; }
+        input[type="range"] { accent-color: var(--primary); width: 190px; }
+        #speed-value { min-width: 42px; color: var(--muted); font-weight: 800; }
         .stream-controls {
             display: flex;
             align-items: center;
-            gap: 15px;
-            margin-bottom: 25px;
-            padding: 12px 15px;
-            background: rgba(102, 126, 234, 0.05);
-            border-radius: 8px;
-            border: 1px solid rgba(102, 126, 234, 0.2);
+            gap: 14px;
+            padding: 14px 16px;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: rgba(109, 93, 252, 0.07);
         }
-        
-        .stream-controls label {
-            margin-bottom: 0;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
+        .stream-controls label { margin: 0; display: inline-flex; align-items: center; gap: 9px; cursor: pointer; }
+        .stream-controls input { width: 18px; height: 18px; accent-color: var(--primary); }
+        .ws-status { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border-radius: 999px; color: var(--muted); background: rgba(255,255,255,.62); font-size: 13px; font-weight: 800; }
+        .dot { width: 9px; height: 9px; border-radius: 999px; background: #b7bac8; }
+        .ws-status.connected .dot { background: var(--success); box-shadow: 0 0 0 5px rgba(53,196,107,.13); }
+        .ws-status.connecting .dot { background: #ffb020; animation: blink 1s infinite; }
+        .ws-status.error .dot { background: var(--danger); box-shadow: 0 0 0 5px rgba(255,91,127,.12); }
+        @keyframes blink { 50% { opacity: .35; } }
+        .button-container { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 2px; }
+        button {
+            border: 0;
+            border-radius: 16px;
+            padding: 13px 22px;
+            color: #fff;
+            font-weight: 850;
+            font-size: 15px;
             cursor: pointer;
+            transition: transform .22s ease, box-shadow .22s ease, opacity .22s ease;
+            box-shadow: 0 12px 26px rgba(109,93,252,.26);
         }
-        
-        .stream-controls input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-        
-        .ws-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 13px;
-            color: #888;
-            margin-left: auto;
-        }
-        
-        .ws-status .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #ccc;
-        }
-        
-        .ws-status.connected .dot {
-            background: #4CAF50;
-        }
-        
-        .ws-status.connecting .dot {
-            background: #FF9800;
-            animation: blink 1s infinite;
-        }
-        
-        .ws-status.error .dot {
-            background: #f44336;
-        }
-        
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        
+        button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 34px rgba(109,93,252,.32); }
+        button:disabled { opacity: .52; cursor: not-allowed; }
+        .btn-primary { background: linear-gradient(135deg, #6574f6 0%, #7b45c4 100%); min-width: 190px; }
+        .btn-secondary { background: linear-gradient(135deg, #1bbcff 0%, #5b56f6 100%); }
+        .btn-danger { background: linear-gradient(135deg, #ff5b7f 0%, #ff8c42 100%); box-shadow: 0 12px 26px rgba(255,91,127,.24); }
+        .btn-ghost { color: #5d5f79; background: rgba(255,255,255,.72); border: 1px solid rgba(90,91,120,.14); box-shadow: none; }
+        .loading { display: none; color: var(--primary); font-weight: 800; }
         .stream-progress {
             display: none;
-            margin-top: 15px;
-            padding: 10px 15px;
-            background: rgba(76, 175, 80, 0.1);
-            border-radius: 8px;
-            border: 1px solid rgba(76, 175, 80, 0.3);
+            margin-top: 14px;
+            padding: 12px 15px;
+            border: 1px solid rgba(53,196,107,.22);
+            background: rgba(53,196,107,.09);
+            color: #19864a;
+            border-radius: 16px;
             font-size: 14px;
-            color: #4CAF50;
+            font-weight: 760;
         }
-        
-        @media (max-width: 768px) {
-            .container {
-                padding: 30px;
-            }
-            
-            h1 {
-                font-size: 24px;
-            }
-            
-            textarea {
-                height: 150px;
-            }
-            
-            .splash-text {
-                font-size: 80px;
-            }
-            
-            .stream-controls {
-                flex-wrap: wrap;
-            }
+        .audio-player {
+            margin-top: 26px;
+            padding: 22px;
+            border-radius: 22px;
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(109,93,252,.08), rgba(255,255,255,.54));
+        }
+        .audio-player h3 { margin-bottom: 12px; }
+        audio { width: 100%; }
+        .voice-info { margin-top: 18px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.7; }
+        @media (max-width: 760px) {
+            body { padding: 16px; }
+            .container { padding: 24px; border-radius: 22px; }
+            .voice-row { grid-template-columns: 1fr; }
+            .mini-panels { grid-template-columns: 1fr; }
+            .stream-controls { flex-wrap: wrap; }
+            .ws-status { margin-left: 0; }
+            button { width: 100%; }
+            input[type="range"] { width: 100%; }
         }
     </style>
 </head>
 <body>
-    <!-- 启动动画 -->
     <div class="splash-screen">
-        <div class="splash-text">AH</div>
+        <div class="splash-inner">
+            <div class="splash-logo">AV</div>
+            <div class="splash-subtitle">AngeVoice</div>
+            <div class="sound-bars"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
     </div>
-    
-    <div class="container">
-        <h1>Kokoro TTS 语音合成</h1>
-        <form id="tts-form">
+
+    <main class="container">
+        <section class="brand">
+            <div class="brand-kicker">AngeVoice Studio</div>
+            <h1>AngeVoice</h1>
+            <p class="brand-desc">由 <strong>安歌</strong> 构建和维护的轻量级中文 TTS 服务，<strong>基于 Kokoro v1.1 模型构建</strong>，面向本地部署、Web 流式播放和 OpenAI 兼容语音接口。</p>
+        </section>
+
+        <div class="mini-panels">
+            <div class="mini-panel"><b>OpenAI API</b>/v1/audio/speech</div>
+            <div class="mini-panel"><b>Streaming</b>逐段实时合成</div>
+            <div class="mini-panel"><b>Voices</b>支持 .pt 音色文件</div>
+        </div>
+
+        <form id="tts-form" class="form-grid">
             <div class="form-group">
-                <label for="text">输入文本：</label>
-                <textarea id="text" name="text" placeholder="请输入要转换为语音的文本...">Kokoro 是一系列体积虽小但功能强大的 TTS 模型。</textarea>
+                <label for="text">输入文本</label>
+                <textarea id="text" name="text" placeholder="请输入要转换为语音的文本...">AngeVoice 是基于 Kokoro v1.1 模型构建的轻量级中文 TTS 服务，适合本地语音合成、Web 流式播放和 OpenAI 兼容接口调用。</textarea>
             </div>
             <div class="form-group">
-                <label for="voice">选择声音：</label>
-                <select id="voice" name="voice">
-                    {% for voice in voices %}
-                    <option value="{{ voice }}">{{ voice }}</option>
-                    {% endfor %}
-                </select>
+                <label for="voice">选择声音</label>
+                <div class="voice-row">
+                    <select id="voice" name="voice">
+                        {% for voice in voices %}
+                        <option value="{{ voice }}">{{ voice }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn-secondary" id="preview-voice-btn">试听音色</button>
+                </div>
             </div>
             <div class="form-group">
-                <label for="speed">语速调节：</label>
-                <input type="range" id="speed" name="speed" min="0.5" max="2.0" step="0.1" value="1.0">
-                <span id="speed-value">1.0</span>
+                <label for="speed">语速调节</label>
+                <div class="speed-row">
+                    <input type="range" id="speed" name="speed" min="0.5" max="2.0" step="0.1" value="1.0">
+                    <span id="speed-value">1.0</span>
+                </div>
             </div>
             <div class="stream-controls">
-                <label>
-                    <input type="checkbox" id="stream-toggle" checked>
-                    流式播放
-                </label>
-                <span class="ws-status" id="ws-status">
-                    <span class="dot"></span>
-                    <span class="ws-status-text">未连接</span>
-                </span>
+                <label><input type="checkbox" id="stream-toggle" checked> 流式播放</label>
+                <span class="ws-status" id="ws-status"><span class="dot"></span><span class="ws-status-text">未连接</span></span>
             </div>
             <div class="button-container">
-                <button type="submit">生成语音</button>
+                <button type="submit" class="btn-primary" id="generate-btn">生成语音</button>
+                <button type="button" class="btn-danger" id="stop-btn" disabled>停止生成</button>
+                <button type="button" class="btn-ghost" id="clear-btn">清空</button>
                 <div class="loading" id="loading">生成中...</div>
             </div>
             <div class="stream-progress" id="stream-progress"></div>
         </form>
         <div class="audio-player">
             <h3>音频播放</h3>
-            <audio id="audio-player" controls>
-                您的浏览器不支持音频播放。
-            </audio>
+            <audio id="audio-player" controls>您的浏览器不支持音频播放。</audio>
         </div>
-        <div class="voice-info">
-            提示：支持中英文混合输入，模型会自动处理不同语言的发音。开启流式播放可实现逐段实时合成播放。
-        </div>
-    </div>
+        <div class="voice-info">提示：支持中英文混合输入。流式播放模式支持逐段实时合成；点击“停止生成”可中断后续段落。</div>
+    </main>
+
     <script>
-        // KokoroPlayer: 流式 PCM 播放器
         class KokoroPlayer {
-            constructor() {
-                this.ctx = null;
-                this.nextStartTime = 0;
-            }
-            
-            init(sampleRate = 24000) {
-                this.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
-                this.nextStartTime = 0;
-            }
-            
-            resume() {
-                if (this.ctx && this.ctx.state === 'suspended') {
-                    this.ctx.resume();
-                }
-            }
-            
+            constructor() { this.ctx = null; this.nextStartTime = 0; this.sources = []; }
+            init(sampleRate = 24000) { this.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate }); this.nextStartTime = 0; }
+            resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
+            stop() { this.sources.forEach(s => { try { s.stop(); } catch (_) {} }); this.sources = []; this.nextStartTime = this.ctx ? this.ctx.currentTime : 0; }
             enqueuePCM(base64Data) {
                 if (!this.ctx) this.init();
                 this.resume();
-                
                 const raw = atob(base64Data);
                 const bytes = new Uint8Array(raw.length);
                 for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-                
                 const int16 = new Int16Array(bytes.buffer);
                 const float32 = new Float32Array(int16.length);
                 for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32767;
-                
                 const buffer = this.ctx.createBuffer(1, float32.length, this.ctx.sampleRate);
                 buffer.getChannelData(0).set(float32);
-                
                 const source = this.ctx.createBufferSource();
                 source.buffer = buffer;
                 source.connect(this.ctx.destination);
-                
                 const startTime = Math.max(this.ctx.currentTime, this.nextStartTime);
                 source.start(startTime);
                 this.nextStartTime = startTime + buffer.duration;
+                this.sources.push(source);
+                source.onended = () => { this.sources = this.sources.filter(s => s !== source); };
             }
         }
-        
+
         let currentPlayer = null;
         let currentWs = null;
+        let currentRequestId = null;
         let totalSegments = 0;
-        
-        // 实时显示语速值
-        document.getElementById('speed').addEventListener('input', function() {
-            document.getElementById('speed-value').textContent = this.value;
+
+        const speedEl = document.getElementById('speed');
+        const speedValueEl = document.getElementById('speed-value');
+        const loadingEl = document.getElementById('loading');
+        const generateBtn = document.getElementById('generate-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const audioPlayer = document.getElementById('audio-player');
+
+        speedEl.addEventListener('input', () => { speedValueEl.textContent = speedEl.value; });
+        document.getElementById('clear-btn').addEventListener('click', () => { document.getElementById('text').value = ''; });
+        document.getElementById('preview-voice-btn').addEventListener('click', async () => {
+            const voice = document.getElementById('voice').value;
+            const speed = speedEl.value;
+            await synthesizeHttp('你好，我是 AngeVoice 当前选中的音色预览。', voice, speed, true);
         });
-        
+        stopBtn.addEventListener('click', stopCurrentSynthesis);
+
+        function setBusy(busy) {
+            loadingEl.style.display = busy ? 'block' : 'none';
+            generateBtn.disabled = busy;
+            stopBtn.disabled = !busy;
+        }
         function updateWsStatus(status, text) {
             const el = document.getElementById('ws-status');
             el.className = 'ws-status ' + status;
             el.querySelector('.ws-status-text').textContent = text;
         }
-        
-        function showStreamProgress(text) {
+        function showStreamProgress(text, kind = 'ok') {
             const el = document.getElementById('stream-progress');
             el.style.display = 'block';
             el.textContent = text;
+            el.style.color = kind === 'danger' ? '#b42346' : '#19864a';
+            el.style.borderColor = kind === 'danger' ? 'rgba(255,91,127,.25)' : 'rgba(53,196,107,.22)';
+            el.style.background = kind === 'danger' ? 'rgba(255,91,127,.09)' : 'rgba(53,196,107,.09)';
         }
-        
-        function hideStreamProgress() {
-            document.getElementById('stream-progress').style.display = 'none';
+        function hideStreamProgress() { document.getElementById('stream-progress').style.display = 'none'; }
+
+        async function stopCurrentSynthesis() {
+            if (currentPlayer) currentPlayer.stop();
+            if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+                try { currentWs.send(JSON.stringify({ type: 'cancel' })); } catch (_) {}
+            }
+            if (currentRequestId) {
+                fetch(`/v1/audio/requests/${currentRequestId}/cancel`, { method: 'POST' }).catch(() => {});
+            }
+            showStreamProgress('已发送停止指令，正在停止后续段落...', 'danger');
+            stopBtn.disabled = true;
         }
-        
-        function synthesizeStream(text, voice, speed) {
-            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${proto}//${location.host}/ws/v1/tts`;
-            currentWs = new WebSocket(wsUrl);
-            
-            currentPlayer = new KokoroPlayer();
-            
-            updateWsStatus('connecting', '连接中...');
-            
-            currentWs.onopen = () => {
-                updateWsStatus('connected', '已连接');
-                currentWs.send(JSON.stringify({
-                    text: text,
-                    voice: voice,
-                    speed: parseFloat(speed),
-                    format: 'pcm_s16le'
-                }));
-            };
-            
-            currentWs.onmessage = (e) => {
-                const msg = JSON.parse(e.data);
-                if (msg.type === 'started') {
-                    totalSegments = msg.segments;
-                    showStreamProgress(`共 ${msg.segments} 段，正在合成...`);
-                } else if (msg.type === 'audio') {
-                    showStreamProgress(`段落 ${msg.index + 1} / ${totalSegments} 已接收`);
-                    try {
-                        currentPlayer.enqueuePCM(msg.data);
-                    } catch (err) {
-                        console.error('PCM decode error:', err);
-                    }
-                } else if (msg.type === 'segment_error') {
-                    console.warn(`段落 ${msg.index} 合成失败: ${msg.message}`);
-                } else if (msg.type === 'done') {
-                    showStreamProgress(`合成完成，共 ${msg.total_segments} 段`);
-                    currentWs.close();
-                    currentWs = null;
-                    setTimeout(hideStreamProgress, 3000);
-                } else if (msg.type === 'error') {
-                    alert('TTS 错误：' + msg.message);
-                    currentWs.close();
-                    currentWs = null;
-                    hideStreamProgress();
-                }
-            };
-            
-            currentWs.onerror = (e) => {
-                console.error('WebSocket error:', e);
-                updateWsStatus('error', '连接错误');
-                hideStreamProgress();
-            };
-            
-            currentWs.onclose = () => {
-                if (currentWs) {
-                    updateWsStatus('error', '已断开');
-                }
-                currentWs = null;
-            };
-        }
-        
-        document.getElementById('tts-form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const text = document.getElementById('text').value;
-            const voice = document.getElementById('voice').value;
-            const speed = document.getElementById('speed').value;
-            const loading = document.getElementById('loading');
-            const audioPlayer = document.getElementById('audio-player');
-            const streamEnabled = document.getElementById('stream-toggle').checked;
-            
-            if (!text) {
-                alert('请输入文本');
-                return;
-            }
-            
-            // 如果有正在运行的 WebSocket，先关闭
-            if (currentWs) {
-                currentWs.close();
-                currentWs = null;
-            }
-            
-            // 流式模式
-            if (streamEnabled) {
-                loading.style.display = 'block';
-                try {
-                    synthesizeStream(text, voice, speed);
-                } catch (error) {
-                    alert('流式合成失败：' + error.message);
-                } finally {
-                    loading.style.display = 'none';
-                }
-                return;
-            }
-            
-            // 非流式模式（原逻辑）
-            loading.style.display = 'block';
-            
+
+        async function synthesizeHttp(text, voice, speed, autoplay = true) {
+            setBusy(true);
             try {
                 const formData = new FormData();
                 formData.append('text', text);
                 formData.append('voice', voice);
                 formData.append('speed', speed);
-                
-                const response = await fetch('/api/tts', {
-                    method: 'POST',
-                    body: formData
-                });
-                
+                const response = await fetch('/api/tts', { method: 'POST', body: formData });
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || '生成语音失败');
+                    let detail = '生成语音失败';
+                    try { detail = (await response.json()).detail || detail; } catch (_) {}
+                    throw new Error(detail);
                 }
-                
                 const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                audioPlayer.src = url;
-                audioPlayer.play();
+                audioPlayer.src = URL.createObjectURL(blob);
+                if (autoplay) audioPlayer.play();
             } catch (error) {
                 alert('生成语音失败：' + error.message);
             } finally {
-                loading.style.display = 'none';
+                setBusy(false);
             }
+        }
+
+        function synthesizeStream(text, voice, speed) {
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${proto}//${location.host}/ws/v1/tts`;
+            currentWs = new WebSocket(wsUrl);
+            currentPlayer = new KokoroPlayer();
+            currentRequestId = null;
+            setBusy(true);
+            updateWsStatus('connecting', '连接中...');
+
+            currentWs.onopen = () => {
+                updateWsStatus('connected', '已连接');
+                currentWs.send(JSON.stringify({ text, voice, speed: parseFloat(speed), format: 'pcm_s16le', binary: false }));
+            };
+            currentWs.onmessage = (e) => {
+                if (typeof e.data !== 'string') return;
+                const msg = JSON.parse(e.data);
+                if (msg.request_id) currentRequestId = msg.request_id;
+                if (msg.type === 'started') {
+                    totalSegments = msg.segments;
+                    showStreamProgress(`共 ${msg.segments} 段，正在合成...`);
+                } else if (msg.type === 'audio') {
+                    showStreamProgress(`段落 ${msg.index + 1} / ${totalSegments} 已接收`);
+                    try { currentPlayer.enqueuePCM(msg.data); } catch (err) { console.error('PCM decode error:', err); }
+                } else if (msg.type === 'segment_error') {
+                    console.warn(`段落 ${msg.index} 合成失败: ${msg.message}`);
+                } else if (msg.type === 'cancelled') {
+                    showStreamProgress('已停止生成', 'danger');
+                    cleanupWs(false);
+                } else if (msg.type === 'done') {
+                    showStreamProgress(`合成完成，共 ${msg.total_segments} 段`);
+                    cleanupWs(false);
+                    setTimeout(hideStreamProgress, 3000);
+                } else if (msg.type === 'error') {
+                    alert('TTS 错误：' + msg.message);
+                    cleanupWs(true);
+                }
+            };
+            currentWs.onerror = (e) => { console.error('WebSocket error:', e); updateWsStatus('error', '连接错误'); cleanupWs(true); };
+            currentWs.onclose = () => { if (currentWs) cleanupWs(false); };
+        }
+
+        function cleanupWs(isError) {
+            if (currentWs) {
+                try { currentWs.close(); } catch (_) {}
+            }
+            currentWs = null;
+            setBusy(false);
+            updateWsStatus(isError ? 'error' : '', isError ? '连接异常' : '未连接');
+        }
+
+        document.getElementById('tts-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const text = document.getElementById('text').value.trim();
+            const voice = document.getElementById('voice').value;
+            const speed = speedEl.value;
+            const streamEnabled = document.getElementById('stream-toggle').checked;
+            if (!text) { alert('请输入文本'); return; }
+            if (currentWs) stopCurrentSynthesis();
+            hideStreamProgress();
+            if (streamEnabled) synthesizeStream(text, voice, speed);
+            else await synthesizeHttp(text, voice, speed, true);
         });
     </script>
 </body>
