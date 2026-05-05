@@ -47,48 +47,64 @@ Ideal use cases:
 
 ## Quick Start
 
-### Docker GPU
+### Prerequisites
 
-**Option 1: Pull from registry (recommended)**
+- Docker 20.10+ with Docker Compose V2
+- (GPU) NVIDIA driver + [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+### Step 1: Clone the Repository
+
+All deployment methods require the `docker-compose.yml` and config files from the repo:
 
 ```bash
 git clone https://github.com/ang77712829/AngeVoice.git
-cd AngeVoice/docker/gpu
+cd AngeVoice
+```
+
+### Step 2: Choose a Deployment Method
+
+#### Docker GPU
+
+**Pull pre-built image (recommended):**
+
+```bash
+cd docker/gpu
 sudo docker compose up -d
 ```
 
-Supported registries:
+Pulls `docker.io/maxblack777/angevoice-gpu:latest` from Docker Hub by default. If Docker Hub is inaccessible, edit the `image` field in `docker-compose.yml` to switch to GHCR:
 
-| Registry | Address |
+| Registry | Image |
 |---|---|
-| Docker Hub | `docker.io/maxblack777/angevoice-gpu` |
-| GHCR | `ghcr.io/ang77712829/angevoice-gpu` |
+| Docker Hub | `docker.io/maxblack777/angevoice-gpu:latest` |
+| GHCR | `ghcr.io/ang77712829/angevoice-gpu:latest` |
 
-> Default is Docker Hub. If you're behind a firewall, you can switch the image address to GHCR (requires proxy in China).
-
-**Option 2: Build locally**
+**Build locally (no remote image pull needed):**
 
 ```bash
-git clone https://github.com/ang77712829/AngeVoice.git
-cd AngeVoice/docker/gpu
+cd docker/gpu
 sudo docker compose up -d --build
 ```
 
 Visit: `http://localhost:8101`
 
-### Docker CPU / Legacy GPU
-
 ```bash
-cd docker/cpu && sudo docker compose up -d           # port 8100
-cd docker/legacy-gpu && sudo docker compose up -d    # port 8102, CUDA 11.8
+# Verify
+curl http://127.0.0.1:8101/health
+curl http://127.0.0.1:8101/stats
 ```
 
-Or build locally:
+#### Docker CPU / Legacy GPU
 
 ```bash
-cd docker/cpu && sudo docker compose up -d --build
-cd docker/legacy-gpu && sudo docker compose up -d --build
+# CPU — port 8100
+cd docker/cpu && sudo docker compose up -d
+
+# Legacy GPU — port 8102, CUDA 11.8
+cd docker/legacy-gpu && sudo docker compose up -d
 ```
+
+Add `--build` to build locally instead of pulling.
 
 ### pip install
 
