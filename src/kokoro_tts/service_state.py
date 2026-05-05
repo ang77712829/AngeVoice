@@ -155,7 +155,10 @@ class ServiceState:
             self.inc_stat("synthesis_seconds_total", elapsed)
             self.finish_request(request_id, "done", elapsed_seconds=round(elapsed, 3), bytes=len(result[0]))
             return result
-        except HTTPException:
+        except HTTPException as exc:
+            self.inc_stat("requests_error")
+            status = "cancelled" if exc.status_code == 499 else "error"
+            self.finish_request(request_id, status, error=str(exc.detail), status_code=exc.status_code)
             raise
         except Exception as exc:
             self.inc_stat("requests_error")

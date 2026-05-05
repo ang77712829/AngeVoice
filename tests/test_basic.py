@@ -80,6 +80,35 @@ class TestConfig:
         assert config.voices_dir == tmp_path / "voices"
 
 
+class TestTextNormalization:
+    """测试中文 TTS 文本规范化。"""
+
+    def test_date_in_chinese_context(self):
+        from kokoro_tts.engine import normalize_text_for_tts
+
+        assert normalize_text_for_tts("今天是2026-05-05。") == "今天是二零二六年五月五日。"
+        assert normalize_text_for_tts("版本于2026/5/5发布") == "版本于二零二六年五月五日发布"
+
+    def test_money_in_chinese_context(self):
+        from kokoro_tts.engine import normalize_text_for_tts
+
+        assert normalize_text_for_tts("价格100元") == "价格一百元"
+        assert normalize_text_for_tts("费用为¥1000.50") == "费用为一千元五角"
+        assert normalize_text_for_tts("预算12000元") == "预算一万二千元"
+
+    def test_percent_and_phone_number(self):
+        from kokoro_tts.engine import normalize_text_for_tts
+
+        assert normalize_text_for_tts("成功率98.5%") == "成功率百分之九八点五"
+        assert normalize_text_for_tts("电话13800138000") == "电话幺三八，零零幺三，八零零零"
+
+    def test_plain_id_is_grouped_but_short_plain_number_is_unchanged(self):
+        from kokoro_tts.engine import normalize_text_for_tts
+
+        assert normalize_text_for_tts("编号12345678") == "编号幺二三四，五六七八"
+        assert normalize_text_for_tts("模型版本123") == "模型版本123"
+
+
 class TestEngine:
     """测试引擎模块（不需要实际模型）"""
 
@@ -125,6 +154,47 @@ class TestEngine:
         fn = engine._make_speed_fn(1.5)
         assert fn(100) == 1.5
         assert fn(200) == 1.5
+
+
+class TestServiceState:
+    """测试服务状态收尾逻辑。"""
+
+    @pytest.mark.asyncio
+    async def test_http_exception_finishes_request_state(self):
+        from fastapi import HTTPException
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.service_state import ServiceState
+
+        cfg = TTSConfig(mp3_enabled=False)
+        engine = MagicMock()
+        state = ServiceState(cfg, engine)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await state.synthesize_response_threaded("你好", "zm_010", 1.0, "mp3", "req-http-error")
+
+        assert exc_info.value.status_code == 400
+        assert state.active_requests["req-http-error"]["status"] == "error"
+        assert state.active_requests["req-http-error"]["status_code"] == 400
+        assert state.stats["requests_error"] == 1
+        assert state.stats["requests_ok"] == 0
+
+    @pytest.mark.asyncio
+    async def test_cancelled_request_finishes_as_cancelled(self):
+        from fastapi import HTTPException
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.service_state import ServiceState
+
+        cfg = TTSConfig()
+        engine = MagicMock()
+        state = ServiceState(cfg, engine)
+        state.request_cancel("req-cancelled")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await state.synthesize_response_threaded("你好", "zm_010", 1.0, "wav", "req-cancelled")
+
+        assert exc_info.value.status_code == 499
+        assert state.active_requests["req-cancelled"]["status"] == "cancelled"
+        assert state.stats["requests_error"] == 1
 
 
 class TestServer:

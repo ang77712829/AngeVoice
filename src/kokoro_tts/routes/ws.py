@@ -25,6 +25,8 @@ def create_ws_router(state: ServiceState) -> APIRouter:
         request_id = state.new_request_id()
         producer_task = None
         control_task = None
+        saw_stream_error = False
+        stream_error_counted = False
         try:
             msg = await websocket.receive_json()
             text = msg.get("text", "")
@@ -129,6 +131,12 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                             break
                         if isinstance(chunk, dict):
                             chunk.setdefault("request_id", request_id)
+                            if chunk.get("type") in {"error", "segment_error"}:
+                                saw_stream_error = True
+                                if not stream_error_counted:
+                                    state.inc_stat("requests_error")
+                                    stream_error_counted = True
+                                    state.mark_request(request_id, "error", error="stream returned error frame")
                         if binary and isinstance(chunk, dict) and chunk.get("type") == "audio":
                             await websocket.send_json({k: v for k, v in chunk.items() if k != "data"})
                             await websocket.send_bytes(base64.b64decode(chunk["data"]))
@@ -146,6 +154,10 @@ def create_ws_router(state: ServiceState) -> APIRouter:
             elapsed = time.perf_counter() - start
             if cancel_flag["by_client"] or state.is_cancelled(request_id):
                 state.finish_request(request_id, "cancelled", elapsed_seconds=round(elapsed, 3))
+            elif saw_stream_error:
+                if not stream_error_counted:
+                    state.inc_stat("requests_error")
+                state.finish_request(request_id, "error", elapsed_seconds=round(elapsed, 3), error="stream returned error frame")
             else:
                 state.inc_stat("requests_ok")
                 state.inc_stat("synthesis_seconds_total", elapsed)
