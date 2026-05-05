@@ -32,24 +32,62 @@ _DIGITS_ZH_READING = {**_DIGITS_ZH, "1": "幺"}
 
 
 def _spell_digits(text: str, use_yao: bool = False) -> str:
+    """Read a digit sequence one digit at a time.
+
+    Do not insert spaces here. Spaces can make Chinese TTS sound choppy and can
+    also leak into normalized dates/IDs.
+    """
     table = _DIGITS_ZH_READING if use_yao else _DIGITS_ZH
-    return " ".join(table.get(ch, ch) for ch in text)
+    return "".join(table.get(ch, ch) for ch in text)
+
+
+def _read_under_10000(value: int) -> str:
+    if value == 0:
+        return "零"
+    units = ["", "十", "百", "千"]
+    parts: list[str] = []
+    zero_pending = False
+    pos = 0
+    n = value
+
+    while n > 0:
+        digit = n % 10
+        if digit == 0:
+            if parts:
+                zero_pending = True
+        else:
+            part = _DIGITS_ZH[str(digit)] + units[pos]
+            if zero_pending:
+                parts.append("零")
+                zero_pending = False
+            parts.append(part)
+        n //= 10
+        pos += 1
+
+    spoken = "".join(reversed(parts)).rstrip("零")
+    if spoken.startswith("一十"):
+        spoken = spoken[1:]
+    return spoken or "零"
 
 
 def _read_small_int(value: int) -> str:
+    """Read common Chinese integers used by TN rules.
+
+    The previous implementation fell back to spelling digits for values >=1000,
+    which made amounts such as 1000元 sound like IDs. This helper keeps natural
+    Chinese readings up to the ten-thousands range used by money/date rules.
+    """
     if value < 0:
         return "负" + _read_small_int(-value)
-    if value < 10:
-        return _DIGITS_ZH[str(value)]
-    if value < 20:
-        return "十" + (_DIGITS_ZH[str(value % 10)] if value % 10 else "")
-    if value < 100:
-        tens, ones = divmod(value, 10)
-        return _DIGITS_ZH[str(tens)] + "十" + (_DIGITS_ZH[str(ones)] if ones else "")
-    if value < 1000:
-        hundreds, rest = divmod(value, 100)
-        return _DIGITS_ZH[str(hundreds)] + "百" + (_read_small_int(rest) if rest else "")
-    return _spell_digits(str(value))
+    if value < 10000:
+        return _read_under_10000(value)
+    high, low = divmod(value, 10000)
+    spoken = _read_under_10000(high) + "万"
+    if low:
+        if low < 1000:
+            spoken += "零"
+        spoken += _read_under_10000(low)
+    return spoken
 
 
 def normalize_text_for_tts(text: str) -> str:
@@ -66,7 +104,9 @@ def normalize_text_for_tts(text: str) -> str:
         year, month, day = match.groups()
         return f"{_spell_digits(year)}年{_read_small_int(int(month))}月{_read_small_int(int(day))}日"
 
-    text = re.sub(r"\b(20\d{2}|19\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b", repl_date, text)
+    # Avoid \b for Chinese context. In Python regex, many Chinese characters are
+    # word characters, so \b does not reliably match between Chinese and digits.
+    text = re.sub(r"(?<!\d)(20\d{2}|19\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)", repl_date, text)
 
     def repl_money(match):
         prefix, amount, suffix = match.groups()
@@ -82,13 +122,13 @@ def normalize_text_for_tts(text: str) -> str:
                 spoken += _DIGITS_ZH[frac[1]] + "分"
         return spoken
 
-    text = re.sub(r"(¥|￥)?\b(\d{1,5}(?:\.\d{1,2})?)\b(元)?", repl_money, text)
+    text = re.sub(r"(?<![\dA-Za-z])(¥|￥)?(\d{1,9}(?:\.\d{1,2})?)(元)?(?![\dA-Za-z])", repl_money, text)
 
     def repl_percent(match):
         value = match.group(1)
         return "百分之" + _spell_digits(value.replace(".", "点"))
 
-    text = re.sub(r"\b(\d+(?:\.\d+)?)%", repl_percent, text)
+    text = re.sub(r"(?<!\d)(\d+(?:\.\d+)?)%(?!\d)", repl_percent, text)
 
     def repl_mobile(match):
         number = match.group(0)
