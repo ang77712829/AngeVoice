@@ -1,6 +1,6 @@
 # AngeVoice
 
-> 轻量级中文 TTS 自托管服务。AngeVoice 基于 Kokoro v1.1 中文模型做工程化封装，提供 OpenAI 兼容 API、WebSocket 逐段流式、Web UI、批量合成、缓存、统计和 Docker CPU/GPU/老显卡部署。
+> 轻量级中文 TTS 自托管服务。AngeVoice 基于 Kokoro v1.1 中文模型做工程化封装，提供 OpenAI 兼容 API、WebSocket 逐段流式、新版 Studio Web UI、中文文本规则、批量合成、缓存、统计和 Docker CPU/GPU/老显卡部署。
 
 [English](README_EN.md) | 中文
 
@@ -27,7 +27,8 @@ AngeVoice 不是重新训练的新模型，而是围绕 Kokoro v1.1 中文模型
 | 能力 | 说明 |
 |---|---|
 | OpenAI 兼容 API | `POST /v1/audio/speech`，兼容 `model/input/voice/speed/response_format` |
-| Web UI | 内置前端页面，支持音色选择、试听、流式播放、停止生成 |
+| Studio Web UI | 内置前端页面，支持亮/暗主题、音色筛选、收藏、试听、流式播放、停止生成、API Key 设置和可折叠统计卡片 |
+| 中文文本规则 | 自动断句标点、jieba 分词优先、内置兜底词典、常见多音字上下文修正 |
 | WebSocket 流式 | `ws://.../ws/v1/tts` 逐段推送，支持 `cancel` / `stop` 控制帧 |
 | 批量合成 | `POST /v1/audio/batch` 返回 ZIP 和 `manifest.json` |
 | 服务治理 | 请求 ID、`/health`、`/stats`、`/requests`、超时、并发限制、LRU 缓存 |
@@ -51,8 +52,11 @@ src/kokoro_tts/
 │   ├── audio.py          # /v1/audio/speech 与 /api/tts
 │   └── ws.py             # /ws/v1/tts
 ├── service_extras.py     # batch/admin/mp3 扩展接口
+├── zh_rules.py           # 中文自动断句、多音字与轻量分词规则
 ├── engine.py             # Kokoro 引擎、分段、文本规范化、音频编码
-└── config.py             # 配置与环境变量
+├── config.py             # 配置与环境变量
+├── templates/index.html  # Studio Web UI shell
+└── static/               # Studio Web UI 样式与脚本
 ```
 
 兼容性说明：
@@ -121,6 +125,12 @@ curl -X POST http://localhost:8000/v1/audio/speech \
   --output output.wav
 ```
 
+启用 `KOKORO_API_KEY` 后增加：
+
+```bash
+-H "Authorization: Bearer YOUR_TOKEN"
+```
+
 支持格式：`wav`、`pcm`、`mp3`。MP3 需开启 `KOKORO_MP3_ENABLED=true` 且环境存在 ffmpeg。
 
 ### WebSocket 流式播放
@@ -134,7 +144,8 @@ ws.onopen = () => {
     voice: "zm_010",
     speed: 1.0,
     format: "pcm_s16le",
-    binary: false
+    binary: false,
+    token: "YOUR_TOKEN" // 未启用 KOKORO_API_KEY 时可省略
   }));
 };
 
@@ -142,6 +153,22 @@ ws.send(JSON.stringify({ type: "cancel" }));
 ```
 
 消息类型：`started`、`audio`、`segment_error`、`done`、`cancelled`、`error`。
+
+JSON 音频帧使用 `data` 字段携带 base64 PCM；如果启用 binary 模式，服务会先发送元信息 JSON，再发送二进制音频帧。
+
+### 中文规则示例
+
+AngeVoice 会在进入 Kokoro pipeline 前做轻量中文规则处理：
+
+```text
+春花秋月何时了 -> 春花秋月何时瞭。
+我想了解一下 -> 我想瞭解一下
+银行行长正在听音乐 -> 银杭杭掌正在听音悦
+会议12:01开始 -> 会议十二点零一分开始
+长中文无标点文本 -> 按词切分后补入停顿标点
+```
+
+规则目标是改善常见朗读错误，而不是替代完整中文 NLP。更复杂的人名、地名和专有名词建议在调用侧显式加标点或使用后续 SSML/词典能力。
 
 ### 批量合成 ZIP
 
@@ -193,13 +220,13 @@ models/voices/*.pt
 | `KOKORO_ADMIN_ENABLED` | `false` | 是否启用管理接口 |
 | `KOKORO_VOICE_UPLOAD_ENABLED` | `false` | 是否允许上传音色 |
 | `KOKORO_MP3_ENABLED` | `false` | 是否启用 MP3 输出 |
-| `KOKORO_API_KEY` | - | 设置后启用 Bearer 认证 |
+| `KOKORO_API_KEY` | - | 设置后启用 Bearer 认证；`change-me` 等占位值会被拒绝 |
 | `KOKORO_CORS_ORIGINS` | `http://localhost:8000` | CORS 允许来源，逗号分隔 |
 
 ## 安全说明
 
 - 公网部署建议设置 `KOKORO_API_KEY`，并在反向代理层限制来源。
-- 管理接口默认关闭；开启 `KOKORO_ADMIN_ENABLED=true` 时必须设置强 API Key。
+- 管理接口默认关闭；开启 `KOKORO_ADMIN_ENABLED=true` 时必须设置强 API Key，否则服务会拒绝启动。
 - `.pt` 音色上传默认关闭。只上传可信来源文件；PyTorch 权重文件不应来自不可信渠道。
 - 不建议把 `/admin/*` 直接暴露到公网。
 - `cancel/stop` 会阻止后续段落继续推送；如果当前段已进入同步推理，通常会在当前段结束后停止。
@@ -235,7 +262,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [安全说明](docs/SECURITY.md)
 - [排障手册](docs/TROUBLESHOOTING.md)
 - [服务画像](docs/SERVICE_PROFILES.md)
-- [v2.5 功能说明](docs/V2_4_FEATURES.md)
+- [v2.5 功能说明](docs/V2_5_FEATURES.md)
 - [路线图](docs/ROADMAP.md)
 - [Legacy GPU 部署说明](docker/legacy-gpu/README.md)
 

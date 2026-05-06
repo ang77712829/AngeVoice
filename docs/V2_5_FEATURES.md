@@ -1,12 +1,18 @@
 # v2.5 服务功能说明
 
-v2.5 在 v2.4 功能基础上完成服务端模块化重构，并统一项目品牌为 AngeVoice。批量合成、管理接口、可选 MP3、WebSocket 取消能力保持兼容。
+v2.5 在 v2.4 功能基础上完成服务端模块化重构、中文规则补强、Studio Web UI 刷新和安全启动校验，并统一项目品牌为 AngeVoice。批量合成、管理接口、可选 MP3、WebSocket 取消能力保持兼容。
 
 ## v2.5 新增/调整
 
 | 项目 | 说明 |
 |---|---|
 | 模块化服务端 | `server.py` 拆分为 `service_state.py`、`security.py`、`api_models.py`、`routes/*` |
+| 多 worker 启动修复 | `KOKORO_WORKERS>1` 时使用 Uvicorn import string + factory 模式启动 |
+| 并发缓存修复 | TTS LRU 缓存新增线程锁，避免多请求并发读写 `OrderedDict` |
+| 中文规则 | 新增 `zh_rules.py`，支持自动停顿标点、jieba 分词优先和常见多音字上下文修正 |
+| Studio Web UI | 前端拆分为 `templates/index.html`、`static/app.css`、`static/app.js`，支持亮/暗主题、API Key、流式播放、可折叠统计卡片、音色筛选/收藏 |
+| Docker 热更新修复 | Docker 镜像改为 editable install，Compose 挂载模板和 static 目录，CPU/GPU/Legacy GPU 路径一致 |
+| 安全启动校验 | 管理接口必须搭配强 API Key；占位 API Key 会被拒绝 |
 | CLI 品牌统一 | 新增 `angevoice` 命令，保留 `kokoro-tts` alias |
 | 发行包名 | `pyproject.toml` 项目名改为 `angevoice`，import 包名仍保留 `kokoro_tts` |
 | 文档补强 | 新增架构、安全、排障文档，README 中英文重写 |
@@ -26,6 +32,29 @@ v2.5 在 v2.4 功能基础上完成服务端模块化重构，并统一项目品
 | 上传 `.pt` 音色 | `POST /admin/voices/upload` | 上传关闭 |
 | MP3 输出 | `response_format=mp3` | 关闭 |
 | WebSocket 取消 | `{"type":"cancel"}` / `{"type":"stop"}` | 开启 |
+
+## 中文文本规则
+
+`engine.normalize_text_for_tts()` 会在数字/单位规则后调用 `normalize_chinese_rules()`：
+
+```text
+春花秋月何时了 -> 春花秋月何时瞭。
+我想了解一下 -> 我想瞭解一下。
+银行行长正在听音乐 -> 银杭杭掌正在听音悦
+会议12:43开始 -> 会议十二点四十三分开始
+长中文无标点文本 -> 按词切分后补入停顿标点
+```
+
+分词优先使用 `jieba`，不可用时使用内置小词典兜底。多音字规则以短语和上下文匹配为主，明确场景会替换为同音提示字来引导 G2P。规则是保守增强，目标是减少常见朗读错误，不替代完整中文 NLP。
+
+## Studio Web UI
+
+新版 Web UI 保持零构建链，适合直接随 Python 包和 Docker 镜像分发：
+
+- `/` 注入服务端 bootstrap 数据，包含音色、默认音色、采样率、认证和流式能力。
+- `/static/app.css` 提供液态玻璃背景、亮/暗主题、启动动画、面板 spotlight/glare 效果。
+- `/static/app.js` 负责 API Key、WebSocket 流式播放、HTTP 兜底合成、取消、统计和音色库交互。
+- 启用 `KOKORO_API_KEY` 后，前端可在设置面板保存 Bearer Token，并同时用于 HTTP 与 WebSocket 首包。
 
 ## 批量合成 ZIP
 
@@ -63,7 +92,7 @@ KOKORO_BATCH_CONCURRENCY=1
 
 ```bash
 KOKORO_ADMIN_ENABLED=true
-KOKORO_API_KEY=change-me
+KOKORO_API_KEY=<paste-generated-token-here>
 ```
 
 接口：

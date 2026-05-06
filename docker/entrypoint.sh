@@ -2,4 +2,4 @@
 set -e
 
 echo "🚀 Starting AngeVoice service..."
-exec kokoro-tts serve
+exec angevoice serve

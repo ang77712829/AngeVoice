@@ -65,22 +65,46 @@ KOKORO_MP3_BITRATE=192k
 ffmpeg -version
 ```
 
-## 5. `/stats` 或 `/requests` 返回 401
+## 5. 服务启动时报 API Key 或管理接口错误
+
+v2.5 会在启动时拦截不安全配置。以下配置会失败：
+
+```bash
+KOKORO_API_KEY=change-me
+KOKORO_ADMIN_ENABLED=true
+KOKORO_API_KEY=
+KOKORO_VOICE_UPLOAD_ENABLED=true
+KOKORO_ADMIN_ENABLED=false
+```
+
+修复：
+
+```bash
+KOKORO_API_KEY=<paste-generated-token-here>
+KOKORO_ADMIN_ENABLED=false
+KOKORO_VOICE_UPLOAD_ENABLED=false
+```
+
+需要管理接口时再开启 `KOKORO_ADMIN_ENABLED=true`，并保留强 API Key。
+
+## 6. `/stats` 或 `/requests` 返回 401
 
 如果设置了：
 
 ```bash
-KOKORO_API_KEY=change-me
+KOKORO_API_KEY=<paste-generated-token-here>
 ```
 
 请求需要携带：
 
 ```bash
 curl http://127.0.0.1:8000/stats \
-  -H "Authorization: Bearer change-me"
+  -H "Authorization: Bearer YOUR_GENERATED_TOKEN"
 ```
 
-## 6. WebSocket 连接成功但无音频
+Studio Web UI 可在右上角设置面板保存 Bearer Token。
+
+## 7. WebSocket 连接成功但无音频
 
 检查首个消息是否包含必要字段：
 
@@ -96,7 +120,16 @@ curl http://127.0.0.1:8000/stats \
 
 如果设置了 API Key，需要在首个 JSON 中传 `token`，或通过 WebSocket header 传 `Authorization`。
 
-## 7. 音色列表为空
+如果通过 Nginx、Caddy 或开发代理访问，确认代理支持 WebSocket upgrade，并转发：
+
+```http
+Connection: upgrade
+Upgrade: websocket
+```
+
+本地直接连接 `ws://host:port/ws/v1/tts` 正常，但通过代理失败时，优先检查这一项。
+
+## 8. 音色列表为空
 
 检查目录：
 
@@ -112,14 +145,14 @@ docker exec -it angevoice-gpu ls -lh /app/models/voices
 
 如果目录为空，重新下载模型音色。
 
-## 8. 上传音色失败
+## 9. 上传音色失败
 
 上传接口需要同时开启：
 
 ```bash
 KOKORO_ADMIN_ENABLED=true
 KOKORO_VOICE_UPLOAD_ENABLED=true
-KOKORO_API_KEY=change-me
+KOKORO_API_KEY=<paste-generated-token-here>
 ```
 
 Docker 还需要 voices 目录可写：
@@ -128,7 +161,7 @@ Docker 还需要 voices 目录可写：
 - ../../models/voices:/app/models/voices:rw
 ```
 
-## 9. Windows / 本机访问 Docker 服务失败
+## 10. Windows / 本机访问 Docker 服务失败
 
 确认端口映射，例如 GPU profile 默认：
 
@@ -145,7 +178,7 @@ http://localhost:8101
 
 不是容器内部端口 `8000`。
 
-## 10. 重构后旧脚本还能不能用？
+## 11. 重构后旧脚本还能不能用？
 
 可以。v2.5 保留：
 

@@ -15,7 +15,8 @@ This roadmap tracks the long-term direction of Kokoro TTS Zh. Completed items ar
 - √ Text cleaning and length validation / 文本清理与长度校验
 - √ Long text segmentation with punctuation fallback / 长文本按标点优先切分并支持兜底硬切
 - √ Segment boundary smoothing / 段落边界淡入淡出与短静音处理
-- □ More advanced Chinese text normalization / 更完整的中文文本规范化
+- √ Lightweight Chinese punctuation, time reading, segmentation, and polyphone rules / 轻量中文标点、时间读法、分词与多音字规则
+- □ User-editable pronunciation dictionary / 用户可编辑发音词典
 - □ SSML-like lightweight markup / 类 SSML 的轻量标记支持
 - □ Per-sentence speed/pitch controls / 分句语速与音高控制
 
@@ -45,7 +46,8 @@ This roadmap tracks the long-term direction of Kokoro TTS Zh. Completed items ar
 - √ Optional binary audio frames / 可选 binary 音频帧
 - √ `cancel` / `stop` control frames / `cancel` / `stop` 控制帧
 - √ Stream metadata: sample rate, channel count, format / 流式元信息：采样率、声道、格式
-- □ Browser playback helper library / 浏览器播放辅助库
+- √ Browser streaming playback in Studio UI / Studio UI 浏览器流式播放
+- □ Standalone browser playback helper library / 独立浏览器播放辅助库
 - □ Reconnect/resume strategy for long text / 长文本断线重连与续传策略
 - □ True model-level streaming if upstream supports it / 上游支持后接入真正模型级流式
 
@@ -58,7 +60,7 @@ This roadmap tracks the long-term direction of Kokoro TTS Zh. Completed items ar
 - √ `.pt` voice upload endpoint / `.pt` 音色上传接口
 - √ Writable voices mount documentation / 可写 voices 挂载说明
 - □ Web UI voice upload page / Web UI 音色上传页面
-- □ Voice preview and favorite voices / 音色试听与收藏
+- √ Voice preview and favorite voices in Studio UI / Studio UI 音色试听与收藏
 - □ Voice metadata database / 音色元数据数据库
 - □ Role-based admin permissions / 分角色管理权限
 
@@ -66,9 +68,12 @@ This roadmap tracks the long-term direction of Kokoro TTS Zh. Completed items ar
 
 - √ Basic Web UI / 基础 Web UI
 - √ Streaming toggle and status indicator / 流式开关与状态指示
+- √ Refreshed Studio UI with light/dark themes / 支持亮色与暗色主题的新版 Studio UI
+- √ Collapsible service metrics cards / 可折叠服务统计卡片
+- √ Built-in API Key settings for HTTP and WebSocket / 内置 HTTP 与 WebSocket API Key 设置
+- √ Voice gallery filters, favorites, and recent voices / 音色库筛选、收藏与最近使用
 - □ Batch synthesis page / 批量合成页面
 - □ Long text/audiobook workflow / 长文本与有声书工作流
-- □ Voice gallery / 音色库页面
 - □ Admin settings panel / 管理设置面板
 - □ Realtime service dashboard / 实时服务仪表盘
 
@@ -116,11 +121,11 @@ This roadmap tracks the long-term direction of Kokoro TTS Zh. Completed items ar
 - √ Chinese README / 中文 README
 - √ English README / 英文 README
 - √ Service profile documentation / 服务画像文档
-- √ v2.4 service feature documentation / v2.4 服务功能文档
+- √ v2.5 service feature documentation / v2.5 服务功能文档
 - √ Legacy GPU bilingual deployment guide / 老显卡中英双语部署说明
 - √ Roadmap / 长期路线图
 - □ API reference generated from OpenAPI / 基于 OpenAPI 生成 API 参考
-- □ Troubleshooting cookbook / 排障手册
+- √ Troubleshooting cookbook / 排障手册
 - □ Performance tuning guide / 性能调优指南
 
 ## Version direction / 版本方向
@@ -128,5 +133,6 @@ This roadmap tracks the long-term direction of Kokoro TTS Zh. Completed items ar
 - √ v2.1.x: streaming and Docker stabilization / 流式与 Docker 稳定化
 - √ v2.3.x: service edition with cache, stats, request tracking / 服务化版本，缓存、统计、请求追踪
 - √ v2.4.x: batch, admin, optional MP3, WebSocket cancel, legacy GPU profile / 批量、管理、可选 MP3、WebSocket 取消、老显卡画像
-- □ v2.5.x: Web UI management and task workflow / Web UI 管理与任务工作流
+- √ v2.5.x: service hardening, Chinese rules, and Studio UI refresh / 服务稳定性、中文规则与 Studio UI 刷新
+- □ v2.6.x: Web UI management and task workflow / Web UI 管理与任务工作流
 - □ v3.x: multi-engine plugin architecture / 多引擎插件架构

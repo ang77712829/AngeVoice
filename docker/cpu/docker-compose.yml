@@ -18,8 +18,9 @@ services:
       # HuggingFace 模型缓存：持久化到宿主机，避免容器重启后重新下载
       - ../../hf_cache:/root/.cache/huggingface
 
-      # 前端模板：持久化到宿主机，改前端无需重建镜像
-      - ../../src/kokoro_tts/templates/index.html:/usr/local/lib/python3.10/dist-packages/kokoro_tts/templates/index.html:ro
+      # 前端资源：持久化到宿主机，改前端无需重建镜像
+      - ../../src/kokoro_tts/templates/index.html:/app/src/kokoro_tts/templates/index.html:ro
+      - ../../src/kokoro_tts/static:/app/src/kokoro_tts/static:ro
 
       # 开发/测试环境热更新源码：取消注释后 git pull + docker compose restart 即可生效
       # 生产环境建议保持注释，通过 docker compose up -d --build 固化进镜像
@@ -74,7 +75,8 @@ services:
 
       # 管理接口默认关闭。开启后建议同时设置 KOKORO_API_KEY
       # - KOKORO_ADMIN_ENABLED=true
-      # - KOKORO_API_KEY=change-me
+      # Generate a real token first, for example: openssl rand -hex 32
+      # - KOKORO_API_KEY=<paste-generated-token-here>
 
       # 音色上传默认关闭。开启前请把 models/voices 挂载为 rw
       # - KOKORO_VOICE_UPLOAD_ENABLED=true

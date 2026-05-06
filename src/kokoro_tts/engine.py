@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import TTSConfig, load_config
+from .zh_rules import normalize_chinese_rules
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,21 @@ def _read_small_int(value: int) -> str:
     return spoken
 
 
+def _read_time_hour(value: int) -> str:
+    if value == 2:
+        return "两"
+    return _read_small_int(value)
+
+
+def _read_clock_time(hour: int, minute: int) -> str:
+    spoken = _read_time_hour(hour) + "点"
+    if minute == 0:
+        return spoken + "整"
+    if minute < 10:
+        return spoken + "零" + _DIGITS_ZH[str(minute)] + "分"
+    return spoken + _read_small_int(minute) + "分"
+
+
 def normalize_text_for_tts(text: str) -> str:
     """Normalize common Chinese TTS patterns before synthesis.
 
@@ -107,6 +123,13 @@ def normalize_text_for_tts(text: str) -> str:
     # Avoid \b for Chinese context. In Python regex, many Chinese characters are
     # word characters, so \b does not reliably match between Chinese and digits.
     text = re.sub(r"(?<!\d)(20\d{2}|19\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)", repl_date, text)
+
+    def repl_time(match):
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        return _read_clock_time(hour, minute)
+
+    text = re.sub(r"(?<!\d)([01]?\d|2[0-3])[:：]([0-5]\d)(?!\d)", repl_time, text)
 
     def repl_money(match):
         prefix, amount, suffix = match.groups()
@@ -146,6 +169,7 @@ def normalize_text_for_tts(text: str) -> str:
         return "，".join(_spell_digits(group, use_yao=True) for group in grouped)
 
     text = re.sub(r"(?<!\d)\d{6,}(?!\d)", repl_long_number, text)
+    text = normalize_chinese_rules(text)
     return text
 
 
@@ -257,8 +281,9 @@ class TTSEngine:
 
     def _clean_text(self, text: str) -> str:
         text = "".join(c if c.isprintable() or c.isspace() else " " for c in text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return normalize_text_for_tts(text)
+        text = re.sub(r"[ \t\r\f\v]+", " ", text).strip()
+        text = normalize_text_for_tts(text)
+        return re.sub(r"\s+", " ", text).strip()
 
     def _detect_language(self, text: str) -> str:
         english = len(re.findall(r"[a-zA-Z]", text))
@@ -269,7 +294,7 @@ class TTSEngine:
 
     def _segment_text(self, text: str) -> list[str]:
         max_len = max(20, int(self.config.segment_length))
-        punctuation = "。！？!?；;，,、.\n"
+        punctuation = "。！？!?；;，,、.：:\n"
         segments: list[str] = []
         current = ""
 

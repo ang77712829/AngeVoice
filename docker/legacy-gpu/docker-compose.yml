@@ -18,8 +18,9 @@ services:
       # HuggingFace model cache: persist on host to avoid re-download.
       - ../../hf_cache:/root/.cache/huggingface
 
-      # Frontend templates: persist on host, update without rebuild.
-      - ../../src/kokoro_tts/templates/index.html:/usr/local/lib/python3.10/dist-packages/kokoro_tts/templates/index.html:ro
+      # Frontend resources: persist on host, update without rebuild.
+      - ../../src/kokoro_tts/templates/index.html:/app/src/kokoro_tts/templates/index.html:ro
+      - ../../src/kokoro_tts/static:/app/src/kokoro_tts/static:ro
 
       # Development hot-reload. Uncomment for git pull + docker compose restart workflows.
       # For production, keep it commented and rebuild the image instead.
@@ -71,7 +72,8 @@ services:
 
       # Admin APIs are disabled by default. Enable only with an API key.
       # - KOKORO_ADMIN_ENABLED=true
-      # - KOKORO_API_KEY=change-me
+      # Generate a real token first, for example: openssl rand -hex 32
+      # - KOKORO_API_KEY=<paste-generated-token-here>
 
       # Voice upload is disabled by default. Requires writable voices mount.
       # - KOKORO_VOICE_UPLOAD_ENABLED=true

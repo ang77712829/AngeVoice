@@ -17,7 +17,25 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
     async def index(request: Request):
         if templates:
             voices = cfg.get_voices()
-            return templates.TemplateResponse(request, "index.html", {"voices": voices})
+            bootstrap = {
+                "voices": voices,
+                "defaultVoice": cfg.default_voice,
+                "defaultSpeed": cfg.default_speed,
+                "maxTextLength": cfg.max_text_length,
+                "sampleRate": cfg.sample_rate,
+                "authRequired": bool(cfg.api_key),
+                "streamEnabled": cfg.stream_enabled,
+                "streamBinaryEnabled": cfg.stream_binary_enabled,
+                "mp3Enabled": getattr(cfg, "mp3_enabled", False),
+            }
+            return templates.TemplateResponse(
+                request,
+                "index.html",
+                {
+                    "voices": voices,
+                    "bootstrap": bootstrap,
+                },
+            )
         return HTMLResponse("<h1>AngeVoice</h1><p>Built on Kokoro v1.1 model.</p>")
 
     @router.get("/health")
@@ -31,10 +49,12 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             "sample_rate": cfg.sample_rate,
             "max_concurrent_requests": cfg.max_concurrent_requests,
             "cache_enabled": cfg.cache_enabled,
-            "cache_items": len(state.tts_cache),
+            "cache_items": state.cache_size(),
             "batch_enabled": getattr(cfg, "batch_enabled", False),
             "admin_enabled": getattr(cfg, "admin_enabled", False),
             "mp3_enabled": getattr(cfg, "mp3_enabled", False),
+            "auth_required": bool(cfg.api_key),
+            "stream_enabled": cfg.stream_enabled,
         }
 
     @router.get("/v1/audio/voices")
@@ -50,7 +70,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         return {
             **snapshot,
             "uptime_seconds": round(uptime, 3),
-            "cache_items": len(state.tts_cache),
+            "cache_items": state.cache_size(),
             "active_requests": len([r for r in state.active_requests.values() if r.get("status") in {"queued", "running", "cancelling"}]),
         }
 

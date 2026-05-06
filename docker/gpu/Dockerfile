@@ -30,8 +30,8 @@ RUN python3 -m pip install --no-cache-dir torch torchvision torchaudio --index-u
 COPY pyproject.toml README.md ./
 COPY src/ src/
 
-# 安装项目（不用 -e）
-RUN python3 -m pip install --no-cache-dir .
+# 安装项目。使用 editable 模式让 Compose 挂载的模板/静态资源能立即生效。
+RUN python3 -m pip install --no-cache-dir -e .
 
 # 预装 spaCy 英文模型（misaki/kokoro 依赖，避免每次启动重新下载）
 RUN python3 -m pip install --no-cache-dir \
