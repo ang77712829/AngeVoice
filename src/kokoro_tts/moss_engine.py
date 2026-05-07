@@ -7,6 +7,7 @@ This module only adapts that runtime to AngeVoice's engine interface.
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import gc
 import logging
 import sys
@@ -142,19 +143,33 @@ class MossNanoEngine:
         self._validate_request(text=text, voice=voice, speed=speed)
         prepared_text = self._clean_text(text)
         prompt_audio = prompt_audio_path or (str(self.config.moss_prompt_audio_path) if self.config.moss_prompt_audio_path else None)
-        result = self._runtime.synthesize(
-            text=prepared_text,
-            voice=voice or self.default_voice,
-            prompt_audio_path=prompt_audio,
-            output_audio_path=self._temp_output_path(),
-            sample_mode=self.config.moss_sample_mode,
-            do_sample=self.config.moss_sample_mode != "greedy",
-            streaming=bool(self.config.moss_realtime_streaming_decode),
-            max_new_frames=self.config.moss_max_new_frames,
-            voice_clone_max_text_tokens=self.config.moss_voice_clone_max_text_tokens,
-            enable_wetext=bool(self.config.moss_enable_wetext_processing),
-            enable_normalize_tts_text=bool(self.config.moss_enable_normalize_tts_text),
-        )
+        timeout = self.config.request_timeout_seconds
+
+        def _run():
+            return self._runtime.synthesize(
+                text=prepared_text,
+                voice=voice or self.default_voice,
+                prompt_audio_path=prompt_audio,
+                output_audio_path=self._temp_output_path(),
+                sample_mode=self.config.moss_sample_mode,
+                do_sample=self.config.moss_sample_mode != "greedy",
+                streaming=bool(self.config.moss_realtime_streaming_decode),
+                max_new_frames=self.config.moss_max_new_frames,
+                voice_clone_max_text_tokens=self.config.moss_voice_clone_max_text_tokens,
+                enable_wetext=bool(self.config.moss_enable_wetext_processing),
+                enable_normalize_tts_text=bool(self.config.moss_enable_normalize_tts_text),
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_run)
+            try:
+                result = future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                raise RuntimeError(
+                    f"MOSS inference timed out ({timeout}s). "
+                    "CUDA inference may be stuck. Try switching to CPU or restarting."
+                )
         return normalize_audio_array(result["waveform"])
 
     def synthesize_stream(self, text, voice="", speed=1.0, fmt="pcm_s16le"):

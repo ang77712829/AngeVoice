@@ -135,7 +135,9 @@ class EngineManager:
             if target_id != self._current_model_id and self.cfg.model_unload_on_switch:
                 self.switch_model(target_id, unload_previous=True, load=True)
             engine = self.get_engine(target_id, load=True)
-            yield engine
+        # Lock released before yield — synthesis must NOT hold the model lock,
+        # otherwise a stuck inference blocks all endpoints (health, stats, etc.).
+        yield engine
 
     def get_engine(self, model_id: str | None = None, *, load: bool = True):
         target_id = self.normalize_model_id(model_id)
