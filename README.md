@@ -329,7 +329,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [排障手册](docs/TROUBLESHOOTING.md)
 - [服务画像](docs/SERVICE_PROFILES.md)
 - [多模型运行时](docs/MODEL_RUNTIME.md)
-- [v2.5 功能说明](docs/V2_5_FEATURES.md)
+- [v2.6 功能说明](docs/V2_5_FEATURES.md)
 - [路线图](docs/ROADMAP.md)
 - [Legacy GPU 部署说明](docker/legacy-gpu/README.md)
 

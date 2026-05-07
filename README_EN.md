@@ -330,7 +330,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Service Profiles](docs/SERVICE_PROFILES.md)
 - [Multi-Model Runtime](docs/MODEL_RUNTIME.md)
-- [v2.5 Features](docs/V2_5_FEATURES.md)
+- [v2.6 Features](docs/V2_5_FEATURES.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Legacy GPU Deployment](docker/legacy-gpu/README.md)
 
