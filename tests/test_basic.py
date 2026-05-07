@@ -108,6 +108,29 @@ class TestTextNormalization:
         assert normalize_text_for_tts("编号12345678") == "编号幺二三四，五六七八"
         assert normalize_text_for_tts("模型版本123") == "模型版本123"
 
+    def test_poetry_polyphone_and_auto_punctuation(self):
+        from kokoro_tts.engine import normalize_text_for_tts
+
+        assert normalize_text_for_tts("春花秋月何时了") == "春花秋月何时瞭。"
+        assert normalize_text_for_tts("银行行长正在听音乐。") == "银杭杭掌正在听音悦。"
+        assert normalize_text_for_tts("重庆重新调整调查方案。") == "虫庆虫新条整掉查方案。"
+        assert normalize_text_for_tts("效率很高，率先完成。") == "效律很高，帅先完成。"
+
+    def test_clock_time_in_chinese_context(self):
+        from kokoro_tts.engine import normalize_text_for_tts
+
+        assert normalize_text_for_tts("会议12:00开始") == "会议十二点整开始"
+        assert normalize_text_for_tts("会议12:01开始") == "会议十二点零一分开始"
+        assert normalize_text_for_tts("会议12:43开始") == "会议十二点四十三分开始"
+
+    def test_long_chinese_run_gets_pause_marks(self):
+        from kokoro_tts.engine import normalize_text_for_tts
+
+        text = "这是一段没有任何标点的长文本" * 4
+        normalized = normalize_text_for_tts(text)
+        assert "，" in normalized
+        assert len(normalized) > len(text)
+
 
 class TestEngine:
     """测试引擎模块（不需要实际模型）"""
@@ -196,6 +219,34 @@ class TestServiceState:
         assert state.active_requests["req-cancelled"]["status"] == "cancelled"
         assert state.stats["requests_error"] == 1
 
+    def test_cache_helpers_are_thread_safe_entrypoints(self):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.service_state import ServiceState
+
+        state = ServiceState(TTSConfig(), MagicMock())
+        state.cache_set("one", (b"wav", "audio/wav"))
+
+        assert state.cache_get("one") == (b"wav", "audio/wav")
+        assert state.cache_size() == 1
+        assert state.cache_clear() == 1
+        assert state.cache_size() == 0
+
+
+class TestSecurityConfig:
+    """测试生产安全配置保护。"""
+
+    def test_admin_requires_api_key(self):
+        from kokoro_tts.config import TTSConfig
+
+        with pytest.raises(ValueError, match="requires KOKORO_API_KEY"):
+            TTSConfig(admin_enabled=True).validate_security()
+
+    def test_placeholder_api_key_is_rejected(self):
+        from kokoro_tts.config import TTSConfig
+
+        with pytest.raises(ValueError, match="placeholder"):
+            TTSConfig(api_key="CHANGE-ME-TO-A-REAL-SECRET-KEY").validate_security()
+
 
 class TestServer:
     """测试服务器模块"""
@@ -216,6 +267,19 @@ class TestServer:
         with patch("kokoro_tts.engine.TTSEngine.load"):
             app = create_app(config=TTSConfig(model_dir=Path("/nonexistent")))
             assert app.title == "AngeVoice"
+
+    def test_run_server_uses_import_string_for_workers(self):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.server import run_server
+
+        config = TTSConfig(model_dir=Path("/nonexistent"), workers=2)
+        with patch("uvicorn.run") as run:
+            run_server(config)
+
+        args, kwargs = run.call_args
+        assert args[0] == "kokoro_tts.server:create_app"
+        assert kwargs["factory"] is True
+        assert kwargs["workers"] == 2
 
 
 class TestCLI:

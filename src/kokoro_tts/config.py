@@ -6,15 +6,26 @@ Configuration priority:
 3. Defaults
 """
 
-import os
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, NamedTuple, Optional
+from typing import NamedTuple, Optional
 
 logger = logging.getLogger(__name__)
 
 MODEL_FILENAME = "kokoro-v1_1-zh.pth"
+PLACEHOLDER_API_KEYS = {
+    "change-me",
+    "change-me-to-a-real-secret-key",
+    "change-me-to-a-real-secret",
+    "replace-with-a-long-random-token",
+    "<paste-generated-token-here>",
+    "paste-generated-token-here",
+    "<your-generated-secret>",
+    "your-generated-secret",
+    "staging-change-me-to-real-key",
+}
 
 
 class IntEnvSpec(NamedTuple):
@@ -139,6 +150,17 @@ class TTSConfig:
             return sorted([f.stem for f in self.voices_dir.glob("*.pt")])
         return []
 
+    def validate_security(self) -> None:
+        """Reject unsafe admin/auth combinations before serving traffic."""
+        api_key = (self.api_key or "").strip()
+        normalized_key = api_key.lower()
+        if api_key and normalized_key in PLACEHOLDER_API_KEYS:
+            raise ValueError("KOKORO_API_KEY is still a placeholder; set a real secret or leave it empty")
+        if self.admin_enabled and not api_key:
+            raise ValueError("KOKORO_ADMIN_ENABLED=true requires KOKORO_API_KEY")
+        if self.voice_upload_enabled and not self.admin_enabled:
+            raise ValueError("KOKORO_VOICE_UPLOAD_ENABLED=true requires KOKORO_ADMIN_ENABLED=true")
+
     def resolve_device(self) -> str:
         if self.device != "auto":
             return self.device
@@ -237,4 +259,5 @@ def load_config(
         if v is not None and hasattr(config, k):
             setattr(config, k, v)
 
+    config.validate_security()
     return config

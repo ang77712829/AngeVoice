@@ -89,8 +89,10 @@ def register_extra_routes(
     mark_request: Callable,
     finish_request: Callable,
     increment_stat: Callable[[str, object], None] | None = None,
+    cache_clear: Callable[[], int] | None = None,
+    cache_size: Callable[[], int] | None = None,
 ):
-    """Register optional v2.4 service routes on the existing FastAPI app."""
+    """Register optional AngeVoice service routes on the existing FastAPI app."""
     from fastapi import Depends, File, HTTPException, UploadFile
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel, Field
@@ -202,8 +204,11 @@ def register_extra_routes(
 
     @app.delete("/admin/cache")
     async def clear_cache(_=Depends(verify_admin)):
-        size = len(tts_cache)
-        tts_cache.clear()
+        if cache_clear is not None:
+            size = cache_clear()
+        else:
+            size = len(tts_cache)
+            tts_cache.clear()
         return {"ok": True, "cleared": size}
 
     @app.get("/admin/voices")

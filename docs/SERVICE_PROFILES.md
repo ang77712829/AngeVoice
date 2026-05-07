@@ -1,6 +1,6 @@
-# Kokoro TTS 服务版本说明
+# AngeVoice 服务画像说明 / Service Profiles
 
-本项目从 v2.3.0 开始按两个部署画像维护：
+AngeVoice 按通用服务版和老显卡/保守兼容版两个部署画像维护。两者共享同一套 API、Studio Web UI、中文规则、缓存、统计和安全校验，只在运行时参数、CUDA 基础镜像和端口默认值上有所不同。
 
 ## 1. 通用服务版
 
@@ -22,6 +22,8 @@ KOKORO_REQUEST_TIMEOUT_SECONDS=300
 - OpenAI 风格 `/v1/audio/speech`
 - `/api/tts` 旧版接口
 - `/ws/v1/tts` 逐段流式接口
+- Studio Web UI，支持亮/暗主题、API Key 设置、音色筛选、收藏和可折叠统计卡片
+- 中文自动断句、多音字和轻量分词规则
 - `/stats` 服务统计
 - `/requests` 最近请求状态
 - 内存 LRU 音频缓存
@@ -48,6 +50,7 @@ KOKORO_SEGMENT_LENGTH=80
 
 - 优先使用稳定的 PyTorch/CUDA 组合，不强求最新 CUDA。
 - 不建议多 worker 同时加载 GPU 模型。
+- 如果确实设置 `KOKORO_WORKERS>1`，AngeVoice 会使用 Uvicorn factory/import-string 模式启动；每个 worker 仍会加载独立模型和缓存。
 - 遇到音频噪声、爆音或推理异常时，优先关闭半精度、TensorRT、flash attention 等加速。
 - 长文本建议降低 `KOKORO_SEGMENT_LENGTH`，减少单段失败概率。
 - WebSocket 建议先使用 JSON base64 模式，确认稳定后再开启 binary 模式。
@@ -65,4 +68,11 @@ curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
   -d '{"model":"kokoro","input":"你好世界","voice":"zm_010","response_format":"wav"}' \
   --output output.wav
+```
+
+启用认证时：
+
+```bash
+curl http://localhost:8000/stats \
+  -H "Authorization: Bearer YOUR_GENERATED_TOKEN"
 ```

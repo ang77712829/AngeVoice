@@ -26,6 +26,7 @@ class ServiceState:
         self.eng = eng
         self.tts_semaphore = asyncio.Semaphore(max(1, int(cfg.max_concurrent_requests)))
         self.tts_cache: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+        self.cache_lock = threading.Lock()
         self.active_requests: dict[str, dict] = {}
         self.cancelled_requests: set[str] = set()
         self.stats_lock = threading.Lock()
@@ -60,21 +61,34 @@ class ServiceState:
     def cache_get(self, key: str):
         if not self.cfg.cache_enabled or self.cfg.cache_max_items <= 0:
             return None
-        item = self.tts_cache.get(key)
+        with self.cache_lock:
+            item = self.tts_cache.get(key)
+            if item is not None:
+                self.tts_cache.move_to_end(key)
         if item is None:
             self.inc_stat("cache_misses")
             return None
-        self.tts_cache.move_to_end(key)
         self.inc_stat("cache_hits")
         return item
 
     def cache_set(self, key: str, value: tuple[bytes, str]) -> None:
         if not self.cfg.cache_enabled or self.cfg.cache_max_items <= 0:
             return
-        self.tts_cache[key] = value
-        self.tts_cache.move_to_end(key)
-        while len(self.tts_cache) > self.cfg.cache_max_items:
-            self.tts_cache.popitem(last=False)
+        with self.cache_lock:
+            self.tts_cache[key] = value
+            self.tts_cache.move_to_end(key)
+            while len(self.tts_cache) > self.cfg.cache_max_items:
+                self.tts_cache.popitem(last=False)
+
+    def cache_size(self) -> int:
+        with self.cache_lock:
+            return len(self.tts_cache)
+
+    def cache_clear(self) -> int:
+        with self.cache_lock:
+            size = len(self.tts_cache)
+            self.tts_cache.clear()
+            return size
 
     def mark_request(self, request_id: str, status: str, **extra) -> None:
         if not self.cfg.queue_status_enabled:
@@ -177,4 +191,6 @@ class ServiceState:
             "mark_request": self.mark_request,
             "finish_request": self.finish_request,
             "increment_stat": self.inc_stat,
+            "cache_clear": self.cache_clear,
+            "cache_size": self.cache_size,
         }

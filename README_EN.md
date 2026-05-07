@@ -1,6 +1,6 @@
 # AngeVoice
 
-> Lightweight Chinese TTS self-hosted service. AngeVoice wraps the Kokoro v1.1 Chinese model with OpenAI-compatible APIs, WebSocket segment streaming, Web UI, batch synthesis, cache, metrics, and CPU/GPU/legacy-GPU Docker profiles.
+> Lightweight Chinese TTS self-hosted service. AngeVoice wraps the Kokoro v1.1 Chinese model with OpenAI-compatible APIs, WebSocket segment streaming, refreshed Studio Web UI, Chinese text rules, batch synthesis, cache, metrics, and CPU/GPU/legacy-GPU Docker profiles.
 
 English | [中文](README.md)
 
@@ -27,7 +27,8 @@ Good fits:
 | Capability | Description |
 |---|---|
 | OpenAI-compatible API | `POST /v1/audio/speech` with `model/input/voice/speed/response_format` |
-| Web UI | Built-in page with voice selection, preview, streaming playback, and stop generation |
+| Studio Web UI | Built-in page with light/dark themes, voice filtering, favorites, preview, streaming playback, stop generation, API-key settings, and collapsible metric cards |
+| Chinese text rules | Auto pause punctuation, jieba-first segmentation, fallback lexicon, and common context-aware polyphone overrides |
 | WebSocket streaming | `ws://.../ws/v1/tts` segment streaming with `cancel` / `stop` control frames |
 | Batch synthesis | `POST /v1/audio/batch` returns a ZIP and `manifest.json` |
 | Service controls | Request IDs, `/health`, `/stats`, `/requests`, timeout, concurrency guard, LRU cache |
@@ -51,8 +52,11 @@ src/kokoro_tts/
 │   ├── audio.py          # /v1/audio/speech and /api/tts
 │   └── ws.py             # /ws/v1/tts
 ├── service_extras.py     # batch/admin/mp3 extension routes
+├── zh_rules.py           # Chinese punctuation, polyphone, and lightweight segmentation rules
 ├── engine.py             # Kokoro engine, segmentation, normalization, audio encoding
-└── config.py             # configuration and environment variables
+├── config.py             # configuration and environment variables
+├── templates/index.html  # Studio Web UI shell
+└── static/               # Studio Web UI styles and scripts
 ```
 
 Compatibility notes:
@@ -121,6 +125,12 @@ curl -X POST http://localhost:8000/v1/audio/speech \
   --output output.wav
 ```
 
+When `KOKORO_API_KEY` is enabled, add:
+
+```bash
+-H "Authorization: Bearer YOUR_TOKEN"
+```
+
 Supported formats: `wav`, `pcm`, `mp3`. MP3 requires `KOKORO_MP3_ENABLED=true` and ffmpeg.
 
 ### WebSocket streaming
@@ -134,7 +144,8 @@ ws.onopen = () => {
     voice: "zm_010",
     speed: 1.0,
     format: "pcm_s16le",
-    binary: false
+    binary: false,
+    token: "YOUR_TOKEN" // omit when KOKORO_API_KEY is disabled
   }));
 };
 
@@ -142,6 +153,22 @@ ws.send(JSON.stringify({ type: "cancel" }));
 ```
 
 Message types: `started`, `audio`, `segment_error`, `done`, `cancelled`, `error`.
+
+JSON audio frames carry base64 PCM in the `data` field. When binary mode is enabled, the service sends a metadata JSON frame followed by binary audio bytes.
+
+### Chinese rule examples
+
+Before text reaches the Kokoro pipeline, AngeVoice applies lightweight Chinese rules:
+
+```text
+春花秋月何时了 -> 春花秋月何时瞭。
+我想了解一下 -> 我想瞭解一下
+银行行长正在听音乐 -> 银杭杭掌正在听音悦
+会议12:01开始 -> 会议十二点零一分开始
+Long Chinese input without punctuation -> word-aware pause punctuation
+```
+
+The rules target common reading mistakes. For complex names, places, and domain-specific terms, prefer explicit punctuation or future dictionary/SSML support.
 
 ### Batch ZIP synthesis
 
@@ -193,13 +220,13 @@ A normal `git clone` may only download Git LFS pointer files, not real model wei
 | `KOKORO_ADMIN_ENABLED` | `false` | Enable admin APIs |
 | `KOKORO_VOICE_UPLOAD_ENABLED` | `false` | Enable voice upload |
 | `KOKORO_MP3_ENABLED` | `false` | Enable MP3 output |
-| `KOKORO_API_KEY` | - | Bearer API key |
+| `KOKORO_API_KEY` | - | Bearer API key; placeholder values such as `change-me` are rejected |
 | `KOKORO_CORS_ORIGINS` | `http://localhost:8000` | Comma-separated CORS origins |
 
 ## Security notes
 
 - Set `KOKORO_API_KEY` for public or semi-public deployments.
-- Admin APIs are disabled by default. If enabled, use a strong API key and restrict access at the reverse proxy layer.
+- Admin APIs are disabled by default. If enabled, a strong API key is required or the service refuses to start.
 - `.pt` voice upload is disabled by default. Only upload trusted files; PyTorch weight files should not come from untrusted sources.
 - Do not expose `/admin/*` directly to the public internet.
 - `cancel/stop` prevents later segments from being sent. If the current segment is already inside synchronous inference, it usually stops after that segment completes.
@@ -235,7 +262,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [Security Notes](docs/SECURITY.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Service Profiles](docs/SERVICE_PROFILES.md)
-- [v2.5 Features](docs/V2_4_FEATURES.md)
+- [v2.5 Features](docs/V2_5_FEATURES.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Legacy GPU Deployment](docker/legacy-gpu/README.md)
 

@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
     "kokoro>=0.8.2",
     "misaki[zh]>=0.8.2",
+    "jieba>=0.42.1",
     "torch>=2.0.0",
     "numpy>=1.24.0",
     "soundfile>=0.12.0",

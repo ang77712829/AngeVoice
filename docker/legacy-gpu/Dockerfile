@@ -24,7 +24,7 @@ RUN python3 -m pip install --no-cache-dir torch torchvision torchaudio --index-u
 COPY pyproject.toml README.md ./
 COPY src/ src/
 
-RUN python3 -m pip install --no-cache-dir .
+RUN python3 -m pip install --no-cache-dir -e .
 
 # Preinstall spaCy English model used by Kokoro/Misaki to avoid runtime download.
 RUN python3 -m pip install --no-cache-dir \
