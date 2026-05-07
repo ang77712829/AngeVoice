@@ -140,6 +140,6 @@ This roadmap tracks the long-term direction of AngeVoice. Completed items are ma
 - √ v2.1.x: streaming and Docker stabilization / 流式与 Docker 稳定化
 - √ v2.3.x: service edition with cache, stats, request tracking / 服务化版本，缓存、统计、请求追踪
 - √ v2.4.x: batch, admin, optional MP3, WebSocket cancel, legacy GPU profile / 批量、管理、可选 MP3、WebSocket 取消、老显卡画像
-- √ v2.5.x: service hardening, Chinese rules, Studio UI refresh, and multi-model MOSS runtime / 服务稳定性、中文规则、Studio UI 刷新与多模型 MOSS 运行时
-- □ v2.6.x: Web UI management, task workflow, and more model adapters / Web UI 管理、任务工作流与更多模型适配
+- √ v2.5.x: service hardening, Chinese rules, Studio UI refresh / 服务稳定性、中文规则与 Studio UI 刷新
+- □ v2.6.x: multi-model MOSS runtime, model switcher, output persistence / Web UI 管理、任务工作流与更多模型适配
 - □ v3.x: multi-engine plugin architecture / 多引擎插件架构

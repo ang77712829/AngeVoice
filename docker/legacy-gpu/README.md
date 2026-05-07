@@ -224,5 +224,5 @@ If synthesis works but audio has artifacts:
 ## Related docs / 相关文档
 
 - [Service profiles / 服务画像](../../docs/SERVICE_PROFILES.md)
-- [v2.5 service features / v2.5 服务功能](../../docs/V2_5_FEATURES.md)
+- [v2.6 service features / v2.6 服务功能](../../docs/V2_5_FEATURES.md)
 - [Roadmap / 长期路线图](../../docs/ROADMAP.md)

@@ -39,9 +39,9 @@ Good fits:
 | Docker | CPU, GPU, and Legacy GPU Compose profiles |
 | CLI | Recommended command: `angevoice`; legacy `kokoro-tts` remains supported |
 
-## v2.5 modular refactor
+## v2.6 modular refactor
 
-v2.5 splits the previously heavy `server.py` into focused modules while keeping the public entry points compatible:
+v2.6 splits the previously heavy `server.py` into focused modules while keeping the public entry points compatible:
 
 ```text
 src/kokoro_tts/

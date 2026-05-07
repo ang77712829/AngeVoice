@@ -39,9 +39,9 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 | Docker | CPU、GPU、Legacy GPU 三套 Compose 画像 |
 | CLI | 推荐 `angevoice`，旧命令 `kokoro-tts` 继续兼容 |
 
-## v2.5 模块化重构
+## v2.6 模块化重构
 
-v2.5 将原来较重的 `server.py` 拆成独立模块，保留原有对外入口：
+v2.6 将原来较重的 `server.py` 拆成独立模块，保留原有对外入口：
 
 ```text
 src/kokoro_tts/
