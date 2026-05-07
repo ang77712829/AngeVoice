@@ -62,7 +62,7 @@ ANGEVOICE_SAVE_OUTPUTS=true
 - 遇到音频噪声、爆音或推理异常时，优先关闭半精度、TensorRT、flash attention 等加速。
 - 长文本建议降低 `KOKORO_SEGMENT_LENGTH`，减少单段失败概率。
 - WebSocket 建议先使用 JSON base64 模式，确认稳定后再开启 binary 模式。
-- MOSS-TTS-Nano 在 legacy GPU 画像中默认只开放 CPU ONNX；镜像已通过 ONNX Runtime CUDA 11 feed 预装 CUDA 11.8 兼容的 MOSS GPU 依赖，`moss-nano-cuda` 需要用户手动加入并打开 `MOSS_CUDA_ENABLED=true` 后才会出现在 UI。
+- MOSS-TTS-Nano 在老架构GPU 画像中默认只开放 CPU ONNX；镜像已通过 ONNX Runtime CUDA 11 feed 预装了 CUDA 11.8 兼容的 MOSS GPU 依赖，`moss-nano-cuda` 需要用户手动加入并打开 `MOSS_CUDA_ENABLED=true` 后才会出现在 UI。
 
 ## 3. MOSS-TTS-Nano 可选画像
 
@@ -71,7 +71,7 @@ ANGEVOICE_SAVE_OUTPUTS=true
 推荐配置：
 
 ```bash
-# CPU / legacy GPU
+# CPU / 老架构GPU
 ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cpu
 ANGEVOICE_DEFAULT_MODEL=kokoro
 MOSS_EXECUTION_PROVIDER=cpu

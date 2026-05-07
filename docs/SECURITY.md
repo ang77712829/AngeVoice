@@ -81,7 +81,7 @@ KOKORO_VOICE_UPLOAD_ENABLED=false
 
 ## MOSS 参考音频上传
 
-MOSS 参考音频克隆使用 `/api/tts` multipart 字段 `prompt_audio`，只在模型声明支持 `voice_clone` 时生效。上传文件会写入容器临时目录，合成结束后删除；合成结果是否保存由 `ANGEVOICE_SAVE_OUTPUTS` 控制。CPU/legacy 画像默认不暴露 MOSS CUDA，避免误切到未验证的 GPU 推理路径。
+MOSS 参考音频克隆使用 `/api/tts` multipart 字段 `prompt_audio`，只在模型声明支持 `voice_clone` 时生效。上传文件会写入容器临时目录，合成结束后删除；合成结果是否保存由 `ANGEVOICE_SAVE_OUTPUTS` 控制。CPU 和老架构GPU 画像默认不暴露 MOSS CUDA，避免误切到未验证的 GPU 推理路径。
 
 默认限制：
 

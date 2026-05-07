@@ -85,11 +85,11 @@ src/kokoro_tts/
 
 模型切换 API 会在同一进程内加载目标模型，并在 `ANGEVOICE_MODEL_UNLOAD_ON_SWITCH=true` 时卸载旧模型、清理缓存。MOSS CUDA 加载会先检查 ONNX Runtime provider，并在启用质量闸门时生成短音频，拒绝静音、NaN/Inf 或明显 clipping 的输出。
 
-`MOSS_CUDA_ENABLED=false` 会在注册阶段隐藏 `moss-nano-cuda`，用于 CPU 镜像和 legacy GPU 默认配置。通用 GPU 画像默认注册 `kokoro,moss-nano-cpu,moss-nano-cuda`，但 `ANGEVOICE_DEFAULT_MODEL=kokoro`，所以 MOSS 只会在用户切换时加载。
+`MOSS_CUDA_ENABLED=false` 会在注册阶段隐藏 `moss-nano-cuda`，用于 CPU 镜像和老架构GPU 默认配置。通用 GPU 画像默认注册 `kokoro,moss-nano-cpu,moss-nano-cuda`，但 `ANGEVOICE_DEFAULT_MODEL=kokoro`，所以 MOSS 只会在用户切换时加载。
 
 MOSS capability metadata 会声明 `modes=["preset_voice","voice_clone"]` 和 `voice_clone_supported=true`。Studio Web UI 根据该能力显示参考音频上传控件；非克隆模型收到 `prompt_audio` 时会返回 400。HTTP 缓存 key 包含模型 ID 和参考音频指纹，避免不同 prompt audio 误命中同一条缓存。
 
-MOSS CUDA 依赖目标环境的 ONNX Runtime/CUDA/cuDNN 组合。Tesla P4 在通用 GPU Docker 画像中已通过 `onnxruntime-gpu==1.20.2` + `nvidia-cudnn-cu12==9.1.0.70` 探针测试；缺 cuDNN 9 时官方 runtime 会创建 CPU session，AngeVoice 会拒绝该 CUDA 加载并按配置回退 CPU。Legacy GPU 镜像通过 ONNX Runtime CUDA 11 feed 预装 CUDA 11.8 兼容的 MOSS GPU 依赖，但默认只开放 MOSS CPU，方便用户先稳定运行 Kokoro。
+MOSS CUDA 依赖目标环境的 ONNX Runtime/CUDA/cuDNN 组合。Tesla P4 在通用 GPU Docker 画像中已通过 `onnxruntime-gpu==1.20.2` + `nvidia-cudnn-cu12==9.1.0.70` 探针测试；缺 cuDNN 9 时官方 runtime 会创建 CPU session，AngeVoice 会拒绝该 CUDA 加载并按配置回退 CPU。老架构GPU 镜像通过 ONNX Runtime CUDA 11 feed 预装了 CUDA 11.8 兼容的 MOSS GPU 依赖，但默认只开放 MOSS CPU，方便用户先稳定运行 Kokoro。
 
 ## Studio Web UI
 

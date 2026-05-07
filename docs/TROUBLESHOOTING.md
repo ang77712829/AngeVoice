@@ -68,7 +68,7 @@ print(importlib.util.find_spec("onnx_tts_runtime"))
 PY
 ```
 
-CPU 镜像默认不注册 `moss-nano-cuda`；legacy GPU 画像虽然预装 MOSS GPU 依赖，但默认也会通过 `MOSS_CUDA_ENABLED=false` 隐藏 CUDA MOSS。
+CPU 镜像默认不注册 `moss-nano-cuda`；老架构GPU 画像虽然预装了 MOSS GPU 依赖，但默认也会通过 `MOSS_CUDA_ENABLED=false` 隐藏 CUDA MOSS。
 
 如果 CUDA 模式失败但 CPU 可用，保持：
 
@@ -77,7 +77,7 @@ MOSS_AUTO_FALLBACK_CPU=true
 MOSS_QUALITY_GATE_ENABLED=true
 ```
 
-旧显卡环境先用 `moss-nano-cpu`。`moss-nano-cuda` 需要 ONNX Runtime CUDA provider、CUDA/cuDNN 和驱动完全匹配；如果自检发现静音、NaN/Inf 或 clipping，AngeVoice 会拒绝该 CUDA 输出。legacy GPU 要试 CUDA MOSS 时，需要同时设置：
+旧显卡环境先用 `moss-nano-cpu`。`moss-nano-cuda` 需要 ONNX Runtime CUDA 运行时、CUDA/cuDNN 和驱动版本完全匹配；如果自检发现静音、异常数值或音量过载，AngeVoice 会拒绝该 CUDA 输出。老架构GPU 要试 CUDA MOSS 时，需要同时设置：
 
 ```bash
 ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cpu,moss-nano-cuda

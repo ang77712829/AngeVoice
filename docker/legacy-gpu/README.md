@@ -165,7 +165,7 @@ To try MOSS CUDA on legacy GPU, manually add `moss-nano-cuda` and set
 `MOSS_CUDA_ENABLED=true`; keep it only if the built-in self-test and listening
 test are clean.
 
-如果要在 legacy GPU 上尝试 MOSS CUDA，需要手动加入 `moss-nano-cuda` 并设置
+如果要在老架构GPU 上尝试 MOSS CUDA，需要手动加入 `moss-nano-cuda` 并设置
 `MOSS_CUDA_ENABLED=true`；只有内置自检和人工试听都正常时才建议长期使用。
 
 For Tesla P4 specifically, the modern GPU profile has been validated with

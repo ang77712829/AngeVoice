@@ -96,7 +96,7 @@ Docker profiles preinstall the matching MOSS runtime but still start with
 - CPU image: `kokoro,moss-nano-cpu`; `MOSS_CUDA_ENABLED=false`.
 - Modern GPU image: `kokoro,moss-nano-cpu,moss-nano-cuda`;
   `MOSS_EXECUTION_PROVIDER=cuda`.
-- Legacy GPU image: preinstalls CUDA 11.8 compatible MOSS GPU dependencies
+- Legacy GPU image (老架构GPU 镜像): preinstalls CUDA 11.8 compatible MOSS GPU dependencies
   from the official ONNX Runtime CUDA 11 feed, but exposes only
   `kokoro,moss-nano-cpu` until the user explicitly enables `moss-nano-cuda`
   and `MOSS_CUDA_ENABLED=true`.
