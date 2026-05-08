@@ -186,6 +186,23 @@ class TestSynthesizeStream:
             decoded = base64.b64decode(msg["data"])
             assert len(decoded) > 0
 
+    def test_stream_splits_large_kokoro_segments(self):
+        from kokoro_tts.engine import TTSEngine
+        from kokoro_tts.config import TTSConfig
+
+        engine = TTSEngine(TTSConfig(stream_chunk_seconds=0.01))
+        engine._loaded = True
+        fake_audio = np.ones(5000, dtype=np.float32) * 0.1
+        engine._synthesize_segment = MagicMock(return_value=fake_audio)
+
+        results = list(engine.synthesize_stream("这是一段用于测试流式切片的文本。", voice="zm_010"))
+        audio_msgs = [r for r in results if r["type"] == "audio"]
+
+        assert len(audio_msgs) > 1
+        assert audio_msgs[0]["index"] == 0
+        assert audio_msgs[0]["segment_index"] == 0
+        assert results[-1]["total_audio_chunks"] == len(audio_msgs)
+
     def test_format_param(self):
         from kokoro_tts.engine import TTSEngine
         from kokoro_tts.config import TTSConfig

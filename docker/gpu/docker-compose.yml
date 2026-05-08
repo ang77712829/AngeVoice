@@ -81,7 +81,17 @@ services:
       - MOSS_PROMPT_CACHE_MAX_ITEMS=8
       - MOSS_EXECUTION_PROVIDER=cuda
       - MOSS_CUDA_ENABLED=true
+      # Optional ORT CUDA arena cap. Keep 0 for general-purpose GPU compatibility;
+      # set manually on tight 8GB cards only when troubleshooting CUDA allocation failures.
+      - MOSS_CUDA_MEMORY_LIMIT_MB=0
       - MOSS_CPU_THREADS=2
+      - MOSS_MAX_NEW_FRAMES=375
+      - MOSS_VOICE_CLONE_MAX_TEXT_TOKENS=75
+      - MOSS_SAMPLE_MODE=fixed
+      - MOSS_SEED=1234
+      - MOSS_REALTIME_STREAMING_DECODE=true
+      - MOSS_STREAM_CHUNK_SECONDS=0.35
+      - MOSS_STREAM_QUEUE_MAX_ITEMS=8
       - MOSS_AUTO_FALLBACK_CPU=true
       - MOSS_CUDA_SELF_TEST_ENABLED=true
       - MOSS_QUALITY_GATE_ENABLED=true
@@ -92,6 +102,7 @@ services:
       # WebSocket 流式配置
       - KOKORO_STREAM_FORMAT=pcm_s16le
       - KOKORO_STREAM_BINARY_ENABLED=true
+      - KOKORO_STREAM_CHUNK_SECONDS=0.50
 
       # 内存 LRU 缓存：重复文本/音色/语速/格式会直接命中缓存
       - KOKORO_CACHE_ENABLED=true

@@ -49,9 +49,11 @@ This roadmap tracks the long-term direction of AngeVoice. Completed items are ma
 - √ Stream metadata: sample rate, channel count, format / 流式元信息：采样率、声道、格式
 - √ Browser streaming playback in Studio UI / Studio UI 浏览器流式播放
 - √ MOSS clone reference audio in WebSocket first message / WebSocket 首包支持 MOSS 克隆参考音频
+- √ Bounded WebSocket audio chunks for Kokoro and MOSS / Kokoro 与 MOSS WebSocket 音频小包化
+- √ MOSS codec-frame incremental decode through upstream callback / 基于上游回调的 MOSS codec 帧增量解码
 - □ Standalone browser playback helper library / 独立浏览器播放辅助库
 - □ Reconnect/resume strategy for long text / 长文本断线重连与续传策略
-- □ True model-level streaming if upstream supports it / 上游支持后接入真正模型级流式
+- □ Token-level streaming if future upstream runtimes expose it / 未来上游暴露后接入 token 级流式
 
 ## Admin and voice management / 管理与音色管理
 

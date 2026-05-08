@@ -1,6 +1,6 @@
 # AngeVoice
 
-> 轻量级中文 TTS 自托管服务。AngeVoice 默认基于 Kokoro v1.1 中文模型，支持按需切换 MOSS-TTS-Nano 的本地 TTS 框架，提供 OpenAI 兼容 API、WebSocket 逐段流式、Studio Web UI、中文文本规则、批量合成、缓存、统计和 Docker CPU/GPU/老显卡部署。
+> 轻量级中文 TTS 自托管服务。AngeVoice 默认基于 Kokoro v1.1 中文模型，支持按需切换 MOSS-TTS-Nano 的本地 TTS 框架，提供 OpenAI 兼容 API、WebSocket 小包流式、Studio Web UI、中文文本规则、批量合成、缓存、统计和 Docker CPU/GPU/老显卡部署。
 
 [English](README_EN.md) | 中文
 
@@ -76,7 +76,7 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 | 多模型运行时 | `/v1/models` 查看、加载、卸载和切换模型；切换模型时可卸载旧模型并隔离缓存 |
 | MOSS-TTS-Nano | 通过 OpenMOSS 官方 ONNX runtime 接入，支持预设音色、参考音频克隆、CPU 基线和 CUDA 实验模式 |
 | 中文文本规则 | 自动断句标点、jieba 分词优先、内置兜底词典、常见多音字上下文修正 |
-| WebSocket 流式 | `ws://.../ws/v1/tts` 逐段推送，支持 `cancel` / `stop` 控制帧 |
+| WebSocket 流式 | `ws://.../ws/v1/tts` 小包推送；Kokoro 段落输出会再切片，MOSS 走官方 audio-frame 回调，支持 `cancel` / `stop` |
 | 批量合成 | `POST /v1/audio/batch` 返回 ZIP 和 `manifest.json` |
 | 服务治理 | 请求 ID、`/health`、`/stats`、`/requests`、超时、并发限制、LRU 缓存 |
 | 管理接口 | 可选缓存清理、音色列表、`.pt` 音色上传 |
@@ -207,7 +207,7 @@ curl -X POST http://localhost:8000/api/tts \
 
 参考音频仅对支持 `voice_clone` 的模型生效；对 Kokoro 上传参考音频会返回 400。
 
-WebSocket 也支持 MOSS 克隆的逐段流式输出。首个 JSON 消息可携带 `prompt_audio.data`（base64 或 data URL）；Studio Web UI 会在你选择参考音频并开启流式时自动完成这一步：
+WebSocket 也支持 MOSS 克隆的小包流式输出。首个 JSON 消息可携带 `prompt_audio.data`（base64 或 data URL）；Studio Web UI 会在你选择参考音频并开启流式时自动完成这一步：
 
 ```json
 {
@@ -324,6 +324,7 @@ models/voices/*.pt
 | `KOKORO_SEGMENT_LENGTH` | `100` | 文本切分目标长度 |
 | `KOKORO_DEFAULT_VOICE` | `zm_010` | 默认音色 |
 | `KOKORO_STREAM_BINARY_ENABLED` | `true` | 是否允许 binary 音频帧 |
+| `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | Kokoro WebSocket 输出小包时长，降低长段巨帧和播放卡顿 |
 | `KOKORO_CACHE_ENABLED` | `true` | 是否启用内存 LRU 缓存 |
 | `KOKORO_BATCH_ENABLED` | `true` | 是否启用批量合成 |
 | `KOKORO_ADMIN_ENABLED` | `false` | 是否启用管理接口 |
@@ -341,7 +342,12 @@ models/voices/*.pt
 | `MOSS_MODEL_DIR` | - | MOSS ONNX 模型目录；Docker 建议 `/opt/MOSS-TTS-Nano/models` |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider：`cpu` / `cuda` |
 | `MOSS_CUDA_ENABLED` | `true` | 是否允许注册/切换 `moss-nano-cuda`；CPU/legacy 默认关闭 |
+| `MOSS_CUDA_MEMORY_LIMIT_MB` | `0` | 可选 ORT CUDA 显存 arena 上限；默认不限，只有排查 8GB 小显存分配失败时手动设置 |
 | `MOSS_CPU_THREADS` | `4` | MOSS CPU ONNX 线程数；NAS 建议 2-4 |
+| `MOSS_SAMPLE_MODE` | `fixed` | MOSS 采样模式；`greedy` 更稳定但表现力更平 |
+| `MOSS_SEED` | `1234` | 每次 MOSS 请求重置随机种子，降低长文本多段音色漂移；`-1` 关闭 |
+| `MOSS_STREAM_CHUNK_SECONDS` | `0.45` | MOSS WebSocket 输出小包时长；GPU Compose 默认 0.35 |
+| `MOSS_STREAM_QUEUE_MAX_ITEMS` | `8` | MOSS 流式队列背压上限，避免客户端慢时堆积过多音频 |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | Web UI/API 参考音频上传大小上限 |
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | 克隆参考音频裁剪时长，降低显存和延迟 |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | 参考音频编码缓存条目数，减少重复 clone 开销 |
@@ -371,7 +377,7 @@ models/voices/*.pt
 - 长文本依赖分段合成，极长文本建议走批量/任务队列工作流。
 - GPU 场景下不建议多 worker 同时加载模型，容易造成显存占用翻倍。
 - MP3 输出依赖 ffmpeg。
-- WebSocket 是逐段流式；MOSS 克隆可通过首包上传参考音频，但仍不是模型内部 token 级真实流式。
+- WebSocket 会小包化输出。Kokoro 仍按官方 pipeline 段落推理，MOSS 使用官方 `generate_audio_frames` 回调做 codec-frame 级增量 decode；它不是 token 级流式，但不会再等整段 MOSS chunk 完成后才推送。
 
 ## 测试
 

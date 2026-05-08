@@ -35,17 +35,20 @@ class TestConfig:
         assert config.port == 8000
         assert config.sample_rate == 24000
         assert config.device == "auto"
+        assert config.stream_chunk_seconds == 0.50
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("KOKORO_PORT", "9000")
         monkeypatch.setenv("KOKORO_HOST", "127.0.0.1")
         monkeypatch.setenv("KOKORO_DEVICE", "cpu")
+        monkeypatch.setenv("KOKORO_STREAM_CHUNK_SECONDS", "0.2")
 
         from kokoro_tts.config import load_config
         config = load_config()
         assert config.port == 9000
         assert config.host == "127.0.0.1"
         assert config.device == "cpu"
+        assert config.stream_chunk_seconds == 0.2
 
     def test_function_params_override(self):
         from kokoro_tts.config import load_config
@@ -81,6 +84,10 @@ class TestConfig:
         monkeypatch.setenv("MOSS_PROMPT_CACHE_MAX_ITEMS", "3")
         monkeypatch.setenv("MOSS_OUTPUT_TARGET_PEAK", "0.88")
         monkeypatch.setenv("MOSS_OUTPUT_GAIN", "0.9")
+        monkeypatch.setenv("MOSS_SEED", "42")
+        monkeypatch.setenv("MOSS_CUDA_MEMORY_LIMIT_MB", "4096")
+        monkeypatch.setenv("MOSS_STREAM_CHUNK_SECONDS", "0.25")
+        monkeypatch.setenv("MOSS_STREAM_QUEUE_MAX_ITEMS", "4")
 
         from kokoro_tts.config import load_config
 
@@ -90,6 +97,10 @@ class TestConfig:
         assert config.moss_prompt_cache_max_items == 3
         assert config.moss_output_target_peak == 0.88
         assert config.moss_output_gain == 0.9
+        assert config.moss_seed == 42
+        assert config.moss_cuda_memory_limit_mb == 4096
+        assert config.moss_stream_chunk_seconds == 0.25
+        assert config.moss_stream_queue_max_items == 4
         assert config.moss_apply_angevoice_rules is True
 
     def test_moss_cuda_can_be_disabled(self):
@@ -136,6 +147,83 @@ class TestPromptAudio:
         assert output.shape == (2, 2)
         assert float(np.max(np.abs(output))) <= 0.5001
         assert engine.metadata()["last_output_quality"]["scale"] < 1.0
+
+    def test_moss_stream_split_limits_chunk_duration(self):
+        import numpy as np
+
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.moss_engine import MossNanoEngine
+
+        engine = MossNanoEngine(TTSConfig(moss_stream_chunk_seconds=0.01))
+        chunks = list(engine._split_waveform_for_stream(np.zeros((5000, 2), dtype=np.float32)))
+
+        assert len(chunks) == 3
+        assert all(chunk.shape[0] <= 2400 for chunk in chunks)
+
+    def test_moss_stream_uses_frame_callback(self):
+        import numpy as np
+
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.moss_engine import MossNanoEngine
+
+        class FakeCodecSession:
+            def reset(self):
+                pass
+
+            def run_frames(self, frame_chunk):
+                audio_length = 120 * len(frame_chunk)
+                audio = np.ones((1, 2, audio_length), dtype=np.float32) * 0.1
+                return audio, audio_length
+
+        class FakeRuntime:
+            codec_meta = {"codec_config": {"sample_rate": 48000, "channels": 2}}
+
+            def __init__(self):
+                self.codec_streaming_session = FakeCodecSession()
+                self.manifest = {"generation_defaults": {}, "tts_config": {"n_vq": 1}}
+                self.generated_calls = 0
+
+            def list_builtin_voices(self):
+                return [{"voice": "Junhao", "prompt_audio_codes": [[1]]}]
+
+            def resolve_prompt_audio_codes(self, *, voice, prompt_audio_path):
+                return [[1]]
+
+            def prepare_synthesis_text(self, *, text, voice, enable_wetext, enable_normalize_tts_text):
+                return {"text": text}
+
+            def split_voice_clone_text(self, text, max_tokens):
+                return [text]
+
+            def encode_text(self, text):
+                return [1, 2, 3]
+
+            def build_voice_clone_request_rows(self, prompt_audio_codes, text_token_ids):
+                return {"inputIds": [], "attentionMask": []}
+
+            def generate_audio_frames(self, request_rows, on_frame=None):
+                self.generated_calls += 1
+                frames = []
+                for index in range(3):
+                    frame = [index]
+                    frames.append(frame)
+                    on_frame(frames, index, frame)
+                return frames
+
+            def estimate_voice_clone_inter_chunk_pause_seconds(self, chunk_text):
+                return 0.0
+
+        engine = MossNanoEngine(TTSConfig(moss_stream_chunk_seconds=1.0))
+        engine._runtime = FakeRuntime()
+        engine._loaded = True
+
+        results = list(engine.synthesize_stream("你好", voice="Junhao"))
+
+        assert engine._runtime.generated_calls == 1
+        assert results[0]["type"] == "started"
+        audio_messages = [item for item in results if item["type"] == "audio"]
+        assert len(audio_messages) == 3
+        assert results[-1]["type"] == "done"
 
 
 class TestOpenApi:

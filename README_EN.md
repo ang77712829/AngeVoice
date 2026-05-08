@@ -31,7 +31,7 @@ Good fits:
 | Multi-model runtime | `/v1/models` lists, loads, unloads, and switches engines; cache keys are isolated by model |
 | MOSS-TTS-Nano | OpenMOSS ONNX runtime adapter with preset voices, reference-audio cloning, CPU baseline, and experimental CUDA mode |
 | Chinese text rules | Auto pause punctuation, jieba-first segmentation, fallback lexicon, and common context-aware polyphone overrides |
-| WebSocket streaming | `ws://.../ws/v1/tts` segment streaming with `cancel` / `stop` control frames |
+| WebSocket streaming | `ws://.../ws/v1/tts` bounded audio chunks; Kokoro segment output is sliced, MOSS uses the official audio-frame callback; supports `cancel` / `stop` |
 | Batch synthesis | `POST /v1/audio/batch` returns a ZIP and `manifest.json` |
 | Service controls | Request IDs, `/health`, `/stats`, `/requests`, timeout, concurrency guard, LRU cache |
 | Admin APIs | Optional cache clearing, voice listing, and `.pt` voice upload |
@@ -282,6 +282,7 @@ Output files are grouped by date and pruned by `ANGEVOICE_OUTPUT_MAX_FILES`. MOS
 | `KOKORO_SEGMENT_LENGTH` | `100` | Target segment length |
 | `KOKORO_DEFAULT_VOICE` | `zm_010` | Default voice |
 | `KOKORO_STREAM_BINARY_ENABLED` | `true` | Enable binary WebSocket audio frames |
+| `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | Kokoro WebSocket audio chunk duration; reduces giant frames on long segments |
 | `KOKORO_CACHE_ENABLED` | `true` | Enable LRU audio cache |
 | `KOKORO_BATCH_ENABLED` | `true` | Enable batch synthesis |
 | `KOKORO_ADMIN_ENABLED` | `false` | Enable admin APIs |
@@ -299,7 +300,12 @@ Output files are grouped by date and pruned by `ANGEVOICE_OUTPUT_MAX_FILES`. MOS
 | `MOSS_MODEL_DIR` | - | MOSS ONNX asset directory; Docker uses `/opt/MOSS-TTS-Nano/models` |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider: `cpu` / `cuda` |
 | `MOSS_CUDA_ENABLED` | `true` | Allow registering/switching `moss-nano-cuda`; CPU/legacy profiles disable it |
+| `MOSS_CUDA_MEMORY_LIMIT_MB` | `0` | Optional ORT CUDA arena cap; default is unrestricted, set manually only when debugging allocation failures on tight 8GB GPUs |
 | `MOSS_CPU_THREADS` | `4` | MOSS CPU ONNX thread count; 2-4 is usually safer on NAS boxes |
+| `MOSS_SAMPLE_MODE` | `fixed` | MOSS sampling mode; `greedy` is steadier but flatter |
+| `MOSS_SEED` | `1234` | Reset MOSS RNG per request to reduce long-text tone drift; `-1` disables |
+| `MOSS_STREAM_CHUNK_SECONDS` | `0.45` | MOSS WebSocket audio chunk duration; GPU Compose uses 0.35 |
+| `MOSS_STREAM_QUEUE_MAX_ITEMS` | `8` | MOSS streaming queue backpressure limit |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | Reference-audio upload size limit |
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | Trim clone reference audio to reduce VRAM use and latency |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | Cache encoded reference audio codes for repeated clone requests |
@@ -329,7 +335,7 @@ See [Security Notes](docs/SECURITY.md).
 - Long-form text is synthesized segment by segment. Very long books should use a batch/task workflow.
 - For GPU deployments, avoid multiple workers loading the model at the same time unless you have enough VRAM.
 - MP3 output depends on ffmpeg.
-- WebSocket streaming is segment-level streaming. MOSS clone mode can upload reference audio in the first message, but it is still not true model-internal token streaming.
+- WebSocket streaming sends bounded audio chunks. Kokoro still follows the official pipeline's segment-level generation, while MOSS uses the official `generate_audio_frames` callback for codec-frame incremental decode. It is not token-level streaming, but it no longer waits for a whole MOSS chunk before sending audio.
 
 ## Testing
 

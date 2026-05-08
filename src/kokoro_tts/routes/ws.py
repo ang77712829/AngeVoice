@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import inspect
 import logging
 import time
 from contextlib import suppress
@@ -124,6 +125,12 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                 try:
                     with state.model_manager.borrow(model) as eng:
                         prompt_kwargs = {"prompt_audio_path": prompt_audio_path} if prompt_audio_path else {}
+                        try:
+                            stream_params = inspect.signature(eng.synthesize_stream).parameters
+                        except (TypeError, ValueError):
+                            stream_params = {}
+                        if "cancel_check" in stream_params:
+                            prompt_kwargs["cancel_check"] = lambda: cancel_flag["cancelled"] or state.is_cancelled(request_id)
                         for chunk in eng.synthesize_stream(text, voice, speed, fmt, **prompt_kwargs):
                             if cancel_flag["cancelled"] or state.is_cancelled(request_id):
                                 break

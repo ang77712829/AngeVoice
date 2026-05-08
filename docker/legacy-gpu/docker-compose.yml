@@ -79,7 +79,17 @@ services:
       - MOSS_PROMPT_CACHE_MAX_ITEMS=6
       - MOSS_EXECUTION_PROVIDER=cpu
       - MOSS_CUDA_ENABLED=false
+      # Optional ORT CUDA arena cap. Legacy profile keeps CUDA MOSS hidden by default;
+      # set this manually only when exposing moss-nano-cuda on tight 8GB cards.
+      - MOSS_CUDA_MEMORY_LIMIT_MB=0
       - MOSS_CPU_THREADS=2
+      - MOSS_MAX_NEW_FRAMES=375
+      - MOSS_VOICE_CLONE_MAX_TEXT_TOKENS=75
+      - MOSS_SAMPLE_MODE=fixed
+      - MOSS_SEED=1234
+      - MOSS_REALTIME_STREAMING_DECODE=true
+      - MOSS_STREAM_CHUNK_SECONDS=0.35
+      - MOSS_STREAM_QUEUE_MAX_ITEMS=6
       - MOSS_AUTO_FALLBACK_CPU=true
       - MOSS_CUDA_SELF_TEST_ENABLED=true
       - MOSS_QUALITY_GATE_ENABLED=true
@@ -90,6 +100,7 @@ services:
       # Prefer JSON/base64 streaming first on older environments; enable binary after validation if needed.
       - KOKORO_STREAM_FORMAT=pcm_s16le
       - KOKORO_STREAM_BINARY_ENABLED=false
+      - KOKORO_STREAM_CHUNK_SECONDS=0.50
 
       # Cache reduces repeated synthesis work.
       - KOKORO_CACHE_ENABLED=true

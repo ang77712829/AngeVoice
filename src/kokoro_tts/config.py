@@ -131,6 +131,7 @@ class TTSConfig:
     stream_enabled: bool = True
     stream_format: str = "pcm_s16le"
     stream_binary_enabled: bool = True
+    stream_chunk_seconds: float = 0.50
 
     cache_enabled: bool = True
     cache_max_items: int = 128
@@ -168,11 +169,15 @@ class TTSConfig:
     moss_max_new_frames: int = 375
     moss_voice_clone_max_text_tokens: int = 75
     moss_sample_mode: str = "fixed"
+    moss_seed: int = 1234
     moss_cuda_enabled: bool = True
+    moss_cuda_memory_limit_mb: int = 0
     moss_enable_wetext_processing: bool = False
     moss_enable_normalize_tts_text: bool = True
     moss_apply_angevoice_rules: bool = True
     moss_realtime_streaming_decode: bool = True
+    moss_stream_chunk_seconds: float = 0.45
+    moss_stream_queue_max_items: int = 8
     moss_cuda_self_test_enabled: bool = True
     moss_auto_fallback_cpu: bool = True
     moss_quality_gate_enabled: bool = True
@@ -291,12 +296,17 @@ def _apply_env(config: TTSConfig) -> None:
         "MOSS_PROMPT_CACHE_MAX_ITEMS": IntEnvSpec("moss_prompt_cache_max_items", 0),
         "MOSS_MAX_NEW_FRAMES": IntEnvSpec("moss_max_new_frames", 1),
         "MOSS_VOICE_CLONE_MAX_TEXT_TOKENS": IntEnvSpec("moss_voice_clone_max_text_tokens", 1),
+        "MOSS_SEED": IntEnvSpec("moss_seed", -1),
+        "MOSS_CUDA_MEMORY_LIMIT_MB": IntEnvSpec("moss_cuda_memory_limit_mb", 0),
+        "MOSS_STREAM_QUEUE_MAX_ITEMS": IntEnvSpec("moss_stream_queue_max_items", 1, 64),
     }
     float_env: dict[str, FloatEnvSpec] = {
         "KOKORO_DEFAULT_SPEED": FloatEnvSpec("default_speed"),
         "KOKORO_REQUEST_TIMEOUT_SECONDS": FloatEnvSpec("request_timeout_seconds", 1.0),
+        "KOKORO_STREAM_CHUNK_SECONDS": FloatEnvSpec("stream_chunk_seconds", 0.05, 2.0),
         "ANGEVOICE_MODEL_SWITCH_TIMEOUT_SECONDS": FloatEnvSpec("model_switch_timeout_seconds", 1.0),
         "MOSS_PROMPT_AUDIO_MAX_SECONDS": FloatEnvSpec("moss_prompt_audio_max_seconds", 0.0),
+        "MOSS_STREAM_CHUNK_SECONDS": FloatEnvSpec("moss_stream_chunk_seconds", 0.05, 2.0),
         "MOSS_MAX_CLIP_RATIO": FloatEnvSpec("moss_max_clip_ratio", 0.0, 1.0),
         "MOSS_OUTPUT_TARGET_PEAK": FloatEnvSpec("moss_output_target_peak", 0.1, 1.0),
         "MOSS_OUTPUT_GAIN": FloatEnvSpec("moss_output_gain", 0.1, 2.0),
