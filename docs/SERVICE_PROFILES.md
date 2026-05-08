@@ -14,6 +14,7 @@ KOKORO_MAX_CONCURRENT_REQUESTS=1
 KOKORO_CACHE_ENABLED=true
 KOKORO_CACHE_MAX_ITEMS=128
 KOKORO_STREAM_BINARY_ENABLED=true
+KOKORO_STREAM_CHUNK_SECONDS=0.50
 KOKORO_REQUEST_TIMEOUT_SECONDS=300
 ANGEVOICE_ENABLED_MODELS=kokoro
 ANGEVOICE_MODEL_UNLOAD_ON_SWITCH=true
@@ -23,7 +24,7 @@ ANGEVOICE_MODEL_UNLOAD_ON_SWITCH=true
 
 - OpenAI 风格 `/v1/audio/speech`
 - `/api/tts` 旧版接口
-- `/ws/v1/tts` 逐段流式接口
+- `/ws/v1/tts` 小包流式接口
 - Studio Web UI，支持亮/暗主题、API Key 设置、音色筛选、收藏和可折叠统计卡片
 - 中文自动断句、多音字和轻量分词规则
 - `/stats` 服务统计
@@ -46,6 +47,7 @@ KOKORO_MAX_CONCURRENT_REQUESTS=1
 KOKORO_CACHE_ENABLED=true
 KOKORO_CACHE_MAX_ITEMS=64
 KOKORO_STREAM_BINARY_ENABLED=false
+KOKORO_STREAM_CHUNK_SECONDS=0.50
 KOKORO_REQUEST_TIMEOUT_SECONDS=600
 KOKORO_SEGMENT_LENGTH=80
 ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cpu
@@ -54,6 +56,9 @@ MOSS_CUDA_ENABLED=false
 ANGEVOICE_SAVE_OUTPUTS=true
 MOSS_PROMPT_AUDIO_MAX_SECONDS=8
 MOSS_PROMPT_CACHE_MAX_ITEMS=6
+MOSS_SAMPLE_MODE=fixed
+MOSS_SEED=1234
+MOSS_STREAM_CHUNK_SECONDS=0.35
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
 MOSS_OUTPUT_TARGET_PEAK=0.90
 ```
@@ -85,6 +90,10 @@ MOSS_MODEL_DIR=/opt/MOSS-TTS-Nano/models
 MOSS_PROMPT_UPLOAD_MAX_BYTES=20971520
 MOSS_PROMPT_AUDIO_MAX_SECONDS=10
 MOSS_PROMPT_CACHE_MAX_ITEMS=8
+MOSS_SAMPLE_MODE=fixed
+MOSS_SEED=1234
+MOSS_STREAM_CHUNK_SECONDS=0.45
+MOSS_STREAM_QUEUE_MAX_ITEMS=8
 MOSS_AUTO_FALLBACK_CPU=true
 MOSS_QUALITY_GATE_ENABLED=true
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
@@ -98,11 +107,14 @@ ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cpu,moss-nano-cuda
 ANGEVOICE_DEFAULT_MODEL=kokoro
 MOSS_EXECUTION_PROVIDER=cuda
 MOSS_CUDA_ENABLED=true
+MOSS_CUDA_MEMORY_LIMIT_MB=0
 ```
 
-Tesla P4 已用 Docker 探针验证可在通用 GPU 画像的 `onnxruntime-gpu==1.20.2` + `nvidia-cudnn-cu12==9.1.0.70` 下跑通 MOSS CUDA 推理；如果缺 cuDNN 9，ONNX Runtime 会退成 CPU session，AngeVoice 会拒绝该 CUDA 加载并回退 CPU。长期运行前仍要人工试听，确认无静音、爆音、失真或 clipping。
+Tesla P4 已用 Docker 探针验证可在通用 GPU 画像的 `onnxruntime-gpu==1.20.2` + `nvidia-cudnn-cu12==9.1.0.70` 下跑通 MOSS CUDA 推理；如果缺 cuDNN 9，ONNX Runtime 会退成 CPU session，AngeVoice 会拒绝该 CUDA 加载并回退 CPU。长期运行前仍要人工试听，确认无静音、爆音、失真或 clipping。`MOSS_CUDA_MEMORY_LIMIT_MB` 默认保持 `0`，不限制大显存用户；只有 8GB 小显存排障时才建议手动设置。
 
 MOSS 克隆参考音频会被裁剪到 `MOSS_PROMPT_AUDIO_MAX_SECONDS`，并缓存编码后的 prompt audio codes。这样可以降低 clone 模式在 8GB 显存和低功耗 CPU 上的重复开销；如果仍然出现 OOM 或爆音，优先缩短参考音频而不是提高并发。
+
+WebSocket 输出会按固定时长切成小音频包。Kokoro 仍按官方 pipeline 段落推理；MOSS 会接入官方 `generate_audio_frames` 回调，在 codec frame 生成过程中增量 decode，避免长文本一次性发送巨型 WebSocket frame。
 
 持久化建议：
 

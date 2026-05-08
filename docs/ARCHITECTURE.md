@@ -56,7 +56,7 @@ src/kokoro_tts/
 2. `security.py` 校验 WebSocket token 或 Authorization header。
 3. `service_state.py` 用同一个并发信号量保护推理。
 4. `engine_manager.py` 借用目标模型，当前模型不匹配且启用卸载策略时会先切换并卸载旧模型。
-5. 引擎逐段生成 `started/audio/segment_error/done` 消息。
+5. 引擎生成 `started/audio/segment_error/done` 消息。Kokoro 保持上游 pipeline 的段落级推理，但在 WebSocket 发送前按固定时长切成小包；MOSS 使用官方 `generate_audio_frames` 回调和 codec streaming decoder，在当前 chunk 仍在生成时持续推送小音频包。
 6. 客户端发送 `cancel` 或 `stop` 后，服务停止后续段落推送。
 
 ## 状态对象

@@ -97,8 +97,13 @@ request:
 | `MOSS_MODEL_DIR` | - | Optional ONNX asset directory; Docker uses `/opt/MOSS-TTS-Nano/models` |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | `cpu` or `cuda` |
 | `MOSS_CUDA_ENABLED` | `true` | Allows registering `moss-nano-cuda`; CPU/legacy Compose disable it |
+| `MOSS_CUDA_MEMORY_LIMIT_MB` | `0` | Optional ORT CUDA arena cap; `0` leaves VRAM unrestricted for general GPU compatibility |
 | `MOSS_CPU_THREADS` | `4` | ONNX Runtime intra-op threads |
 | `MOSS_DEFAULT_VOICE` | `Junhao` | Built-in MOSS voice preset |
+| `MOSS_SAMPLE_MODE` | `fixed` | MOSS sampling mode; `greedy` is more stable but flatter |
+| `MOSS_SEED` | `1234` | Reset RNG per request to reduce long-text voice drift; `-1` disables |
+| `MOSS_STREAM_CHUNK_SECONDS` | `0.45` | WebSocket chunk duration for MOSS audio frames |
+| `MOSS_STREAM_QUEUE_MAX_ITEMS` | `8` | Streaming queue backpressure limit |
 | `MOSS_PROMPT_AUDIO_PATH` | - | Optional reference audio for voice cloning |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | `/api/tts` reference-audio upload limit |
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | Trim uploaded/reference audio before codec encoding |
@@ -127,12 +132,24 @@ KOKORO_MAX_CONCURRENT_REQUESTS=1
 MOSS_CPU_THREADS=2
 MOSS_PROMPT_AUDIO_MAX_SECONDS=8
 MOSS_PROMPT_CACHE_MAX_ITEMS=6
+MOSS_STREAM_CHUNK_SECONDS=0.35
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
 ```
 
 For modern GPUs with 8 GB VRAM, keep reference audio short. Long clone samples
 can make the codec encoder allocate multi-GB buffers even though the acoustic
 model itself is small.
+
+If CUDA session creation fails with CUBLAS or BFC arena allocation errors on a
+tight 8 GB card, first stop other GPU containers or switch idle AngeVoice
+models back to Kokoro/CPU. As a last resort, set `MOSS_CUDA_MEMORY_LIMIT_MB`
+manually, for example `4096` on a Tesla P4. The default stays `0` so larger GPUs
+can use their full VRAM.
+
+MOSS WebSocket streaming uses the official OpenMOSS `generate_audio_frames`
+callback and decodes codec frames incrementally. Kokoro exposes segment-level
+generation through its official pipeline, so AngeVoice bounds the WebSocket
+frame size after each Kokoro segment is generated.
 
 ## Docker Notes
 

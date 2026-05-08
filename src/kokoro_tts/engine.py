@@ -226,6 +226,7 @@ class TTSEngine:
             "voices": self.get_voices(),
             "default_voice": self.default_voice,
             "streaming": True,
+            "stream_chunk_seconds": self.config.stream_chunk_seconds,
             "speed_supported": True,
         }
 
@@ -473,25 +474,40 @@ class TTSEngine:
         }
 
         speed_fn = self._make_speed_fn(speed)
+        audio_index = 0
         for i, segment in enumerate(segments):
             try:
                 wav_seg = self._synthesize_segment(self._zh_pipeline, segment, voice, speed_fn)
                 if wav_seg is not None:
                     wav_seg = self._postprocess_segment(wav_seg)
-                    audio_bytes = self._encode_segment(wav_seg, fmt)
-                    yield {
-                        "type": "audio",
-                        "index": i,
-                        "data": base64.b64encode(audio_bytes).decode("ascii"),
-                        "format": fmt,
-                        "sample_rate": self.config.sample_rate,
-                        "channels": 1,
-                    }
+                    for stream_seg in self._split_stream_audio(wav_seg):
+                        audio_bytes = self._encode_segment(stream_seg, fmt)
+                        yield {
+                            "type": "audio",
+                            "index": audio_index,
+                            "segment_index": i,
+                            "data": base64.b64encode(audio_bytes).decode("ascii"),
+                            "format": fmt,
+                            "sample_rate": self.config.sample_rate,
+                            "channels": 1,
+                        }
+                        audio_index += 1
             except Exception as e:
                 logger.warning(f"段落 {i + 1} 合成失败: {e}")
                 yield {"type": "segment_error", "index": i, "message": str(e)}
 
-        yield {"type": "done", "total_segments": len(segments)}
+        yield {"type": "done", "total_segments": len(segments), "total_audio_chunks": audio_index}
+
+    def _split_stream_audio(self, audio_array):
+        import numpy as np
+
+        audio = np.asarray(audio_array, dtype=np.float32)
+        if audio.size == 0:
+            return
+        max_seconds = max(0.05, float(self.config.stream_chunk_seconds))
+        max_samples = max(1, int(self.sample_rate * max_seconds))
+        for start in range(0, int(audio.shape[0]), max_samples):
+            yield np.ascontiguousarray(audio[start : start + max_samples])
 
     def _encode_segment(self, audio_array, format="pcm_s16le"):
         return encode_audio_segment(audio_array, format, self.sample_rate)
