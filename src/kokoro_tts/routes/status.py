@@ -48,6 +48,32 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             )
         return HTMLResponse("<h1>AngeVoice</h1><p>Built on Kokoro v1.1 model.</p>")
 
+    @router.get("/api-docs", response_class=HTMLResponse)
+    async def api_docs(request: Request):
+        """Human-friendly API documentation with copyable MOSS clone examples."""
+        if templates:
+            current_model = state.model_manager.current_snapshot()
+            bootstrap = {
+                "models": state.model_manager.list_models(),
+                "currentModel": state.model_manager.current_model_id,
+                "authRequired": bool(cfg.api_key),
+                "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
+                "streamEnabled": cfg.stream_enabled,
+                "streamBinaryEnabled": cfg.stream_binary_enabled,
+                "mp3Enabled": getattr(cfg, "mp3_enabled", False),
+                "mossPromptUploadMaxBytes": getattr(cfg, "moss_prompt_upload_max_bytes", 0),
+                "mossPromptAudioMaxSeconds": getattr(cfg, "moss_prompt_audio_max_seconds", 0),
+            }
+            return templates.TemplateResponse(
+                request,
+                "api_docs.html",
+                {"bootstrap": bootstrap},
+            )
+        return HTMLResponse(
+            "<h1>AngeVoice API Docs</h1>"
+            "<p>Install the package with template support to view the full documentation page.</p>"
+        )
+
     @router.get("/health")
     async def health():
         current_model = state.model_manager.current_snapshot()
