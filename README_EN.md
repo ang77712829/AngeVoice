@@ -43,6 +43,7 @@ Good fits:
 | Service controls | Request IDs, `/health`, `/stats`, `/requests`, timeout, concurrency guard, LRU cache |
 | Docker profiles | CPU, GPU, and Legacy GPU Compose profiles |
 | CLI | Recommended command: `angevoice`; legacy `kokoro-tts` remains supported |
+| Idle timeout GPU release | `ANGEVOICE_IDLE_TIMEOUT_SECONDS` configurable auto-unload of inactive models to release GPU memory |
 
 ## Quick start
 
@@ -241,6 +242,12 @@ environment:
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | Encoded prompt-audio cache size |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | Fall back to CPU when CUDA self-test fails |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | Reject silent, NaN/Inf, or heavily clipped MOSS self-test output |
+| `ANGEVOICE_IDLE_TIMEOUT_SECONDS` | `0` | Auto-unload inactive models after N seconds; 0 = disabled |
+| `ANGEVOICE_IDLE_CHECK_INTERVAL` | `30` | Idle check interval (seconds) |
+| `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.20` | Stream decode low threshold (seconds); below this decode 1 frame |
+| `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.55` | Stream decode mid threshold; below this decode 2 frames |
+| `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.10` | Stream decode high threshold; below this decode 4 frames |
+| `MOSS_STREAM_CHUNK_MIN_FLOOR` | `0.05` | Minimum stream chunk floor (seconds) |
 
 ## Security notes
 

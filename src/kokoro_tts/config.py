@@ -186,6 +186,19 @@ class TTSConfig:
     moss_output_target_peak: float = 0.92
     moss_output_gain: float = 1.0
 
+    # Stream decode frame budget thresholds (Issue #10)
+    # Lead seconds below each threshold determine how many frames to decode at once
+    moss_stream_budget_threshold_low: float = 0.20
+    moss_stream_budget_threshold_mid: float = 0.55
+    moss_stream_budget_threshold_high: float = 1.10
+    moss_stream_chunk_min_floor: float = 0.05
+
+    # Idle timeout: unload non-current models after N seconds of no requests
+    # 0 = disabled (default). When enabled, a background timer checks periodically
+    # and releases GPU memory for models that have not been used recently.
+    model_idle_timeout_seconds: float = 0
+    model_idle_check_interval: float = 30
+
     @property
     def model_path(self) -> str:
         return str(self.model_dir)
@@ -310,6 +323,12 @@ def _apply_env(config: TTSConfig) -> None:
         "MOSS_MAX_CLIP_RATIO": FloatEnvSpec("moss_max_clip_ratio", 0.0, 1.0),
         "MOSS_OUTPUT_TARGET_PEAK": FloatEnvSpec("moss_output_target_peak", 0.1, 1.0),
         "MOSS_OUTPUT_GAIN": FloatEnvSpec("moss_output_gain", 0.1, 2.0),
+        "MOSS_STREAM_BUDGET_THRESHOLD_LOW": FloatEnvSpec("moss_stream_budget_threshold_low", 0.0),
+        "MOSS_STREAM_BUDGET_THRESHOLD_MID": FloatEnvSpec("moss_stream_budget_threshold_mid", 0.0),
+        "MOSS_STREAM_BUDGET_THRESHOLD_HIGH": FloatEnvSpec("moss_stream_budget_threshold_high", 0.0),
+        "MOSS_STREAM_CHUNK_MIN_FLOOR": FloatEnvSpec("moss_stream_chunk_min_floor", 0.01),
+        "ANGEVOICE_IDLE_TIMEOUT_SECONDS": FloatEnvSpec("model_idle_timeout_seconds", 0.0),
+        "ANGEVOICE_IDLE_CHECK_INTERVAL": FloatEnvSpec("model_idle_check_interval", 5.0),
     }
     bool_env: dict[str, str] = {
         "KOKORO_STREAM_BINARY_ENABLED": "stream_binary_enabled",

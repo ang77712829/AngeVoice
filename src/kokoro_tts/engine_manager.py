@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import time
 import sys
 import threading
 from contextlib import contextmanager
@@ -42,13 +43,83 @@ class EngineManager:
         self._lock = threading.RLock()
         self._engines: dict[str, object] = {}
         self._current_model_id = self.normalize_model_id(cfg.default_model)
+        self._last_used: dict[str, float] = {}
         if initial_engine is not None:
             self._engines["kokoro"] = initial_engine
             self._current_model_id = "kokoro"
+            self._last_used["kokoro"] = time.monotonic()
+        self._idle_timer: threading.Timer | None = None
+        self._idle_timer_stop = threading.Event()
+        self._start_idle_timer()
 
     @property
     def current_model_id(self) -> str:
         return self._current_model_id
+
+    def _touch_model(self, model_id: str) -> None:
+        """Record the last time a model was actively used."""
+        self._last_used[model_id] = time.monotonic()
+
+    def _start_idle_timer(self) -> None:
+        """Start the background idle-check timer if timeout is configured."""
+        timeout = getattr(self.cfg, "model_idle_timeout_seconds", 0) or 0
+        if timeout <= 0:
+            return
+        interval = max(5.0, float(getattr(self.cfg, "model_idle_check_interval", 30) or 30))
+        logger.info(
+            "Idle unload timer enabled: models idle for %.0fs will be unloaded (check every %.0fs)",
+            timeout, interval,
+        )
+        self._idle_timer_stop.clear()
+        self._schedule_idle_check(interval)
+
+    def _schedule_idle_check(self, interval: float) -> None:
+        if self._idle_timer_stop.is_set():
+            return
+        self._idle_timer = threading.Timer(interval, self._run_idle_check, args=(interval,))
+        self._idle_timer.daemon = True
+        self._idle_timer.start()
+
+    def _run_idle_check(self, interval: float) -> None:
+        try:
+            self._check_and_unload_idle_models()
+        except Exception:
+            logger.debug("Idle check failed", exc_info=True)
+        finally:
+            self._schedule_idle_check(interval)
+
+    def _check_and_unload_idle_models(self) -> None:
+        timeout = getattr(self.cfg, "model_idle_timeout_seconds", 0) or 0
+        if timeout <= 0:
+            return
+        now = time.monotonic()
+        unloaded: list[str] = []
+        with self._lock:
+            for model_id in list(self._engines.keys()):
+                if model_id == self._current_model_id:
+                    continue
+                engine = self._engines.get(model_id)
+                if engine is None or not getattr(engine, "is_loaded", False):
+                    continue
+                last = self._last_used.get(model_id, 0)
+                if now - last >= timeout:
+                    unload_fn = getattr(engine, "unload", None)
+                    if callable(unload_fn):
+                        unload_fn()
+                        unloaded.append(model_id)
+                        logger.info(
+                            "Idle unload: model %s released after %.0fs of inactivity",
+                            model_id, now - last,
+                        )
+        if unloaded:
+            logger.info("Idle unload completed: released %s", ", ".join(unloaded))
+
+    def stop_idle_timer(self) -> None:
+        """Gracefully stop the background idle timer."""
+        self._idle_timer_stop.set()
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
 
     def normalize_model_id(self, model_id: str | None) -> str:
         raw = str(model_id or self._current_model_id or self.cfg.default_model).strip().lower()
@@ -102,6 +173,7 @@ class EngineManager:
     def switch_model(self, model_id: str, *, unload_previous: bool | None = None, load: bool = True) -> dict:
         target_id = self.normalize_model_id(model_id)
         self._ensure_enabled(target_id)
+        self._touch_model(target_id)
         unload_previous = self.cfg.model_unload_on_switch if unload_previous is None else bool(unload_previous)
         with self._lock:
             previous_id = self._current_model_id
@@ -131,6 +203,7 @@ class EngineManager:
     def borrow(self, model_id: str | None = None) -> Iterator[object]:
         target_id = self.normalize_model_id(model_id)
         self._ensure_enabled(target_id)
+        self._touch_model(target_id)
         with self._lock:
             if target_id != self._current_model_id and self.cfg.model_unload_on_switch:
                 self.switch_model(target_id, unload_previous=True, load=True)

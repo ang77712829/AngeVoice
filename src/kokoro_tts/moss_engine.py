@@ -534,8 +534,8 @@ class MossNanoEngine:
             except Exception:
                 logger.debug("Failed to reset MOSS RNG seed", exc_info=True)
 
-    @staticmethod
     def _resolve_stream_decode_frame_budget(
+        self,
         emitted_samples_total: int,
         sample_rate: int,
         first_audio_emitted_at_perf: float | None,
@@ -551,11 +551,14 @@ class MossNanoEngine:
                 0.0,
                 time.perf_counter() - float(first_audio_emitted_at_perf),
             )
-            if lead_seconds < 0.20:
+            threshold_low = float(getattr(self.config, "moss_stream_budget_threshold_low", 0.20))
+            threshold_mid = float(getattr(self.config, "moss_stream_budget_threshold_mid", 0.55))
+            threshold_high = float(getattr(self.config, "moss_stream_budget_threshold_high", 1.10))
+            if lead_seconds < threshold_low:
                 return 1
-            if lead_seconds < 0.55:
+            if lead_seconds < threshold_mid:
                 return 2
-            if lead_seconds < 1.10:
+            if lead_seconds < threshold_high:
                 return 4
             return 8
 
@@ -611,7 +614,8 @@ class MossNanoEngine:
         audio = np.asarray(waveform, dtype=np.float32)
         if audio.size == 0:
             return
-        max_seconds = max(0.05, float(self.config.moss_stream_chunk_seconds))
+        min_floor = float(getattr(self.config, "moss_stream_chunk_min_floor", 0.05))
+        max_seconds = max(min_floor, float(self.config.moss_stream_chunk_seconds))
         max_samples = max(1, int(self.sample_rate * max_seconds))
         total_samples = int(audio.shape[0])
         for start in range(0, total_samples, max_samples):

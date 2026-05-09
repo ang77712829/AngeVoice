@@ -43,6 +43,7 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 | 服务治理 | 请求 ID、`/health`、`/stats`、`/requests`、超时、并发限制、LRU 缓存 |
 | Docker 画像 | CPU、GPU、老架构 GPU 三套 Compose 画像 |
 | CLI | 推荐 `angevoice`，旧命令 `kokoro-tts` 继续兼容 |
+| 空闲超时释放显存 | `ANGEVOICE_IDLE_TIMEOUT_SECONDS` 可配置空闲超时自动卸载非活跃模型，释放 GPU 显存 |
 
 ## 快速开始
 
@@ -241,6 +242,12 @@ environment:
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | 参考音频编码缓存条目数 |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | CUDA 自检失败时回退 CPU |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | 拒绝静音、NaN/Inf 或明显 clipping 的 MOSS 自检输出 |
+| `ANGEVOICE_IDLE_TIMEOUT_SECONDS` | `0` | 空闲超时自动卸载非活跃模型（秒），0=禁用 |
+| `ANGEVOICE_IDLE_CHECK_INTERVAL` | `30` | 空闲检查间隔（秒） |
+| `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.20` | 流式解码低阈值（秒），低于此值每次解码1帧 |
+| `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.55` | 流式解码中阈值（秒），低于此值每次解码2帧 |
+| `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.10` | 流式解码高阈值（秒），低于此值每次解码4帧 |
+| `MOSS_STREAM_CHUNK_MIN_FLOOR` | `0.05` | 流式最小分包时长下限（秒） |
 
 完整配置见 [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) 和各 Docker Compose 文件。
 

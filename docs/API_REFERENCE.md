@@ -1,47 +1,43 @@
-# API Reference / API 参考
+# API 参考
 
-This document is the hand-maintained API reference for AngeVoice v2.6.x. It covers Studio UI, the human-friendly `/api-docs` page, OpenAI-compatible HTTP synthesis, legacy `/api/tts`, model switching, MOSS-TTS-Nano reference-audio clone mode, WebSocket streaming, batch export, and optional admin APIs.
+本文档是 AngeVoice v2.6.x 的 API 参考手册，涵盖 Studio Web UI、可复制示例页面 `/api-docs`、OpenAI 兼容 HTTP 合成、旧版 `/api/tts` 接口、模型切换、MOSS-TTS-Nano 参考音频克隆、WebSocket 流式合成、批量导出及可选管理接口。
 
-本文档是 AngeVoice v2.6.x 的人工维护 API 参考，覆盖 Studio UI、可复制示例文档页 `/api-docs`、OpenAI 兼容 HTTP 合成、旧版兼容 `/api/tts`、模型切换、MOSS-TTS-Nano 参考音频克隆、WebSocket 流式、批量导出和可选管理接口。
+## 调用地址
 
-## Base URLs / 调用地址
-
-| Profile / 画像 | HTTP / Web UI | WebSocket |
+| 部署方式 | HTTP / Web UI | WebSocket |
 |---|---|---|
-| pip / development | `http://localhost:8000` | `ws://localhost:8000/ws/v1/tts` |
+| pip / 开发环境 | `http://localhost:8000` | `ws://localhost:8000/ws/v1/tts` |
 | Docker CPU | `http://localhost:8100` | `ws://localhost:8100/ws/v1/tts` |
 | Docker GPU | `http://localhost:8101` | `ws://localhost:8101/ws/v1/tts` |
-| Docker Legacy GPU / 老架构 GPU | `http://localhost:8102` | `ws://localhost:8102/ws/v1/tts` |
+| Docker 旧架构 GPU | `http://localhost:8102` | `ws://localhost:8102/ws/v1/tts` |
 
-Examples use:
+以下示例均使用：
 
 ```bash
 BASE_URL=http://localhost:8000
 WS_URL=ws://localhost:8000/ws/v1/tts
 ```
 
-Docker users only need to replace the port. For a remote NAS, use the NAS host or IP address, for example `http://192.168.1.2:8101`.
+Docker 部署时只需替换端口号。远程 NAS 部署时把 `localhost` 换成 NAS 主机名或 IP，例如 `http://192.168.1.2:8101`。
 
-Docker 部署时只需要替换端口。远程 NAS 部署时，把 `localhost` 换成 NAS 主机名或 IP，例如 `http://192.168.1.2:8101`。
+## 文档页面
 
-## Documentation pages / 文档页面
-
-| Path | Purpose / 用途 |
+| 路径 | 用途 |
 |---|---|
 | `/` | Studio Web UI |
-| `/api-docs` | Human-friendly API examples, especially MOSS clone / 普通用户可复制示例，重点说明 MOSS 克隆 |
+| `/api-docs` | 普通用户可复制示例页面，重点说明 MOSS 克隆 |
 | `/docs` | FastAPI Swagger UI |
 | `/redoc` | FastAPI ReDoc |
 
-## Authentication / 鉴权
+## 鉴权
 
-When `KOKORO_API_KEY` is empty, local trusted deployments can call APIs without a token. When it is set, HTTP APIs require:
+当 `KOKORO_API_KEY` 为空时，本地可信部署无需 token 即可调用接口。当设置了 API key 后，HTTP 请求需要携带：
 
 ```bash
 -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-WebSocket clients can send the same token either through the `Authorization` header or in the first JSON message:
+WebSocket 客户端可通过 `Authorization` 头或首条 JSON 消息传递 token：
 
 ```json
 {
@@ -51,45 +47,45 @@ WebSocket clients can send the same token either through the `Authorization` hea
 }
 ```
 
-内置 Studio Web UI 会在设置面板保存 Bearer Token，并同时用于 HTTP 请求和 WebSocket 首包。
+内置 Studio Web UI 会在设置面板保存 Bearer Token，同时用于 HTTP 请求和 WebSocket 首包。
 
-## Endpoint Matrix / 接口矩阵
+## 接口列表
 
-| Method | Path | Description / 说明 | Auth |
+| 方法 | 路径 | 说明 | 鉴权 |
 |---|---|---|---|
-| `GET` | `/` | Studio Web UI | No |
-| `GET` | `/api-docs` | Copyable API docs page / 可复制示例文档页 | No |
-| `GET` | `/health` | Service health, current model, voices, stream capability | No |
-| `GET` | `/stats` | Metrics snapshot | Yes when `KOKORO_API_KEY` is set |
-| `GET` | `/requests` | Recent request states | Yes when `KOKORO_API_KEY` is set |
-| `GET` | `/v1/models` | List enabled models and current model | No |
-| `GET` | `/v1/models/current` | Current model metadata | No |
-| `POST` | `/v1/models/switch` | Load and switch current model | Yes |
-| `POST` | `/v1/models/{model_id}/load` | Warm-load a model | Yes |
-| `POST` | `/v1/models/{model_id}/unload` | Unload a loaded model | Yes |
-| `GET` | `/v1/audio/voices` | List voices, optional `?model=` | No |
-| `GET` | `/v1/audio/formats` | List supported output formats | No |
-| `POST` | `/v1/audio/speech` | OpenAI-compatible speech synthesis | Yes when `KOKORO_API_KEY` is set |
-| `GET` | `/api/tts` | Legacy query-string speech synthesis | Yes when `KOKORO_API_KEY` is set |
-| `POST` | `/api/tts` | Legacy JSON/form speech synthesis; multipart supports MOSS clone | Yes when `KOKORO_API_KEY` is set |
-| `WS` | `/ws/v1/tts` | Streaming synthesis; first message carries request fields | Yes when `KOKORO_API_KEY` is set |
-| `POST` | `/v1/audio/batch` | Batch synthesis ZIP with `manifest.json` | Yes when `KOKORO_API_KEY` is set |
-| `POST` | `/v1/audio/requests/{request_id}/cancel` | Mark an active request as cancelling | Yes when `KOKORO_API_KEY` is set |
-| `DELETE` | `/admin/cache` | Clear in-memory synthesis cache | Admin enabled + API key |
-| `GET` | `/admin/voices` | Inspect local Kokoro voice directory | Admin enabled + API key |
-| `POST` | `/admin/voices/upload` | Upload trusted `.pt` Kokoro voice files | Admin enabled + upload enabled + API key |
+| `GET` | `/` | Studio Web UI | 否 |
+| `GET` | `/api-docs` | 可复制示例文档页 | 否 |
+| `GET` | `/health` | 服务健康状态、当前模型、音色列表、流式能力 | 否 |
+| `GET` | `/stats` | 运行时指标快照 | 设置 API key 后需要 |
+| `GET` | `/requests` | 最近请求状态 | 设置 API key 后需要 |
+| `GET` | `/v1/models` | 已启用模型列表及当前模型 | 否 |
+| `GET` | `/v1/models/current` | 当前模型元信息 | 否 |
+| `POST` | `/v1/models/switch` | 加载并切换当前模型 | 需要 |
+| `POST` | `/v1/models/{model_id}/load` | 预热加载模型 | 需要 |
+| `POST` | `/v1/models/{model_id}/unload` | 卸载已加载模型 | 需要 |
+| `GET` | `/v1/audio/voices` | 音色列表，支持 `?model=` 参数 | 否 |
+| `GET` | `/v1/audio/formats` | 支持的输出格式列表 | 否 |
+| `POST` | `/v1/audio/speech` | OpenAI 兼容语音合成 | 设置 API key 后需要 |
+| `GET` | `/api/tts` | 旧版 query-string 语音合成 | 设置 API key 后需要 |
+| `POST` | `/api/tts` | 旧版 JSON/表单语音合成；multipart 支持 MOSS 克隆上传 | 设置 API key 后需要 |
+| `WS` | `/ws/v1/tts` | WebSocket 流式合成；首条消息携带请求参数 | 设置 API key 后需要 |
+| `POST` | `/v1/audio/batch` | 批量合成 ZIP，返回 `manifest.json` | 设置 API key 后需要 |
+| `POST` | `/v1/audio/requests/{request_id}/cancel` | 标记正在执行的请求为取消状态 | 设置 API key 后需要 |
+| `DELETE` | `/admin/cache` | 清空内存中的合成缓存 | 需开启 Admin + API key |
+| `GET` | `/admin/voices` | 查看本地 Kokoro 音色目录 | 需开启 Admin + API key |
+| `POST` | `/admin/voices/upload` | 上传可信的 `.pt` Kokoro 音色文件 | 需开启 Admin + 上传功能 + API key |
 
-## Model IDs / 模型 ID
+## 模型 ID
 
-| Model ID | Description / 说明 | Clone support |
+| 模型 ID | 说明 | 克隆支持 |
 |---|---|---|
-| `kokoro` | Kokoro v1.1 Chinese, default startup engine | No; uses Kokoro `.pt` voices |
-| `moss-nano-cpu` | MOSS-TTS-Nano ONNX on CPU | Yes |
-| `moss-nano-cuda` | MOSS-TTS-Nano ONNX on CUDA | Yes, experimental |
+| `kokoro` | Kokoro v1.1 中文引擎，默认启动 | 不支持；使用 Kokoro `.pt` 音色 |
+| `moss-nano-cpu` | MOSS-TTS-Nano ONNX，CPU 推理 | 支持 |
+| `moss-nano-cuda` | MOSS-TTS-Nano ONNX，CUDA 推理 | 支持（实验性） |
 
-Aliases such as `moss` and `moss-nano` resolve according to `MOSS_EXECUTION_PROVIDER`. CPU and legacy profiles hide `moss-nano-cuda` by default for stability.
+别名 `moss` 和 `moss-nano` 根据 `MOSS_EXECUTION_PROVIDER` 环境变量自动解析。CPU 和旧架构部署默认隐藏 `moss-nano-cuda`。
 
-## Status and Discovery / 状态与发现
+## 状态查询与发现
 
 ```bash
 curl "$BASE_URL/health"
@@ -98,14 +94,14 @@ curl "$BASE_URL/requests"
 curl "$BASE_URL/v1/audio/formats"
 ```
 
-List voices for the current model or a specific model:
+查询音色列表（当前模型或指定模型）：
 
 ```bash
 curl "$BASE_URL/v1/audio/voices"
 curl "$BASE_URL/v1/audio/voices?model=moss-nano-cpu"
 ```
 
-List, load, switch, and unload models:
+模型加载、切换与卸载：
 
 ```bash
 curl "$BASE_URL/v1/models"
@@ -123,28 +119,28 @@ curl -X POST "$BASE_URL/v1/models/moss-nano-cpu/unload" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-`unload_previous=true` releases the old engine after switching and clears the audio cache. For GPU/NAS deployments this is usually the recommended behavior.
+设置 `unload_previous=true` 会在切换模型后释放旧引擎并清空音频缓存。GPU/NAS 部署推荐使用此选项。
 
-## OpenAI-Compatible Speech / OpenAI 兼容合成
+## OpenAI 兼容合成
 
-Endpoint:
+接口地址：
 
 ```http
 POST /v1/audio/speech
 Content-Type: application/json
 ```
 
-Request fields:
+请求参数：
 
-| Field | Type | Default | Notes |
+| 参数 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `model` | string | `kokoro` | `kokoro`, `moss-nano-cpu`, `moss-nano-cuda`, or alias |
-| `input` | string | required | Text to synthesize. `text` is accepted as an alias |
-| `voice` | string | model default | Kokoro voice ID or MOSS preset voice |
-| `speed` | number | `1.0` | Range `0.5` to `2.0`; MOSS currently does not support speed control |
-| `response_format` | string | `wav` | `wav`, `pcm`, or `mp3` when enabled |
+| `model` | string | `kokoro` | `kokoro`、`moss-nano-cpu`、`moss-nano-cuda` 或别名 |
+| `input` | string | 必填 | 待合成文本，`text` 也可作为别名 |
+| `voice` | string | 模型默认 | Kokoro 音色 ID 或 MOSS 预设音色 |
+| `speed` | number | `1.0` | 范围 `0.5` 到 `2.0`；MOSS 暂不支持语速调节 |
+| `response_format` | string | `wav` | 可选 `wav`、`pcm`、`mp3`（需开启） |
 
-Kokoro example:
+Kokoro 示例：
 
 ```bash
 curl -X POST "$BASE_URL/v1/audio/speech" \
@@ -154,7 +150,7 @@ curl -X POST "$BASE_URL/v1/audio/speech" \
   --output kokoro.wav
 ```
 
-MOSS preset voice example:
+MOSS 预设音色示例：
 
 ```bash
 curl -X POST "$BASE_URL/v1/audio/speech" \
@@ -164,21 +160,19 @@ curl -X POST "$BASE_URL/v1/audio/speech" \
   --output moss.wav
 ```
 
-Response:
+响应说明：
 
-- Body: audio bytes.
-- `Content-Type`: `audio/wav`, `audio/pcm`, or `audio/mpeg` for MP3.
-- Header: `X-Request-ID`.
+- 响应体为音频字节流
+- `Content-Type` 为 `audio/wav`、`audio/pcm` 或 MP3 时为 `audio/mpeg`
+- 响应头包含 `X-Request-ID`
 
-> `/v1/audio/speech` is JSON-only. Use `/api/tts` multipart for MOSS reference-audio clone upload.
->
-> `/v1/audio/speech` 是 JSON 接口。MOSS 参考音频克隆上传请使用 `/api/tts` multipart。
+> `/v1/audio/speech` 仅支持 JSON 格式。如需 MOSS 参考音频克隆上传，请使用 `/api/tts` 的 multipart 方式。
 
-## Legacy `/api/tts` / 旧版兼容接口
+## 旧版 `/api/tts` 接口
 
-`/api/tts` accepts JSON, query-string, or form data. Use this endpoint when you need MOSS reference-audio clone upload because multipart upload is not part of the OpenAI-compatible JSON shape.
+`/api/tts` 支持 JSON、query-string 和表单数据三种格式。当需要上传 MOSS 参考音频进行克隆时，需使用此接口（multipart 上传不在 OpenAI 兼容 JSON 格式范围内）。
 
-JSON request:
+JSON 请求：
 
 ```bash
 curl -X POST "$BASE_URL/api/tts" \
@@ -188,7 +182,7 @@ curl -X POST "$BASE_URL/api/tts" \
   --output output.wav
 ```
 
-Query-string request:
+Query-string 请求：
 
 ```bash
 curl --get "$BASE_URL/api/tts" \
@@ -199,7 +193,7 @@ curl --get "$BASE_URL/api/tts" \
   --output output.wav
 ```
 
-Multipart request without clone:
+Multipart 请求（不含克隆）：
 
 ```bash
 curl -X POST "$BASE_URL/api/tts" \
@@ -211,36 +205,34 @@ curl -X POST "$BASE_URL/api/tts" \
   --output output.wav
 ```
 
-## MOSS Reference-Audio Clone / MOSS 参考音频克隆
+## MOSS 参考音频克隆
 
-### Where should the reference audio go? / 参考音频到底放哪？
+### 参考音频存放位置
 
-MOSS reference audio is **not** a Kokoro voice file. Do not place it in `models/voices`; that directory is only for Kokoro `.pt` voices.
+MOSS 参考音频**不是** Kokoro 音色文件，不要放到 `models/voices` 目录。`models/voices` 仅用于存放 Kokoro 的 `.pt` 音色文件。
 
-MOSS 参考音频不是 Kokoro 音色文件，不要放到 `models/voices`。`models/voices` 只用于 Kokoro 的 `.pt` 音色。
-
-| Usage / 用法 | Where the audio lives / 音频位置 | Best for / 适合 |
+| 使用方式 | 音频存放位置 | 适用场景 |
 |---|---|---|
-| HTTP multipart upload | Client-side file path, e.g. `./reference.wav`, uploaded as `-F prompt_audio=@reference.wav` | Most users; one request carries one reference file |
-| WebSocket base64 | Client reads a local file and sends base64/data URL in first JSON message `prompt_audio.data` | Streaming clone, browser upload, real-time playback |
-| Server-side default prompt | Mount a file into the container, e.g. `/app/prompts/reference.wav`, and set `MOSS_PROMPT_AUDIO_PATH` | Fixed default cloned voice without uploading each request |
+| HTTP multipart 上传 | 客户端本地文件，例如 `./reference.wav`，通过 `-F prompt_audio=@reference.wav` 上传 | 最常用；每次请求携带一个参考文件 |
+| WebSocket base64 | 客户端读取本地文件后以 base64/data URL 发送，放在首条 JSON 消息的 `prompt_audio.data` 字段 | 流式克隆、浏览器上传、实时播放 |
+| 服务端默认 prompt | 将文件挂载到容器内，例如 `/app/prompts/reference.wav`，并设置 `MOSS_PROMPT_AUDIO_PATH` | 固定使用同一个克隆音色，无需每次上传 |
 
-Recommended reference audio:
+参考音频建议：
 
-- 3-10 seconds.
-- One speaker only.
-- Clear voice, low background noise.
-- Do not use very long music/noisy clips.
+- 时长 3-10 秒
+- 单人说话
+- 语音清晰，背景噪音低
+- 避免过长的音乐或嘈杂片段
 
-Relevant limits:
+相关环境变量：
 
-| Variable | Purpose |
+| 变量 | 用途 |
 |---|---|
-| `MOSS_PROMPT_UPLOAD_MAX_BYTES` | Upload size limit |
-| `MOSS_PROMPT_AUDIO_MAX_SECONDS` | Trim duration before prompt encoding |
-| `MOSS_PROMPT_CACHE_MAX_ITEMS` | Cache encoded prompt codes for repeated clone requests |
+| `MOSS_PROMPT_UPLOAD_MAX_BYTES` | 上传文件大小限制 |
+| `MOSS_PROMPT_AUDIO_MAX_SECONDS` | prompt 编码前的截断时长 |
+| `MOSS_PROMPT_CACHE_MAX_ITEMS` | 缓存已编码的 prompt 码，用于重复克隆请求 |
 
-### HTTP multipart clone / HTTP 文件上传克隆
+### HTTP multipart 克隆
 
 ```bash
 curl -X POST "$BASE_URL/api/tts" \
@@ -253,18 +245,18 @@ curl -X POST "$BASE_URL/api/tts" \
   --output clone.wav
 ```
 
-Field aliases:
+字段别名：
 
-| Field | Alias | Notes |
+| 字段 | 别名 | 说明 |
 |---|---|---|
-| `prompt_audio` | `reference_audio` | Multipart upload field |
-| `response_format` | `format` | `wav`, `pcm`, or `mp3` when enabled |
-| `text` | `input`, `prompt` | Text field for `/api/tts` |
-| `voice` | `speaker` | Voice field for `/api/tts` |
+| `prompt_audio` | `reference_audio` | multipart 上传字段 |
+| `response_format` | `format` | 输出格式：`wav`、`pcm`、`mp3`（需开启） |
+| `text` | `input`、`prompt` | `/api/tts` 的文本字段 |
+| `voice` | `speaker` | `/api/tts` 的音色字段 |
 
-Uploading `prompt_audio` to `kokoro` or another model without clone support returns `400 当前模型不支持参考音频克隆`.
+将 `prompt_audio` 上传到 `kokoro` 或其他不支持克隆的模型时，返回 `400 当前模型不支持参考音频克隆`。
 
-### Python HTTP clone example / Python 上传参考音频
+### Python HTTP 上传克隆示例
 
 ```python
 import requests
@@ -287,13 +279,11 @@ with open("clone.wav", "wb") as out:
     out.write(resp.content)
 ```
 
-### Server-side default prompt audio / 服务端默认参考音频
+### 服务端默认参考音频
 
-If every MOSS clone request should use the same reference audio, mount it into the container and set `MOSS_PROMPT_AUDIO_PATH`.
+如果所有 MOSS 克隆请求都使用同一段参考音频，可以将其挂载到容器内并设置 `MOSS_PROMPT_AUDIO_PATH`。
 
-如果所有 MOSS clone 请求都使用同一段参考音频，可以把它挂载到容器内，并设置 `MOSS_PROMPT_AUDIO_PATH`。
-
-Docker Compose example:
+Docker Compose 示例：
 
 ```yaml
 volumes:
@@ -305,7 +295,7 @@ environment:
   - MOSS_PROMPT_CACHE_MAX_ITEMS=8
 ```
 
-Then call `/api/tts` without `prompt_audio`:
+之后调用 `/api/tts` 时无需传 `prompt_audio` 字段：
 
 ```bash
 curl -X POST "$BASE_URL/api/tts" \
@@ -317,33 +307,31 @@ curl -X POST "$BASE_URL/api/tts" \
   --output clone-default.wav
 ```
 
-This does not create a Kokoro `.pt` voice. It only provides a reusable MOSS prompt audio path.
+> 注意：这不会生成 Kokoro `.pt` 音色文件，只是为 MOSS 提供一条可复用的 prompt audio 路径。
 
-这不会生成 Kokoro `.pt` 音色，只是给 MOSS 提供一条可复用的 prompt audio 路径。
+## WebSocket 流式合成
 
-## WebSocket Streaming / WebSocket 流式
-
-Connect to:
+连接地址：
 
 ```text
 ws://localhost:8000/ws/v1/tts
 ```
 
-First JSON message:
+首条 JSON 消息参数：
 
-| Field | Type | Default | Notes |
+| 参数 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `model` | string | current/default model | Optional model ID |
-| `text` | string | required | Text to synthesize |
-| `voice` | string | model default voice | Kokoro voice ID or MOSS preset |
-| `speed` | number | configured default | Range `0.5` to `2.0`; MOSS currently does not support speed control |
-| `format` | string | `pcm_s16le` | `pcm_s16le` or `wav` |
-| `binary` | boolean | `false` | Sends binary audio frames when enabled and allowed |
-| `token` | string | empty | API key when configured |
-| `prompt_audio.data` | string | empty | Base64 or data URL for MOSS clone streaming |
-| `prompt_audio.filename` | string | `prompt.wav` | Used for suffix validation |
+| `model` | string | 当前默认模型 | 可选，指定模型 ID |
+| `text` | string | 必填 | 待合成文本 |
+| `voice` | string | 模型默认音色 | Kokoro 音色 ID 或 MOSS 预设 |
+| `speed` | number | 配置默认值 | 范围 `0.5` 到 `2.0`；MOSS 暂不支持语速调节 |
+| `format` | string | `pcm_s16le` | 可选 `pcm_s16le` 或 `wav` |
+| `binary` | boolean | `false` | 启用后发送二进制音频帧（需满足条件） |
+| `token` | string | 空 | 启用 API key 时需传递 |
+| `prompt_audio.data` | string | 空 | MOSS 克隆流式的 base64 或 data URL |
+| `prompt_audio.filename` | string | `prompt.wav` | 用于后缀校验 |
 
-### Basic browser stream / 基础浏览器流式
+### 基础浏览器流式示例
 
 ```javascript
 const ws = new WebSocket("ws://localhost:8000/ws/v1/tts");
@@ -364,14 +352,14 @@ ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
   if (msg.type === "audio") {
     const pcmBytes = Uint8Array.from(atob(msg.data), (c) => c.charCodeAt(0));
-    // Feed pcmBytes to an AudioWorklet, WebAudio buffer, or your player queue.
+    // 将 pcmBytes 送入 AudioWorklet、WebAudio buffer 或播放队列
   }
 };
 
 ws.send(JSON.stringify({ type: "cancel" }));
 ```
 
-### MOSS clone streaming first message / MOSS 克隆流式首包
+### MOSS 克隆流式首包
 
 ```json
 {
@@ -388,9 +376,9 @@ ws.send(JSON.stringify({ type: "cancel" }));
 }
 ```
 
-For backwards-compatible custom clients, `prompt_audio_data`, `reference_audio_data`, and `prompt_audio_filename` are also accepted.
+为兼容旧版自定义客户端，也接受 `prompt_audio_data`、`reference_audio_data` 和 `prompt_audio_filename` 字段。
 
-### Browser FileReader clone streaming / 浏览器读取文件并流式克隆
+### 浏览器 FileReader 克隆流式
 
 ```javascript
 async function fileToDataUrl(file) {
@@ -425,8 +413,7 @@ async function startMossCloneStream(file) {
     const msg = JSON.parse(event.data);
     if (msg.type === "audio") {
       const bytes = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0));
-      // bytes is PCM s16le. Send it to an AudioWorklet/player queue,
-      // or wrap it as WAV in your client/backend.
+      // bytes 为 PCM s16le 数据，送入 AudioWorklet/播放队列，或在客户端封装为 WAV
       console.log("audio chunk", bytes.byteLength);
     }
     if (msg.type === "done") ws.close();
@@ -439,7 +426,7 @@ async function startMossCloneStream(file) {
 }
 ```
 
-### Python websockets clone streaming / Python WebSocket 克隆流式
+### Python WebSocket 克隆流式示例
 
 ```python
 import asyncio
@@ -478,33 +465,31 @@ async def main():
 asyncio.run(main())
 ```
 
-The Python example saves raw PCM s16le. To get a WAV file directly, request `format:"wav"` or wrap PCM with the returned `sample_rate` and `channels`.
+上面的示例保存的是原始 PCM s16le 数据。如需直接得到 WAV 文件，可请求 `format:"wav"`，或根据返回的 `sample_rate`、`channels` 自行封装。
 
-上面的 Python 示例保存的是原始 PCM s16le。要直接得到 wav，可以请求 `format:"wav"`，或者按返回的 `sample_rate`、`channels` 自行封装。
+服务端消息类型：
 
-Server message types:
-
-| Type | Meaning / 含义 |
+| 类型 | 含义 |
 |---|---|
-| `started` | Stream metadata: `segments`, `sample_rate`, `channels`, `format`, `dtype`, optional `voice_clone` |
-| `audio` | Audio chunk: `index`, optional `segment_index`, `data`, `format`, `sample_rate`, `channels`, `request_id`, `model` |
-| `segment_error` | One segment failed but the stream may continue or finish |
-| `done` | Stream completed with `total_segments` and `total_audio_chunks` |
-| `cancelled` | Client sent `cancel` / `stop` or request was marked cancelling |
-| `error` | Request-level error |
+| `started` | 流元信息：`segments`、`sample_rate`、`channels`、`format`、`dtype`，可选 `voice_clone` |
+| `audio` | 音频块：`index`、可选 `segment_index`、`data`、`format`、`sample_rate`、`channels`、`request_id`、`model` |
+| `segment_error` | 某个分段合成失败，但流可能继续或正常结束 |
+| `done` | 合成完成，包含 `total_segments` 和 `total_audio_chunks` |
+| `cancelled` | 客户端发送了 `cancel`/`stop`，或请求被标记为取消 |
+| `error` | 请求级错误 |
 
-Binary mode sends a metadata JSON `audio` message without `data`, followed by the raw audio bytes. JSON mode always sends base64 in `data`.
+二进制模式下，`audio` 消息的 JSON 部分不包含 `data` 字段，随后紧跟原始音频字节。JSON 模式始终在 `data` 字段中以 base64 编码传输。
 
-## Batch ZIP / 批量 ZIP
+## 批量 ZIP 合成
 
-Endpoint:
+接口地址：
 
 ```http
 POST /v1/audio/batch
 Content-Type: application/json
 ```
 
-Example:
+示例：
 
 ```bash
 curl -X POST "$BASE_URL/v1/audio/batch" \
@@ -524,60 +509,60 @@ curl -X POST "$BASE_URL/v1/audio/batch" \
   --output angevoice_batch.zip
 ```
 
-Response is `application/zip` and contains:
+响应为 `application/zip` 格式，包含：
 
-- One audio file per successful item.
-- `manifest.json` with per-item status, filename, bytes, or error.
+- 每个成功项生成一个音频文件
+- `manifest.json` 记录每项的状态、文件名、字节数或错误信息
 
-Batch items can override `model`, `voice`, `speed`, and `filename`. Batch clone upload is not supported; use `/api/tts` multipart for MOSS reference-audio clone requests.
+批量项可单独覆盖 `model`、`voice`、`speed` 和 `filename`。批量接口不支持克隆上传，MOSS 参考音频克隆请使用 `/api/tts` multipart 方式。
 
-## Cancel Requests / 取消请求
+## 取消请求
 
-HTTP requests return `X-Request-ID`. WebSocket messages include `request_id`. To mark a running request as cancelling:
+HTTP 请求返回的响应头包含 `X-Request-ID`，WebSocket 消息中包含 `request_id`。取消正在执行的请求：
 
 ```bash
 curl -X POST "$BASE_URL/v1/audio/requests/REQUEST_ID/cancel" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-For WebSocket, the client can also send:
+WebSocket 客户端也可发送：
 
 ```json
 {"type":"stop"}
 ```
 
-or:
+或：
 
 ```json
 {"type":"cancel"}
 ```
 
-Cancellation prevents later segments from being pushed. If the current segment is already inside synchronous model inference, it usually stops after that segment finishes.
+取消操作会阻止后续分段的推送。如果当前分段已进入同步推理阶段，通常会在该分段完成后停止。
 
-## Optional Admin APIs / 可选管理接口
+## 可选管理接口
 
-Admin APIs are disabled by default. Enable them only in trusted environments:
+管理接口默认关闭，仅在可信环境中启用：
 
 ```bash
 KOKORO_ADMIN_ENABLED=true
 KOKORO_API_KEY=<paste-generated-token-here>
 ```
 
-Clear cache:
+清空缓存：
 
 ```bash
 curl -X DELETE "$BASE_URL/admin/cache" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-List local Kokoro voices:
+查看本地 Kokoro 音色：
 
 ```bash
 curl "$BASE_URL/admin/voices" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-Upload trusted `.pt` voice files:
+上传可信 `.pt` 音色文件：
 
 ```bash
 curl -X POST "$BASE_URL/admin/voices/upload" \
@@ -585,30 +570,69 @@ curl -X POST "$BASE_URL/admin/voices/upload" \
   -F file=@my_voice.pt
 ```
 
-Voice upload also requires:
+音色上传还需启用：
 
 ```bash
 KOKORO_VOICE_UPLOAD_ENABLED=true
 ```
 
-Do not expose `/admin/*` directly to the public internet.
+> 请勿将 `/admin/*` 接口暴露到公网。
 
-## Output Formats / 输出格式
+## 输出格式
 
-| Format | Request value | Response |
+| 格式 | 请求值 | 响应 Content-Type |
 |---|---|---|
 | WAV | `wav` | `audio/wav` |
-| PCM s16le | HTTP: `pcm`; WebSocket: `pcm_s16le` | Raw PCM bytes |
-| MP3 | `mp3` | `audio/mpeg`; requires `KOKORO_MP3_ENABLED=true` and ffmpeg |
+| PCM s16le | HTTP: `pcm`；WebSocket: `pcm_s16le` | 原始 PCM 字节流 |
+| MP3 | `mp3` | `audio/mpeg`；需设置 `KOKORO_MP3_ENABLED=true` 且安装 ffmpeg |
 
-Use `GET /v1/audio/formats` to check whether MP3 is enabled and whether ffmpeg is available in the running container.
+可通过 `GET /v1/audio/formats` 查询当前是否启用 MP3 以及容器中是否安装了 ffmpeg。
 
-## Common errors / 常见错误
+## 流式解码参数配置
 
-| Error / 现象 | Reason / 原因 | Fix / 处理 |
+以下环境变量控制 WebSocket 流式合成中的分段解码策略，适用于需要精细调节合成延迟和内存占用的场景。
+
+| 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `当前模型不支持参考音频克隆` | Request hit `kokoro` or a non-clone model | Use/switch to `moss-nano-cpu` or `moss-nano-cuda` |
-| MOSS model missing | Runtime not installed or model disabled by profile | Check `/v1/models`, `ANGEVOICE_ENABLED_MODELS`, `MOSS_CUDA_ENABLED` |
-| WebSocket connected but no audio | Missing first JSON fields, token, or proxy upgrade | Test direct `ws://host:port/ws/v1/tts`, then inspect proxy |
-| Clone OOM / crackle / distortion | Prompt too long, unstable CUDA provider, low VRAM | Lower `MOSS_PROMPT_AUDIO_MAX_SECONDS` to 5-8, test `moss-nano-cpu` |
-| `401 Unauthorized` | `KOKORO_API_KEY` is configured | Add Bearer token or WebSocket `token` |
+| `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.20` | 低负载阈值：当 GPU 显存占用比例低于此值时，采用较小的 chunk 切分策略以降低首字延迟 |
+| `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.55` | 中负载阈值：介于低阈值和高阈值之间时，采用均衡的 chunk 切分策略 |
+| `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.10` | 高负载阈值：当 GPU 显存占用比例超过此值时，采用更保守的 chunk 切分策略以避免 OOM |
+| `MOSS_STREAM_CHUNK_MIN_FLOOR` | `0.05` | 最小 chunk 比例下限：单次解码的最小 chunk 占比，防止过小切分导致的性能下降 |
+
+这三个阈值（`LOW` < `MID` < `HIGH`）将 GPU 显存占用划分为四个区间，系统根据当前占用自动选择对应的 chunk 切分策略。`CHUNK_MIN_FLOOR` 保证单次解码不会小于总时长的 5%。
+
+## 空闲超时自动释放显存
+
+在 GPU 部署场景中，多模型共存会占用大量显存。启用空闲超时后，非当前使用的模型在空闲一段时间后会被自动卸载以释放显存，下次请求时再自动重新加载，对调用方完全透明。
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `ANGEVOICE_IDLE_TIMEOUT_SECONDS` | `0`（禁用） | 空闲超时时间（秒）。模型在连续 N 秒内没有收到请求时自动卸载。设置为 `0` 表示禁用此功能 |
+| `ANGEVOICE_IDLE_CHECK_INTERVAL` | `30` | 检查间隔（秒）。系统每隔 N 秒检查一次各模型的空闲状态 |
+
+工作原理：
+
+1. 系统每隔 `ANGEVOICE_IDLE_CHECK_INTERVAL` 秒检查一次各模型的最后请求时间
+2. 如果某个模型（非当前活跃模型）已空闲超过 `ANGEVOICE_IDLE_TIMEOUT_SECONDS` 秒，自动调用卸载
+3. 下一次对该模型发起的 API 请求会先触发重新加载，加载完成后正常返回合成结果
+4. 当前活跃模型（通过 `/v1/models/switch` 切换的模型）不受空闲超时影响
+
+推荐配置：
+
+```bash
+# 30 分钟无请求自动释放显存，每 30 秒检查一次
+ANGEVOICE_IDLE_TIMEOUT_SECONDS=1800
+ANGEVOICE_IDLE_CHECK_INTERVAL=30
+```
+
+> 注意：重新加载模型需要一定时间（通常几秒到十几秒），首次请求的延迟会略高。如果显存充裕，建议保持默认禁用状态。
+
+## 常见错误
+
+| 错误现象 | 原因 | 处理方式 |
+|---|---|---|
+| `当前模型不支持参考音频克隆` | 请求使用了 `kokoro` 或其他不支持克隆的模型 | 切换到 `moss-nano-cpu` 或 `moss-nano-cuda` |
+| MOSS 模型不可用 | 未安装运行时或模型被部署配置隐藏 | 检查 `/v1/models`、`ANGEVOICE_ENABLED_MODELS`、`MOSS_CUDA_ENABLED` |
+| WebSocket 已连接但无音频 | 首条消息缺少必要字段、token 错误或代理未正确转发 WebSocket | 先直接测试 `ws://host:port/ws/v1/tts`，再排查代理配置 |
+| 克隆合成出现 OOM / 爆音 / 失真 | prompt 过长、CUDA provider 不稳定、显存不足 | 降低 `MOSS_PROMPT_AUDIO_MAX_SECONDS` 至 5-8，或改用 `moss-nano-cpu` 测试 |
+| `401 Unauthorized` | 已配置 `KOKORO_API_KEY` 但请求未携带 token | 在请求头添加 Bearer token，或在 WebSocket 首包中添加 `token` 字段 |

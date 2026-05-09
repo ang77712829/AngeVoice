@@ -76,6 +76,12 @@ _WORKER_ENV_EXPORTS = {
     "MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED": "moss_output_peak_normalize_enabled",
     "MOSS_OUTPUT_TARGET_PEAK": "moss_output_target_peak",
     "MOSS_OUTPUT_GAIN": "moss_output_gain",
+    "MOSS_STREAM_BUDGET_THRESHOLD_LOW": "moss_stream_budget_threshold_low",
+    "MOSS_STREAM_BUDGET_THRESHOLD_MID": "moss_stream_budget_threshold_mid",
+    "MOSS_STREAM_BUDGET_THRESHOLD_HIGH": "moss_stream_budget_threshold_high",
+    "MOSS_STREAM_CHUNK_MIN_FLOOR": "moss_stream_chunk_min_floor",
+    "ANGEVOICE_IDLE_TIMEOUT_SECONDS": "model_idle_timeout_seconds",
+    "ANGEVOICE_IDLE_CHECK_INTERVAL": "model_idle_check_interval",
 }
 
 
@@ -120,11 +126,12 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
         current = state.model_manager.current_snapshot()
         logger.info("AngeVoice service started (model=%s device=%s)", current.get("id"), current.get("device"))
         yield
+        state.model_manager.stop_idle_timer()
 
     app = FastAPI(
         title="AngeVoice",
         description="Lightweight local TTS service with selectable model engines",
-        version="2.6.3",
+        version="2.6.4.1",
         lifespan=lifespan,
     )
     app.state.angevoice = state
