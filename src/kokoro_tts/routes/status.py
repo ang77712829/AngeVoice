@@ -226,12 +226,21 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         # VRAM
         vram = _get_vram_usage()
 
+        requests_total = snapshot.get("requests_total", 0)
+        requests_ok = snapshot.get("requests_ok", 0)
+        requests_error = snapshot.get("requests_error", 0)
+
         return {
             "uptime_seconds": round(uptime, 3),
+            # Backward-compatible flat keys (used by existing tests)
+            "requests_total": requests_total,
+            "requests_ok": requests_ok,
+            "requests_error": requests_error,
+            # Structured requests block
             "requests": {
-                "total": snapshot.get("requests_total", 0),
-                "ok": snapshot.get("requests_ok", 0),
-                "error": snapshot.get("requests_error", 0),
+                "total": requests_total,
+                "ok": requests_ok,
+                "error": requests_error,
             },
             "active_requests": len(active),
             "queue_length": len(queued),
