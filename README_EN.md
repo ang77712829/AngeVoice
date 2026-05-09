@@ -22,6 +22,12 @@ Good fits:
 
 > Model source: the default engine is built on Kokoro v1.1 / Kokoro-82M Chinese. Optional MOSS-TTS-Nano support uses the official OpenMOSS runtime code. Model copyright, license, and restrictions follow the upstream repositories.
 
+## Studio preview
+
+![AngeVoice Studio model switch](docs/assets/studio-model-switch.png)
+
+![AngeVoice Studio reference-audio clone](docs/assets/studio-voice-clone.png)
+
 ## Highlights
 
 | Capability | Description |
@@ -128,12 +134,43 @@ angevoice voices
 kokoro-tts serve --port 8000
 ```
 
+## Service URLs and API Overview
+
+Default service URLs:
+
+| Profile | HTTP / Web UI | WebSocket |
+|---|---|---|
+| pip / development | `http://localhost:8000` | `ws://localhost:8000/ws/v1/tts` |
+| Docker CPU | `http://localhost:8100` | `ws://localhost:8100/ws/v1/tts` |
+| Docker GPU | `http://localhost:8101` | `ws://localhost:8101/ws/v1/tts` |
+| Docker Legacy GPU | `http://localhost:8102` | `ws://localhost:8102/ws/v1/tts` |
+
+Examples below use `BASE_URL=http://localhost:8000`. Replace the port with the matching Docker profile port when needed.
+
+| Capability | Endpoint |
+|---|---|
+| Studio Web UI | `GET /` |
+| Health / metrics / requests | `GET /health`, `GET /stats`, `GET /requests` |
+| Model list / current / switch | `GET /v1/models`, `GET /v1/models/current`, `POST /v1/models/switch` |
+| Model load / unload | `POST /v1/models/{model_id}/load`, `POST /v1/models/{model_id}/unload` |
+| Voices / formats | `GET /v1/audio/voices`, `GET /v1/audio/formats` |
+| OpenAI-compatible speech | `POST /v1/audio/speech` |
+| Legacy speech / MOSS clone upload | `GET /api/tts`, `POST /api/tts` |
+| WebSocket streaming / clone streaming | `WS /ws/v1/tts` |
+| Batch ZIP | `POST /v1/audio/batch` |
+| Cancel request | `POST /v1/audio/requests/{request_id}/cancel` |
+| Admin APIs, disabled by default | `DELETE /admin/cache`, `GET /admin/voices`, `POST /admin/voices/upload` |
+
+For complete fields, authentication, WebSocket frames, and MOSS clone examples, see the [API Reference](docs/API_REFERENCE.md).
+
 Model management:
 
 ```bash
-curl http://localhost:8000/v1/models
+BASE_URL=http://localhost:8000
 
-curl -X POST http://localhost:8000/v1/models/switch \
+curl "$BASE_URL/v1/models"
+
+curl -X POST "$BASE_URL/v1/models/switch" \
   -H "Content-Type: application/json" \
   -d '{"model":"moss-nano-cpu","unload_previous":true}'
 ```
@@ -143,7 +180,7 @@ curl -X POST http://localhost:8000/v1/models/switch \
 ### OpenAI-compatible TTS
 
 ```bash
-curl -X POST http://localhost:8000/v1/audio/speech \
+curl -X POST "$BASE_URL/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{"model":"kokoro","input":"Hello world","voice":"zm_010","response_format":"wav"}' \
   --output output.wav
@@ -152,7 +189,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 MOSS reference-audio cloning uses multipart upload on `/api/tts`. The Studio Web UI only shows the reference-audio control when the selected model supports `voice_clone`:
 
 ```bash
-curl -X POST http://localhost:8000/api/tts \
+curl -X POST "$BASE_URL/api/tts" \
   -F model=moss-nano-cpu \
   -F text="This is a reference-audio clone test." \
   -F voice=Junhao \
@@ -216,19 +253,19 @@ JSON audio frames carry base64 PCM in the `data` field. When binary mode is enab
 Before text reaches the Kokoro pipeline, AngeVoice applies lightweight Chinese rules:
 
 ```text
-春花秋月何时了 -> 春花秋月何时瞭。
-我想了解一下 -> 我想瞭解一下
-银行行长正在听音乐 -> 银杭杭掌正在听音悦
+春花秋月何时了 -> final “了” is guided toward liǎo
+我想了解一下 -> “了” in “了解” is guided toward liǎo
+银行行长正在听音乐 -> context distinguishes háng/xíng, zhǎng/cháng, yuè/lè
 会议12:01开始 -> 会议十二点零一分开始
 Long Chinese input without punctuation -> word-aware pause punctuation
 ```
 
-The rules target common reading mistakes. For complex names, places, and domain-specific terms, prefer explicit punctuation or future dictionary/SSML support.
+Internally, AngeVoice may use same-sound hint characters to guide the upstream G2P path, while HTTP/WebSocket clients keep sending normal source text. The rules target common reading mistakes. For complex names, places, and domain-specific terms, prefer explicit punctuation or future dictionary/SSML support.
 
 ### Batch ZIP synthesis
 
 ```bash
-curl -X POST http://localhost:8000/v1/audio/batch \
+curl -X POST "$BASE_URL/v1/audio/batch" \
   -H "Content-Type: application/json" \
   -d '{"voice":"zm_010","speed":1.0,"response_format":"wav","items":[{"text":"First segment","filename":"001"},{"text":"Second segment","filename":"002"}]}' \
   --output batch.zip
@@ -355,6 +392,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [API Reference](docs/API_REFERENCE.md)
 - [Security Notes](docs/SECURITY.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Service Profiles](docs/SERVICE_PROFILES.md)

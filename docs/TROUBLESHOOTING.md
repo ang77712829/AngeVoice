@@ -1,5 +1,7 @@
 # AngeVoice 排障手册 / Troubleshooting
 
+完整接口地址、字段和 MOSS 克隆示例见 [API 参考](API_REFERENCE.md)。排障时建议先确认实际端口：CPU 默认 `8100`，GPU 默认 `8101`，老架构GPU 默认 `8102`，pip 开发默认 `8000`。
+
 ## 1. 服务启动后一直下载模型
 
 原因：本地模型文件不存在，或 Git LFS 只下载了指针文件。

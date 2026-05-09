@@ -124,7 +124,7 @@ This roadmap tracks the long-term direction of AngeVoice. Completed items are ma
 - □ WebSocket cancel integration test / WebSocket 取消集成测试
 - □ Batch API integration test / 批量接口集成测试
 - □ Admin API integration test / 管理接口集成测试
-- □ CI workflow / CI 工作流
+- √ CI workflow / CI 工作流
 - □ Release checklist / 发布检查清单
 
 ## Documentation / 文档
@@ -132,9 +132,10 @@ This roadmap tracks the long-term direction of AngeVoice. Completed items are ma
 - √ Chinese README / 中文 README
 - √ English README / 英文 README
 - √ Service profile documentation / 服务画像文档
-- √ v2.5 service feature documentation / v2.5 服务功能文档
+- √ v2.6 service feature documentation / v2.6 服务功能文档
 - √ Legacy GPU bilingual deployment guide / 老显卡中英双语部署说明
 - √ Roadmap / 长期路线图
+- √ Hand-maintained API reference / 人工维护 API 参考
 - □ API reference generated from OpenAPI / 基于 OpenAPI 生成 API 参考
 - √ Troubleshooting cookbook / 排障手册
 - √ Performance tuning notes / 性能调优说明

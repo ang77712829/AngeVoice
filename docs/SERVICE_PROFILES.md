@@ -126,6 +126,8 @@ volumes:
 
 ## API 快速检查
 
+完整接口矩阵和 MOSS 克隆调用示例见 [API 参考](API_REFERENCE.md)。不同画像只需要替换端口：CPU 默认 `8100`，GPU 默认 `8101`，老架构GPU 默认 `8102`。
+
 ```bash
 curl http://localhost:8000/health
 curl http://localhost:8000/stats

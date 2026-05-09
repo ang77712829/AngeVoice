@@ -2,6 +2,8 @@
 
 本文档说明 AngeVoice v2.6 的模块化结构。v2.6 的目标不是改变模型能力，而是提升服务端可维护性、可测试性和后续扩展空间。
 
+接口字段、鉴权方式和调用示例集中维护在 [API 参考](API_REFERENCE.md)。
+
 ## 设计目标
 
 - 保留 `kokoro_tts.server.create_app()` 与 `run_server()` 对外入口。

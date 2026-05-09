@@ -22,6 +22,12 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 
 > 模型来源：默认引擎基于 Kokoro v1.1 / Kokoro-82M 中文模型；可选 MOSS-TTS-Nano 集成使用 OpenMOSS 官方运行时代码。模型版权、许可证与限制请以上游仓库为准。
 
+## Studio 预览
+
+![AngeVoice Studio 模型切换](docs/assets/studio-model-switch.png)
+
+![AngeVoice Studio 参考音频克隆](docs/assets/studio-voice-clone.png)
+
 ## 推荐硬件配置
 
 ### 最低配置（能运行，体验一般）
@@ -172,12 +178,43 @@ angevoice voices
 kokoro-tts serve --port 8000
 ```
 
+## 服务地址与接口总览
+
+默认服务地址：
+
+| 部署方式 | HTTP / Web UI | WebSocket |
+|---|---|---|
+| pip / 开发运行 | `http://localhost:8000` | `ws://localhost:8000/ws/v1/tts` |
+| Docker CPU | `http://localhost:8100` | `ws://localhost:8100/ws/v1/tts` |
+| Docker GPU | `http://localhost:8101` | `ws://localhost:8101/ws/v1/tts` |
+| Docker 老架构GPU | `http://localhost:8102` | `ws://localhost:8102/ws/v1/tts` |
+
+下方示例默认使用 `BASE_URL=http://localhost:8000`。Docker 部署时把端口替换成对应画像端口即可。
+
+| 功能 | 调用 |
+|---|---|
+| Studio Web UI | `GET /` |
+| 健康检查 / 统计 / 请求状态 | `GET /health`、`GET /stats`、`GET /requests` |
+| 模型列表 / 当前模型 / 切换 | `GET /v1/models`、`GET /v1/models/current`、`POST /v1/models/switch` |
+| 模型加载 / 卸载 | `POST /v1/models/{model_id}/load`、`POST /v1/models/{model_id}/unload` |
+| 音色 / 格式 | `GET /v1/audio/voices`、`GET /v1/audio/formats` |
+| OpenAI 兼容合成 | `POST /v1/audio/speech` |
+| 旧版兼容合成 / MOSS 克隆上传 | `GET /api/tts`、`POST /api/tts` |
+| WebSocket 流式 / 克隆流式 | `WS /ws/v1/tts` |
+| 批量 ZIP | `POST /v1/audio/batch` |
+| 取消请求 | `POST /v1/audio/requests/{request_id}/cancel` |
+| 管理接口，默认关闭 | `DELETE /admin/cache`、`GET /admin/voices`、`POST /admin/voices/upload` |
+
+完整字段、鉴权、WebSocket 帧格式和 MOSS 克隆示例见 [API 参考](docs/API_REFERENCE.md)。
+
 ## API 示例
 
 ### OpenAI 兼容 TTS
 
 ```bash
-curl -X POST http://localhost:8000/v1/audio/speech \
+BASE_URL=http://localhost:8000
+
+curl -X POST "$BASE_URL/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{"model":"kokoro","input":"你好世界","voice":"zm_010","response_format":"wav"}' \
   --output output.wav
@@ -186,9 +223,9 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 模型管理：
 
 ```bash
-curl http://localhost:8000/v1/models
+curl "$BASE_URL/v1/models"
 
-curl -X POST http://localhost:8000/v1/models/switch \
+curl -X POST "$BASE_URL/v1/models/switch" \
   -H "Content-Type: application/json" \
   -d '{"model":"moss-nano-cpu","unload_previous":true}'
 ```
@@ -196,7 +233,7 @@ curl -X POST http://localhost:8000/v1/models/switch \
 MOSS 参考音频克隆使用 `/api/tts` multipart 上传；Studio Web UI 只会在 MOSS 模型可用时显示“参考音频”控件：
 
 ```bash
-curl -X POST http://localhost:8000/api/tts \
+curl -X POST "$BASE_URL/api/tts" \
   -F model=moss-nano-cpu \
   -F text="这是参考音频克隆测试。" \
   -F voice=Junhao \
@@ -258,19 +295,19 @@ JSON 音频帧使用 `data` 字段携带 base64 PCM；如果启用 binary 模式
 AngeVoice 会在进入 Kokoro pipeline 前做轻量中文规则处理：
 
 ```text
-春花秋月何时了 -> 春花秋月何时瞭。
-我想了解一下 -> 我想瞭解一下
-银行行长正在听音乐 -> 银杭杭掌正在听音悦
+春花秋月何时了 -> 句末“了”按 liǎo 处理
+我想了解一下 -> “了解”的“了”按 liǎo 处理
+银行行长正在听音乐 -> 按上下文区分 háng/xíng、zhǎng/cháng、yuè/lè
 会议12:01开始 -> 会议十二点零一分开始
 长中文无标点文本 -> 按词切分后补入停顿标点
 ```
 
-规则目标是改善常见朗读错误，而不是替代完整中文 NLP。更复杂的人名、地名和专有名词建议在调用侧显式加标点或使用后续 SSML/词典能力。
+内部可能会使用同音提示字来诱导上游 G2P，但 HTTP/WebSocket 对外仍使用原始输入文本。规则目标是改善常见朗读错误，而不是替代完整中文 NLP。更复杂的人名、地名和专有名词建议在调用侧显式加标点或使用后续 SSML/词典能力。
 
 ### 批量合成 ZIP
 
 ```bash
-curl -X POST http://localhost:8000/v1/audio/batch \
+curl -X POST "$BASE_URL/v1/audio/batch" \
   -H "Content-Type: application/json" \
   -d '{"voice":"zm_010","speed":1.0,"response_format":"wav","items":[{"text":"第一段","filename":"001"},{"text":"第二段","filename":"002"}]}' \
   --output batch.zip
@@ -397,6 +434,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 ## 文档
 
 - [架构说明](docs/ARCHITECTURE.md)
+- [API 参考](docs/API_REFERENCE.md)
 - [安全说明](docs/SECURITY.md)
 - [排障手册](docs/TROUBLESHOOTING.md)
 - [服务画像](docs/SERVICE_PROFILES.md)

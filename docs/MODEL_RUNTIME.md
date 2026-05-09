@@ -30,6 +30,10 @@ only when comparing raw upstream MOSS behavior.
 
 ## APIs
 
+Full endpoint matrix and copy-paste examples are maintained in
+[API Reference](API_REFERENCE.md). The snippets below focus on model runtime
+operations.
+
 ```bash
 curl http://localhost:8000/v1/models
 curl http://localhost:8000/v1/models/current
