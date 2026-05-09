@@ -6,6 +6,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Se
 
 ---
 
+## [2.6.4.3] - 2026-05-09
+
+### 🛡️ Stability / 稳定性
+- **全路径引用计数保护**: `active_count` now protects manual unload, switch-time unload, inactive unload, and idle unload; busy models return 409 or are skipped instead of being released mid-synthesis.
+- **全路径引用计数保护**: `active_count` 现在覆盖手动卸载、切换卸载、非活跃卸载和空闲卸载；忙碌模型返回 409 或跳过卸载，避免合成中途释放。
+- **MOSS health bridge**: unhealthy MOSS engines are detected through `is_healthy` and reloaded on the next borrow path.
+- **MOSS 健康状态桥接**: MOSS unhealthy 状态通过 `is_healthy` 接入 EngineManager，下次 borrow 自动触发重载。
+- **Queue gate hardening**: global queue middleware now uses a non-blocking capacity gate without the previous race-prone `locked()` check.
+- **队列保护加强**: 全局队列中间件移除旧的 `locked()` 检查，改为非阻塞容量门控。
+
+### 🔧 Release Quality / 发布质量
+- **Single version source**: CLI `--version` and FastAPI OpenAPI version now derive from `kokoro_tts.__version__`.
+- **统一版本来源**: CLI `--version` 和 FastAPI OpenAPI 版本现在都来自 `kokoro_tts.__version__`。
+- **Version bump**: package, project metadata, CLI, OpenAPI, tests, and CI are aligned on `2.6.4.3`.
+- **版本对齐**: 包版本、项目元数据、CLI、OpenAPI、测试和 CI 全部对齐为 `2.6.4.3`。
+
+### 🧪 Testing / 测试
+- Added unit tests for rate-limit initialization, busy unload 409, switch-with-busy-previous behavior, MOSS health reset, and version consistency.
+- 新增限流初始化、忙碌卸载 409、切换时跳过忙碌旧模型、MOSS 健康状态重置、版本一致性等单测。
+- Fixed `scripts/e2e_loop_test.sh` to use the real WebSocket endpoint `/ws/v1/tts` and validate binary audio endpoints via HTTP 200 + `audio/*` + output size.
+- 修复 `scripts/e2e_loop_test.sh`：WebSocket 使用真实 `/ws/v1/tts`，二进制音频接口用 HTTP 200 + `audio/*` + 文件大小校验。
+
+---
+
 ## [2.6.4.2] - 2026-05-09
 
 ### 🛡️ Stability / 稳定性

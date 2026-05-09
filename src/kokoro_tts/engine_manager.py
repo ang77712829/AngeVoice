@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import importlib.util
 import logging
-import time
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,7 +36,12 @@ def _normalize_moss_id(provider: str) -> str:
 
 
 class EngineManager:
-    """Owns lazily loaded engines and coordinates exclusive model switching."""
+    """Owns lazily loaded engines and coordinates model switching.
+
+    The manager keeps a per-model active reference count. Any unload path must
+    respect that count unless ``force=True`` is explicitly requested; otherwise
+    a model can be released while a synthesis request is still using it.
+    """
 
     def __init__(self, cfg: TTSConfig, initial_engine=None):
         self.cfg = cfg
@@ -58,18 +63,20 @@ class EngineManager:
         return self._current_model_id
 
     def _touch_model(self, model_id: str) -> None:
-        """Record the last time a model was actively used."""
         self._last_used[model_id] = time.monotonic()
 
+    def _active_count(self, model_id: str) -> int:
+        return int(self._active_counts.get(model_id, 0) or 0)
+
     def _start_idle_timer(self) -> None:
-        """Start the background idle-check timer if timeout is configured."""
         timeout = getattr(self.cfg, "model_idle_timeout_seconds", 0) or 0
         if timeout <= 0:
             return
         interval = max(5.0, float(getattr(self.cfg, "model_idle_check_interval", 30) or 30))
         logger.info(
             "Idle unload timer enabled: models idle for %.0fs will be unloaded (check every %.0fs)",
-            timeout, interval,
+            timeout,
+            interval,
         )
         self._idle_timer_stop.clear()
         self._schedule_idle_check(interval)
@@ -102,28 +109,18 @@ class EngineManager:
                 engine = self._engines.get(model_id)
                 if engine is None or not getattr(engine, "is_loaded", False):
                     continue
-                active = self._active_counts.get(model_id, 0)
+                active = self._active_count(model_id)
                 if active > 0:
-                    logger.debug(
-                        "Skipping idle unload for %s: %d active borrow(s)",
-                        model_id, active,
-                    )
+                    logger.debug("Skipping idle unload for %s: %d active borrow(s)", model_id, active)
                     continue
                 last = self._last_used.get(model_id, 0)
-                if now - last >= timeout:
-                    unload_fn = getattr(engine, "unload", None)
-                    if callable(unload_fn):
-                        unload_fn()
-                        unloaded.append(model_id)
-                        logger.info(
-                            "Idle unload: model %s released after %.0fs of inactivity",
-                            model_id, now - last,
-                        )
+                if now - last >= timeout and self.unload_model(model_id, force=False, raise_if_busy=False):
+                    unloaded.append(model_id)
+                    logger.info("Idle unload: model %s released after %.0fs of inactivity", model_id, now - last)
         if unloaded:
             logger.info("Idle unload completed: released %s", ", ".join(unloaded))
 
     def stop_idle_timer(self) -> None:
-        """Gracefully stop the background idle timer."""
         self._idle_timer_stop.set()
         if self._idle_timer is not None:
             self._idle_timer.cancel()
@@ -186,8 +183,18 @@ class EngineManager:
         with self._lock:
             previous_id = self._current_model_id
             unloaded_previous = False
+            previous_busy = False
             if unload_previous and previous_id != target_id:
-                unloaded_previous = self.unload_model(previous_id)
+                previous_busy = self._active_count(previous_id) > 0
+                if previous_busy:
+                    logger.info(
+                        "Switching from %s to %s without unloading previous model: %d active borrow(s)",
+                        previous_id,
+                        target_id,
+                        self._active_count(previous_id),
+                    )
+                else:
+                    unloaded_previous = self.unload_model(previous_id, force=False, raise_if_busy=False)
             try:
                 engine = self.get_engine(target_id, load=load)
             except Exception:
@@ -204,6 +211,7 @@ class EngineManager:
                 "previous_model": previous_id,
                 "current_model": target_id,
                 "unloaded_previous": unloaded_previous,
+                "previous_busy": previous_busy,
                 "model": self._engine_metadata(engine) or self._model_snapshot(self._spec_for(target_id)),
             }
 
@@ -216,23 +224,22 @@ class EngineManager:
             if target_id != self._current_model_id and self.cfg.model_unload_on_switch:
                 self.switch_model(target_id, unload_previous=True, load=True)
             engine = self.get_engine(target_id, load=True)
-            # Auto-reload if engine is marked unhealthy (e.g. after timeout)
-            if getattr(engine, "_unhealthy", False):
+            if not bool(getattr(engine, "is_healthy", True)) or bool(getattr(engine, "_unhealthy", False)):
                 logger.info("Engine %s is unhealthy, triggering reload", target_id)
                 try:
                     engine.unload()
                     engine.load()
                 except Exception:
                     logger.exception("Failed to reload unhealthy engine %s", target_id)
-            self._active_counts[target_id] = self._active_counts.get(target_id, 0) + 1
-        # Lock released before yield — synthesis must NOT hold the model lock,
-        # otherwise a stuck inference blocks all endpoints (health, stats, etc.).
+                    raise
+            self._active_counts[target_id] = self._active_count(target_id) + 1
         try:
             yield engine
         finally:
             with self._lock:
-                current = self._active_counts.get(target_id, 0)
+                current = self._active_count(target_id)
                 self._active_counts[target_id] = max(0, current - 1)
+                self._touch_model(target_id)
 
     def get_engine(self, model_id: str | None = None, *, load: bool = True):
         target_id = self.normalize_model_id(model_id)
@@ -245,23 +252,31 @@ class EngineManager:
             engine.load()
         return engine
 
-    def unload_model(self, model_id: str) -> bool:
+    def unload_model(self, model_id: str, *, force: bool = False, raise_if_busy: bool = True) -> bool:
         target_id = self.normalize_model_id(model_id)
-        engine = self._engines.get(target_id)
-        if engine is None:
-            return False
-        unload = getattr(engine, "unload", None)
-        if callable(unload):
-            unload()
-        return True
+        with self._lock:
+            active = self._active_count(target_id)
+            if active > 0 and not force:
+                message = f"Model {target_id} is busy: active_count={active}"
+                if raise_if_busy:
+                    raise HTTPException(status_code=409, detail=message)
+                logger.info("Skipping unload for busy model %s: active_count=%d", target_id, active)
+                return False
+            engine = self._engines.get(target_id)
+            if engine is None:
+                return False
+            unload = getattr(engine, "unload", None)
+            if callable(unload):
+                unload()
+            return True
 
-    def unload_inactive(self) -> list[str]:
+    def unload_inactive(self, *, force: bool = False) -> list[str]:
         unloaded: list[str] = []
         with self._lock:
             for model_id in list(self._engines):
                 if model_id == self._current_model_id:
                     continue
-                if self.unload_model(model_id):
+                if self.unload_model(model_id, force=force, raise_if_busy=False):
                     unloaded.append(model_id)
         return unloaded
 
@@ -291,7 +306,7 @@ class EngineManager:
         healthy = bool(getattr(engine, "is_healthy", True)) if engine is not None else True
         runtime = self._engine_metadata(engine) if loaded and engine is not None else {}
         static_capabilities = self._static_capabilities(spec)
-        active_count = self._active_counts.get(spec.id, 0)
+        active_count = self._active_count(spec.id)
         return {
             "id": spec.id,
             "name": spec.name,
