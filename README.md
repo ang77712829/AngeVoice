@@ -11,7 +11,7 @@
 
 ## 一键安装（推荐普通用户）
 
-服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、老架构 NVIDIA 显卡、Docker/Compose 和 GitHub/GHCR 网络情况，并推荐 `cpu` / `gpu` / `legacy-gpu` 画像。
+服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、老架构 NVIDIA 显卡、Docker/Compose、GitHub、GHCR、Docker Hub 与本机 Docker registry mirror，并推荐 `cpu` / `gpu` / `legacy-gpu` 画像。
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/scripts/install.sh)
@@ -26,6 +26,25 @@ bash scripts/install.sh
 ```
 
 默认 Docker 配置集中在 `docker/angevoice.env`，CPU/NAS 场景开箱安全；GPU 和 legacy-gpu 画像只覆盖必要的 CUDA 参数。
+
+脚本在源码目录内运行时会**就地安装/更新**，不会再额外克隆到 `/opt/angevoice`，更适合 NAS 文件管理。远程 `curl` 方式没有本地项目目录时才会使用 `/opt/angevoice`。安装完成后会自动读取本机局域网 IP，输出完整访问地址，例如 `http://192.168.1.10:8101`。
+
+安装完成后脚本会创建 `AngeVoice` 管理命令。以后直接输入：
+
+```bash
+AngeVoice
+```
+
+即可打开菜单，执行安装/更新、重启、停止、卸载、查看状态和访问地址。也可以直接执行：
+
+```bash
+bash scripts/install.sh --status
+bash scripts/install.sh --restart
+bash scripts/install.sh --stop
+bash scripts/install.sh --uninstall
+```
+
+卸载只停止并移除容器/网络，不删除模型、输出和配置文件。
 
 ## 项目定位
 
