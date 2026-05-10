@@ -199,11 +199,12 @@ class TTSConfig:
     moss_stream_budget_threshold_high: float = 1.10
     moss_stream_chunk_min_floor: float = 0.05
 
-    # Idle timeout: unload non-current models after N seconds of no requests
-    # 0 = disabled (default). When enabled, a background timer checks periodically
-    # and releases GPU memory for models that have not been used recently.
-    model_idle_timeout_seconds: float = 0
+    # Idle timeout: unload all loaded models after N seconds of no requests.
+    # 600 seconds is the default because NAS/home-server users are power-sensitive.
+    # Set ANGEVOICE_IDLE_TIMEOUT_SECONDS=0 to keep models resident.
+    model_idle_timeout_seconds: float = 600
     model_idle_check_interval: float = 30
+    model_idle_unload_current: bool = True
 
     @property
     def model_path(self) -> str:
@@ -228,8 +229,9 @@ class TTSConfig:
         normalized_key = api_key.lower()
         if api_key and normalized_key in PLACEHOLDER_API_KEYS:
             raise ValueError("KOKORO_API_KEY is still a placeholder; set a real secret or leave it empty")
-        if self.admin_enabled and not api_key:
-            raise ValueError("KOKORO_ADMIN_ENABLED=true requires KOKORO_API_KEY")
+        admin_password = (os.environ.get("ANGEVOICE_ADMIN_PASSWORD") or "").strip()
+        if self.admin_enabled and not api_key and not admin_password:
+            raise ValueError("KOKORO_ADMIN_ENABLED=true requires KOKORO_API_KEY or ANGEVOICE_ADMIN_PASSWORD")
         if self.voice_upload_enabled and not self.admin_enabled:
             raise ValueError("KOKORO_VOICE_UPLOAD_ENABLED=true requires KOKORO_ADMIN_ENABLED=true")
         if not self.enabled_models:
@@ -351,6 +353,7 @@ def _apply_env(config: TTSConfig) -> None:
         "ANGEVOICE_MODEL_SWITCH_ENABLED": "model_switch_enabled",
         "ANGEVOICE_MODEL_UNLOAD_ON_SWITCH": "model_unload_on_switch",
         "ANGEVOICE_SAVE_OUTPUTS": "save_outputs",
+        "ANGEVOICE_IDLE_UNLOAD_CURRENT": "model_idle_unload_current",
         "MOSS_CUDA_ENABLED": "moss_cuda_enabled",
         "MOSS_ENABLE_WETEXT_PROCESSING": "moss_enable_wetext_processing",
         "MOSS_ENABLE_NORMALIZE_TTS_TEXT": "moss_enable_normalize_tts_text",
