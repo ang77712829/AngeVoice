@@ -185,6 +185,9 @@ class TTSConfig:
     moss_output_peak_normalize_enabled: bool = True
     moss_output_target_peak: float = 0.88
     moss_output_gain: float = 0.96
+    moss_process_isolation_enabled: bool = True
+    moss_process_isolation_providers: str = "cuda"
+    moss_process_kill_grace_seconds: float = 2.0
 
     # 限流：按客户端令牌桶 + 全局并发闸门；0 表示关闭。
     rate_limit_qps: float = 0.0
@@ -296,6 +299,7 @@ def _apply_env(config: TTSConfig) -> None:
         "MOSS_EXECUTION_PROVIDER": "moss_execution_provider",
         "MOSS_DEFAULT_VOICE": "moss_default_voice",
         "MOSS_SAMPLE_MODE": "moss_sample_mode",
+        "MOSS_PROCESS_ISOLATION_PROVIDERS": "moss_process_isolation_providers",
     }
     int_env: dict[str, IntEnvSpec] = {
         "KOKORO_PORT": IntEnvSpec("port", 1),
@@ -334,6 +338,7 @@ def _apply_env(config: TTSConfig) -> None:
         "MOSS_STREAM_BUDGET_THRESHOLD_MID": FloatEnvSpec("moss_stream_budget_threshold_mid", 0.0),
         "MOSS_STREAM_BUDGET_THRESHOLD_HIGH": FloatEnvSpec("moss_stream_budget_threshold_high", 0.0),
         "MOSS_STREAM_CHUNK_MIN_FLOOR": FloatEnvSpec("moss_stream_chunk_min_floor", 0.01),
+        "MOSS_PROCESS_KILL_GRACE_SECONDS": FloatEnvSpec("moss_process_kill_grace_seconds", 0.1, 30.0),
         "ANGEVOICE_IDLE_TIMEOUT_SECONDS": FloatEnvSpec("model_idle_timeout_seconds", 0.0),
         "ANGEVOICE_IDLE_CHECK_INTERVAL": FloatEnvSpec("model_idle_check_interval", 5.0),
     }
@@ -359,6 +364,7 @@ def _apply_env(config: TTSConfig) -> None:
         "MOSS_AUTO_FALLBACK_CPU": "moss_auto_fallback_cpu",
         "MOSS_QUALITY_GATE_ENABLED": "moss_quality_gate_enabled",
         "MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED": "moss_output_peak_normalize_enabled",
+        "MOSS_PROCESS_ISOLATION_ENABLED": "moss_process_isolation_enabled",
     }
 
     for env_name, attr in str_env.items():

@@ -232,6 +232,7 @@ class EngineManager:
             self._engines[target_id] = engine
         if load and not bool(getattr(engine, "is_loaded", False)):
             engine.load()
+            self._touch_model(target_id)
         return engine
 
     def unload_model(self, model_id: str, *, force: bool = False, raise_if_busy: bool = True) -> bool:
@@ -288,7 +289,9 @@ class EngineManager:
         healthy = bool(getattr(engine, "is_healthy", True)) if engine is not None else True
         runtime = self._engine_metadata(engine) if loaded and engine is not None else {}
         active_count = self._active_count(spec.id)
-        return {"id": spec.id, "name": spec.name, "backend": spec.backend, "provider": spec.provider, "experimental": spec.experimental, "enabled": True, "current": spec.id == self._current_model_id, "loaded": loaded, "healthy": healthy, "available": self._runtime_available(spec), "active_count": active_count, "idle_timeout_seconds": float(getattr(self.cfg, "model_idle_timeout_seconds", 0) or 0), "idle_unload_current": bool(getattr(self.cfg, "model_idle_unload_current", True)), **self._static_capabilities(spec), **runtime}
+        idle_timeout = float(getattr(self.cfg, "model_idle_timeout_seconds", 0) or 0)
+        idle_unloaded = bool(engine is not None and not loaded and idle_timeout > 0 and spec.id in self._last_used)
+        return {"id": spec.id, "name": spec.name, "backend": spec.backend, "provider": spec.provider, "experimental": spec.experimental, "enabled": True, "current": spec.id == self._current_model_id, "loaded": loaded, "healthy": healthy, "available": self._runtime_available(spec), "active_count": active_count, "idle_timeout_seconds": idle_timeout, "idle_unload_current": bool(getattr(self.cfg, "model_idle_unload_current", True)), "idle_unloaded": idle_unloaded, **self._static_capabilities(spec), **runtime}
 
     def _static_capabilities(self, spec: EngineSpec) -> dict:
         if spec.backend != "moss-tts-nano-onnx":

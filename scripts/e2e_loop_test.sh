@@ -52,6 +52,8 @@ if [[ "$HTTP_CODE" == "200" ]]; then
     MODEL=$(jq -r '.current_model // "unknown"' /tmp/av_health.json 2>/dev/null || echo "unknown")
     if [[ "$STATUS" == "ok" && "$HEALTHY" == "true" ]]; then
         pass "Health OK (model=$MODEL)"
+    elif [[ "$STATUS" == "idle" && "$HEALTHY" == "true" ]]; then
+        pass "Health idle: service is ready and model will auto-load (model=$MODEL)"
     elif [[ "$STATUS" == "loading" ]]; then
         pass "Health endpoint reachable but model is still loading"
     else

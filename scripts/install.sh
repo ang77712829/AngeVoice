@@ -133,8 +133,12 @@ run_compose() {
   log "推荐/选择画像：$profile"
   log "启动目录：$INSTALL_DIR/$compose_dir"
   cd "$INSTALL_DIR/$compose_dir"
-  docker compose pull || warn "镜像拉取失败，将尝试本地构建。"
-  docker compose up -d --build
+  if docker compose pull; then
+    docker compose up -d
+  else
+    warn "镜像拉取失败，将尝试本地构建。"
+    docker compose up -d --build
+  fi
 }
 
 main() {
