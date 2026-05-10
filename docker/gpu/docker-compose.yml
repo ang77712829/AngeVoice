@@ -21,8 +21,8 @@ services:
       - "8101:8000"
 
     env_file:
-      # 公共配置集中在 docker/.env，先复制 docker/.env.example 再修改。
-      - ../.env
+      # 默认值按 CPU/NAS 安全场景设计；本 GPU 画像在 environment 中覆盖 CUDA 相关项。
+      - ../angevoice.env
 
     volumes:
       # 模型目录：只读挂载，避免容器误改模型文件。
@@ -36,7 +36,7 @@ services:
       - ../../moss_models:/opt/MOSS-TTS-Nano/models
       # 合成输出目录。
       - ../../outputs:/app/outputs
-      # 可选：开启音色上传时取消注释，并在 .env 中开启 KOKORO_VOICE_UPLOAD_ENABLED。
+      # 可选：开启音色上传时取消注释，并在配置文件中开启 KOKORO_VOICE_UPLOAD_ENABLED。
       # - ../../models/voices:/app/models/voices:rw
 
     environment:
