@@ -9,8 +9,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Se
 ## [2.6.4.4] - 2026-05-11
 
 ### 🛠️ 修复
+- 修复管理后台账号使用中文时 `secrets.compare_digest` 抛出 500 的问题，现在账号/密码会按 UTF-8 字节做安全比较。
+- 修复 MOSS CUDA 进程级隔离流式请求把 `KOKORO_REQUEST_TIMEOUT_SECONDS` 当作整段合成总时长的问题；现在它表示 worker 多久无事件才判定卡死，长文本持续产出音频时不会被误杀。
+- 修复 WebSocket 客户端断开或刷新页面后，生产线程可能继续阻塞等待队列导致后续请求卡在“建立流式连接”的问题。
+- 修复隔离 worker 被取消/杀掉后 `_loaded` 状态未同步，导致下一次请求没有正确重建 worker 的问题。
 - `/health` 增加 `idle` 状态：模型因空闲超时卸载时不再误报 `loading`，Docker healthcheck 将 `ok`/`idle` 都视为可用。
-- MOSS CUDA 默认启用进程级隔离，推理超时后可 kill worker 子进程并在下次请求重建 runtime。
+- MOSS 进程级隔离保留为可选能力，但默认关闭；需要硬隔离时可手动开启，开启后超时可 kill worker 子进程并在下次请求重建 runtime。
 - 新增手动触发的 Docker CPU smoke workflow，覆盖 `docker compose config`、CPU 镜像构建、容器启动、`/health` 和 `scripts/smoke_test.sh`。
 - 修复 e2e 脚本在 `set -e` 下使用 `((PASS++))` / `((FAIL++))` 可能提前退出的问题，计数器改为安全自增写法。
 - WebSocket e2e 不再只检查 `started`，现在同时验证 `started`、真实 `audio` 分片和 `done` 完成帧。

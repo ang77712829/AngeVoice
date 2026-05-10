@@ -1,4 +1,4 @@
-"""WebSocket streaming synthesis route."""
+"""WebSocket 流式合成路由。"""
 
 import asyncio
 import base64
@@ -121,9 +121,21 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                         await notify_cancelled()
                         break
 
-            def thread_put(item):
-                fut = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
-                fut.result(timeout=max(1.0, float(cfg.request_timeout_seconds)))
+            def thread_put(item) -> bool:
+                """从生产线程安全写入 asyncio 队列，取消后快速退出。"""
+
+                while not cancel_flag["cancelled"] and not state.is_cancelled(request_id):
+                    fut = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+                    try:
+                        fut.result(timeout=0.5)
+                        return True
+                    except TimeoutError:
+                        fut.cancel()
+                        continue
+                    except Exception:
+                        fut.cancel()
+                        return False
+                return False
 
             def producer():
                 try:
@@ -140,7 +152,8 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                                 break
                             if isinstance(chunk, dict):
                                 chunk.setdefault("model", model)
-                            thread_put(chunk)
+                            if not thread_put(chunk):
+                                break
                 except Exception:
                     logger.exception("WS TTS producer failed", extra={"request_id": request_id})
                     if not cancel_flag["cancelled"]:
@@ -189,11 +202,20 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                                     state.inc_stat("requests_error")
                                     stream_error_counted = True
                                     state.mark_request(request_id, "error", error="stream returned error frame")
-                        if binary and isinstance(chunk, dict) and chunk.get("type") == "audio":
-                            await websocket.send_json({k: v for k, v in chunk.items() if k != "data"})
-                            await websocket.send_bytes(base64.b64decode(chunk["data"]))
-                        else:
-                            await websocket.send_json(chunk)
+                        try:
+                            if binary and isinstance(chunk, dict) and chunk.get("type") == "audio":
+                                await websocket.send_json({k: v for k, v in chunk.items() if k != "data"})
+                                await websocket.send_bytes(base64.b64decode(chunk["data"]))
+                            else:
+                                await websocket.send_json(chunk)
+                        except Exception:
+                            # 浏览器刷新、关闭页面或网络中断时，立即取消后端生成，
+                            # 不再把断开的 WebSocket 当作服务端错误反复重试。
+                            state.request_cancel(request_id)
+                            cancel_flag["cancelled"] = True
+                            cancel_flag["by_client"] = True
+                            logger.info("WS client disconnected while sending audio", extra={"request_id": request_id})
+                            break
                         if isinstance(chunk, dict) and chunk.get("type") == "cancelled":
                             break
                 finally:
@@ -201,7 +223,13 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                     if control_task:
                         control_task.cancel()
                     if producer_task:
-                        await producer_task
+                        try:
+                            await asyncio.wait_for(producer_task, timeout=5.0)
+                        except asyncio.TimeoutError:
+                            producer_task.cancel()
+                            logger.warning("WS producer did not exit within cancellation grace window", extra={"request_id": request_id})
+                        except asyncio.CancelledError:
+                            pass
 
             elapsed = time.perf_counter() - start
             if cancel_flag["by_client"] or state.is_cancelled(request_id):

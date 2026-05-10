@@ -28,6 +28,12 @@ def _admin_password() -> str:
     return os.environ.get("ANGEVOICE_ADMIN_PASSWORD", "") or ""
 
 
+def _safe_compare(left: str, right: str) -> bool:
+    """用 UTF-8 字节做常量时间比较，支持中文账号和密码。"""
+
+    return secrets.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+
+
 def create_admin_router(state: ServiceState) -> APIRouter:
     router = APIRouter()
     cfg = state.cfg
@@ -40,8 +46,8 @@ def create_admin_router(state: ServiceState) -> APIRouter:
             raise HTTPException(status_code=503, detail="未配置管理后台密码")
         if credentials is None:
             raise HTTPException(status_code=401, detail="需要登录", headers={"WWW-Authenticate": "Basic"})
-        username_ok = secrets.compare_digest(credentials.username, _admin_username())
-        password_ok = secrets.compare_digest(credentials.password, expected_password)
+        username_ok = _safe_compare(credentials.username, _admin_username())
+        password_ok = _safe_compare(credentials.password, expected_password)
         if not (username_ok and password_ok):
             raise HTTPException(status_code=401, detail="账号或密码错误", headers={"WWW-Authenticate": "Basic"})
 

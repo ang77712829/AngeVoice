@@ -185,7 +185,7 @@ class TTSConfig:
     moss_output_peak_normalize_enabled: bool = True
     moss_output_target_peak: float = 0.88
     moss_output_gain: float = 0.96
-    moss_process_isolation_enabled: bool = True
+    moss_process_isolation_enabled: bool = False
     moss_process_isolation_providers: str = "cuda"
     moss_process_kill_grace_seconds: float = 2.0
 

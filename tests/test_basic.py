@@ -45,7 +45,7 @@ class TestConfig:
         assert config.max_queue_length == 0
         assert config.model_idle_timeout_seconds == 600
         assert config.model_idle_unload_current is True
-        assert config.moss_process_isolation_enabled is True
+        assert config.moss_process_isolation_enabled is False
         assert config.moss_process_isolation_providers == "cuda"
 
     def test_env_override(self, monkeypatch):
@@ -123,6 +123,13 @@ class TestEngineManager:
 
 
 class TestSecurityAndMiddleware:
+
+    def test_admin_safe_compare_supports_chinese(self):
+        from kokoro_tts.routes.admin import _safe_compare
+
+        assert _safe_compare("安歌", "安歌") is True
+        assert _safe_compare("安歌", "admin") is False
+
     def test_admin_requires_password(self, monkeypatch):
         from kokoro_tts.config import TTSConfig
         monkeypatch.delenv("ANGEVOICE_ADMIN_PASSWORD", raising=False)
@@ -208,17 +215,44 @@ class TestP2Regressions:
         assert snapshot["idle_unloaded"] is True
         assert snapshot["loaded"] is False
 
-    def test_moss_process_isolation_defaults_to_cuda_only(self):
+    def test_moss_process_isolation_defaults_to_off_and_can_enable_cuda(self):
         from kokoro_tts.config import TTSConfig
         from kokoro_tts.moss_engine import MossNanoEngine
 
         cfg = TTSConfig()
         cuda_engine = MossNanoEngine(cfg, execution_provider="cuda")
-        cpu_engine = MossNanoEngine(cfg, execution_provider="cpu")
-        assert cuda_engine._process_isolated is True
-        assert cpu_engine._process_isolated is False
-        cuda_engine._loaded = True
-        cuda_engine._validate_request("你好", "Junhao", 1.0)
+        assert cuda_engine._process_isolated is False
+
+        isolated_cfg = TTSConfig(moss_process_isolation_enabled=True, moss_process_isolation_providers="cuda")
+        isolated_cuda = MossNanoEngine(isolated_cfg, execution_provider="cuda")
+        isolated_cpu = MossNanoEngine(isolated_cfg, execution_provider="cpu")
+        assert isolated_cuda._process_isolated is True
+        assert isolated_cpu._process_isolated is False
+        isolated_cuda._loaded = True
+        isolated_cuda._validate_request("你好", "Junhao", 1.0)
+
+
+    def test_moss_isolated_stream_reloads_after_cancelled_worker(self):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.moss_engine import MossNanoEngine
+
+        class ClosedClient:
+            alive = False
+
+        engine = MossNanoEngine(TTSConfig(), execution_provider="cuda", process_isolation=True)
+        engine._loaded = True
+        engine._process_client = ClosedClient()
+        called = {"load": 0}
+
+        def fake_load():
+            called["load"] += 1
+            engine._loaded = True
+            engine._process_client = None
+            return engine
+
+        engine.load = fake_load
+        list(engine._synthesize_stream_process_isolated(text="你好", voice="Junhao", speed=1.0, fmt="pcm_s16le", prompt_audio_path=None, cancel_check=lambda: True))
+        assert called["load"] == 1
 
     def test_moss_process_isolation_can_be_disabled(self):
         from kokoro_tts.config import TTSConfig

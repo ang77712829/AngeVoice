@@ -92,7 +92,7 @@ class MossNanoEngine:
 
         if explicit is not None:
             return bool(explicit)
-        if not bool(getattr(self.config, "moss_process_isolation_enabled", True)):
+        if not bool(getattr(self.config, "moss_process_isolation_enabled", False)):
             return False
         providers = {
             item.strip().lower()
@@ -501,7 +501,8 @@ class MossNanoEngine:
     ):
         """通过隔离子进程执行 MOSS 流式推理。"""
 
-        if self._process_client is None:
+        if self._process_client is None or not self._process_client.alive:
+            self._loaded = False
             self.load()
         try:
             for event in self._process_client.stream(
@@ -516,6 +517,7 @@ class MossNanoEngine:
                     "cancel_check": None,
                 },
                 timeout=float(self.config.request_timeout_seconds),
+                cancel_check=cancel_check,
             ):
                 if cancel_check is not None:
                     try:
@@ -523,6 +525,8 @@ class MossNanoEngine:
                             if self._process_client is not None:
                                 self._process_client.close(kill=True)
                                 self._process_client = None
+                            # 用户取消不是 runtime 故障，但 worker 已被杀掉，下一次请求需要重载。
+                            self._loaded = False
                             break
                     except Exception:
                         logger.debug("MOSS 隔离流式 cancel_check 失败", exc_info=True)

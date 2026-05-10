@@ -73,7 +73,7 @@ Good fits:
 | Studio Web UI | Built-in console with model switching, voice filtering, preview, streaming playback, stop generation, API-key settings, and metrics |
 | API docs page | `GET /api-docs` provides copyable examples, especially for MOSS reference-audio clone and streaming clone |
 | OpenAI-compatible API | `POST /v1/audio/speech` with `model/input/voice/speed/response_format` |
-| MOSS-TTS-Nano | OpenMOSS ONNX runtime adapter with preset voices, reference-audio cloning, CPU baseline, and experimental CUDA mode; CUDA uses process isolation by default so a stuck worker can be killed |
+| MOSS-TTS-Nano | OpenMOSS ONNX runtime adapter with preset voices, reference-audio cloning, CPU baseline, and experimental CUDA mode; process isolation is off by default to prioritize real-time streaming on NAS/older GPUs, and can be enabled manually when hard isolation is required |
 | Multi-model runtime | `/v1/models` lists, loads, unloads, and switches engines; cache keys are isolated by model |
 | WebSocket streaming | `WS /ws/v1/tts`; bounded chunks, `cancel` / `stop`, MOSS clone audio in the first JSON message |
 | Chinese text rules | Auto pause punctuation, jieba-first segmentation, fallback lexicon, and common polyphone overrides |
@@ -293,7 +293,7 @@ environment:
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | Reference-audio trim duration |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | Encoded prompt-audio cache size |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | Fall back to CPU when CUDA self-test fails |
-| `MOSS_PROCESS_ISOLATION_ENABLED` | `true` | Enable MOSS process isolation |
+| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | Enable MOSS process isolation; disabled by default to prioritize real-time streaming |
 | `MOSS_PROCESS_ISOLATION_PROVIDERS` | `cuda` | Providers executed in an isolated worker process |
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | Grace seconds before force-killing a timed-out worker |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | Reject silent, NaN/Inf, or heavily clipped MOSS self-test output |
@@ -307,7 +307,7 @@ environment:
 ## Security notes
 
 - Set `KOKORO_API_KEY` for public or semi-public deployments.
-- Admin UI/APIs are disabled by default. If enabled, `ANGEVOICE_ADMIN_PASSWORD` is required; public deployments should also set `KOKORO_API_KEY` and restrict access at the reverse proxy.
+- Admin UI/APIs are disabled by default. If enabled, `ANGEVOICE_ADMIN_PASSWORD` is required; non-ASCII usernames/passwords are supported; public deployments should also set `KOKORO_API_KEY` and restrict access at the reverse proxy.
 - `.pt` voice upload is disabled by default. Only upload trusted files.
 
 ⚠️ **Security Warning**: Enabling `KOKORO_VOICE_UPLOAD_ENABLED` on public-facing servers is **strongly discouraged**.

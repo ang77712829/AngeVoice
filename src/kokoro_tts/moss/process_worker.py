@@ -14,7 +14,7 @@ import time
 import traceback
 import uuid
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Callable, Iterator
 
 
 @dataclass(frozen=True)
@@ -98,16 +98,37 @@ class MossProcessClient:
             raise RuntimeError(f"MOSS worker returned unexpected message: {result.kind}")
         return result.payload
 
-    def stream(self, command: str, payload: dict | None = None, *, timeout: float) -> Iterator[dict]:
-        """发送一次流式请求，并逐条返回子进程事件。"""
+    def stream(
+        self,
+        command: str,
+        payload: dict | None = None,
+        *,
+        timeout: float,
+        cancel_check: Callable[[], bool] | None = None,
+    ) -> Iterator[dict]:
+        """发送一次流式请求，并逐条返回子进程事件。
+
+        ``timeout`` 表示“多久没有任何 worker 消息后判定卡死”，而不是
+        整段长文本的总时长上限。长文本只要持续产出 started/audio/done
+        事件，就不会因为总耗时超过 300 秒而被误杀。
+        """
 
         request_id = self._send(command, payload or {})
-        deadline = time.monotonic() + max(1.0, float(timeout))
+        idle_timeout = max(1.0, float(timeout))
+        deadline = time.monotonic() + idle_timeout
         while True:
+            if cancel_check is not None:
+                try:
+                    if cancel_check():
+                        self.close(kill=True)
+                        return
+                except Exception:
+                    if self.logger:
+                        self.logger.debug("MOSS worker cancel_check 失败", exc_info=True)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 self.close(kill=True)
-                raise MossProcessTimeoutError(f"MOSS worker stream timed out after {timeout}s")
+                raise MossProcessTimeoutError(f"MOSS worker stream idle timed out after {timeout}s")
             process = self._process
             if process is not None and not process.is_alive():
                 raise RuntimeError(f"MOSS worker exited unexpectedly with code {process.exitcode}")
@@ -120,6 +141,8 @@ class MossProcessClient:
                 if self.logger:
                     self.logger.debug("丢弃过期 MOSS worker 流式消息：%s", result.request_id)
                 continue
+            # 收到任意当前请求消息都说明 worker 还活着，重置空闲超时。
+            deadline = time.monotonic() + idle_timeout
             if result.kind == "event":
                 yield result.payload
                 continue

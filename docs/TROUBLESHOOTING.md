@@ -238,15 +238,22 @@ docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 
 单张 8GB 卡不建议同时跑多个会加载 GPU 模型的容器。`MOSS_CUDA_MEMORY_LIMIT_MB` 默认保持 `0`；只有在 Tesla P4、RTX 3070 这类紧张环境排障时，才建议手动设置成 `4096` 或更低测试。
 
-MOSS CUDA 默认启用进程级隔离：
+MOSS 进程级隔离默认关闭，优先保证 NAS/老显卡的实时流式体验：
 
 ```env
-MOSS_PROCESS_ISOLATION_ENABLED=true
+MOSS_PROCESS_ISOLATION_ENABLED=false
 MOSS_PROCESS_ISOLATION_PROVIDERS=cuda
 MOSS_PROCESS_KILL_GRACE_SECONDS=2
 ```
 
-如果 ONNX/CUDA 底层调用真的卡死，主进程会在请求超时后终止 worker 子进程，并在下次请求重新创建 runtime。CPU 默认不隔离；如需排查 CPU runtime 卡死，可临时设置 `MOSS_PROCESS_ISOLATION_PROVIDERS=cpu,cuda`。
+如果你确认 ONNX/CUDA 底层调用会卡死，可临时开启硬隔离：
+
+```env
+MOSS_PROCESS_ISOLATION_ENABLED=true
+MOSS_PROCESS_ISOLATION_PROVIDERS=cuda
+```
+
+开启后主进程会在 worker 长时间无事件或超时后终止子进程，并在下次请求重新创建 runtime。CPU 默认不隔离；如需排查 CPU runtime 卡死，可临时设置 `MOSS_PROCESS_ISOLATION_PROVIDERS=cpu,cuda`。
 
 ## 7. 输出音频没有持久化
 
@@ -471,3 +478,24 @@ def tts_with_retry(url, payload, max_retries=3):
 ```
 
 详见 [安全说明](SECURITY.md) 中的速率限制配置。
+
+## WebSocket 一直卡在“建立流式连接”
+
+如果长文本或 MOSS CUDA 合成中途刷新页面、点击停止后再次生成一直卡住，优先确认已经使用 2.6.4.4 之后的修复版。修复版做了三件事：
+
+1. WebSocket 发送失败会立即标记请求取消，不再把断开的连接当作服务端错误反复发送。
+2. MOSS 隔离 worker 的流式超时按“无任何事件的空闲时间”计算，而不是整段长文本的总时长。
+3. 用户取消后会杀掉隔离 worker，并把模型状态标记为需要下次重载，避免旧 worker 残留导致后续请求卡住。
+
+临时恢复方式：
+
+```bash
+AngeVoice
+# 选择“重启当前画像”
+```
+
+或直接：
+
+```bash
+bash scripts/install.sh --restart
+```

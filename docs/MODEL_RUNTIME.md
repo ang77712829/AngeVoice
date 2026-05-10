@@ -123,18 +123,18 @@ request:
 
 ## MOSS 进程级隔离
 
-MOSS CUDA 默认启用进程级隔离：主服务进程不直接运行 CUDA/ONNX Runtime 推理，而是把请求发给独立 worker 子进程。
-如果 worker 在 `KOKORO_REQUEST_TIMEOUT_SECONDS` 内没有返回，主进程会 terminate/kill 子进程并把该引擎标记为 unhealthy；下一次请求会重新创建 worker 和 runtime。
+MOSS 进程级隔离默认关闭，默认路径更接近 2.6.4.3 的同进程流式推理，优先保证 NAS/老显卡的实时播放体验。
+需要排查 CUDA/ONNX Runtime 底层卡死时，可以手动开启隔离；开启后主服务进程会把匹配 provider 的请求发给独立 worker 子进程，worker 长时间无事件或超时时会被 terminate/kill，并在下次请求重建 runtime。
 
 默认配置：
 
 ```env
-MOSS_PROCESS_ISOLATION_ENABLED=true
+MOSS_PROCESS_ISOLATION_ENABLED=false
 MOSS_PROCESS_ISOLATION_PROVIDERS=cuda
 MOSS_PROCESS_KILL_GRACE_SECONDS=2
 ```
 
-CPU 默认不走进程隔离，以保留更低延迟和更少进程开销；如需对 CPU 也隔离，可设置 `MOSS_PROCESS_ISOLATION_PROVIDERS=cpu,cuda`。
+默认情况下 CPU/CUDA 都不走进程隔离；如需只隔离 CUDA，可设置 `MOSS_PROCESS_ISOLATION_ENABLED=true` 且保留 `MOSS_PROCESS_ISOLATION_PROVIDERS=cuda`。如需对 CPU 也隔离，可设置 `MOSS_PROCESS_ISOLATION_PROVIDERS=cpu,cuda`。
 
 ## Runtime Tuning
 
