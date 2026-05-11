@@ -6,6 +6,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Se
 
 ---
 
+## [2.6.4.5] - 2026-05-11
+
+### 🔌 小智适配
+- 新增 `xiaozhi/` 适配包，集中放置小智后端适配器、配置示例、一键安装脚本、智控台预设和排障文档。
+- 新增 AngeVoice OpenAI 非流式适配器 `xiaozhi/adapters/angevoice.py`，通过 `/v1/audio/speech` 调用 Kokoro 或 MOSS 预设音色，适合作为最快跑通的稳定方案。
+- 新增 AngeVoice WebSocket 流式适配器 `xiaozhi/adapters/angevoice_stream.py`，支持 Kokoro 流式、MOSS 预设音色流式，以及配置 `prompt_audio_path` 后的 MOSS 克隆流式。
+- 新增 AngeVoice MOSS clone 非流式适配器 `xiaozhi/adapters/angevoice_clone.py`，通过 `/api/tts` multipart 上传固定参考音频。
+- 新增 `xiaozhi/scripts/install-xiaozhi-adapter.sh` 一键安装脚本，可安装适配器、patch 小智 `docker-compose_all.yml`、创建参考音频目录、写入示例配置并测试容器连通性。
+- 新增 `xiaozhi/manager/presets.yaml` 智控台可复制预设，不修改小智前端源码，避免侵入上游项目。
+- 新增小智接入教程、快速开始、MOSS clone 参考音频说明和常见问题文档。
+
+### 🛠️ 修复
+- 修复小智适配器在 `async def text_to_speak()` 中使用同步 `requests.post()` 可能阻塞事件循环的问题，非流式与 clone 适配器改为 `httpx.AsyncClient`。
+- 修复管理后台 Basic Auth 在中文账号/密码、不同浏览器编码场景下可能无法进入或抛出异常的问题，认证比较改为基于原始字节候选的安全比较。
+- 修复 admin 相关测试函数错误，补充管理后台认证回归测试。
+
+### 🧪 CI / 发布
+- 包版本、项目元数据、OpenAPI 版本和测试目标版本对齐为 `2.6.4.5`。
+- GitHub Actions 相关 action 升级到 Node 24 runtime 对应版本，避免 Node.js 20 runtime 弃用警告影响后续 CI。
+- CI 与 Docker CPU smoke 已覆盖轻量单测、语法检查、CPU 镜像启动和健康检查。
+
+---
+
 ## [2.6.4.4] - 2026-05-11
 
 ### 🛠️ 修复
