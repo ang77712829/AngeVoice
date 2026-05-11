@@ -7,6 +7,16 @@ Supports:
 - Kokoro streaming
 - MOSS preset-voice streaming
 - MOSS clone streaming when `prompt_audio_path` is configured
+
+The clone prompt path is intentionally tolerant because NAS users often copy a
+host path from the file manager into the manager UI.  The adapter accepts:
+
+- container file path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
+- container directory: /opt/xiaozhi-esp32-server/data/angevoice_prompts/
+- host-like path containing /data/angevoice_prompts, such as /vol*/.../data/angevoice_prompts/
+
+If the prompt audio still cannot be found, the adapter falls back to normal MOSS
+streaming instead of failing the whole xiaozhi TTS response.
 """
 
 from __future__ import annotations
@@ -30,6 +40,7 @@ TAG = __name__
 logger = setup_logging()
 
 MAX_PROMPT_AUDIO_SIZE = 10 * 1024 * 1024  # 10 MB
+PROMPT_CONTAINER_DIR = "/opt/xiaozhi-esp32-server/data/angevoice_prompts"
 
 
 class _BackgroundLoop:
@@ -53,7 +64,6 @@ class _BackgroundLoop:
         self._thread.join(timeout=3)
 
 
-# Module-level singleton; created lazily on first use.
 _bg_loop: _BackgroundLoop | None = None
 _bg_lock = threading.Lock()
 
@@ -94,12 +104,7 @@ class TTSProvider(TTSProviderBase):
         self._apply_percentage_params(config)
 
     async def text_to_speak(self, text, output_file):
-        """Abstract-method fallback.
-
-        xiaozhi instantiates providers through the abstract base class. The real
-        streaming path is `tts_text_priority_thread()`. This method collects a
-        whole WebSocket response only for non-stream fallback/testing paths.
-        """
+        """Collect a whole websocket response for non-stream fallback/testing paths."""
         chunks: list[bytes] = []
         async for item in self._iter_stream_events(str(text or "")):
             if item[0] == "audio":
@@ -223,8 +228,9 @@ class TTSProvider(TTSProviderBase):
         }
         if self.api_key:
             payload["token"] = self.api_key
-        if self.prompt_audio_path:
-            payload["prompt_audio"] = _load_prompt_audio(self.prompt_audio_path, self.prompt_audio_filename)
+        prompt_audio = _prepare_prompt_audio(self.prompt_audio_path, self.prompt_audio_filename)
+        if prompt_audio:
+            payload["prompt_audio"] = prompt_audio
         return payload
 
     def _push_audio_bytes(self, audio: bytes, sentence_id: str | None) -> None:
@@ -294,6 +300,64 @@ def _audio_bytes(data: dict) -> bytes:
         return base64.b64decode(raw)
     except Exception:
         return b""
+
+
+def _prepare_prompt_audio(path: str, filename: str) -> dict | None:
+    normalized = _normalize_prompt_audio_path(path, filename)
+    if not normalized:
+        return None
+    if not os.path.exists(normalized):
+        logger.bind(tag=TAG).warning(
+            f"AngeVoice参考音频不存在，已跳过克隆并退回普通流式: raw={path!r}, normalized={normalized!r}"
+        )
+        return None
+    if os.path.isdir(normalized):
+        logger.bind(tag=TAG).warning(f"AngeVoice参考音频路径是目录，已跳过克隆并退回普通流式: {normalized}")
+        return None
+    return _load_prompt_audio(normalized, filename or os.path.basename(normalized))
+
+
+def _normalize_prompt_audio_path(path: str, filename: str) -> str:
+    raw = str(path or "").strip()
+    filename = str(filename or "reference.wav").strip() or "reference.wav"
+    if not raw:
+        return ""
+
+    candidates: list[str] = []
+
+    def add(candidate: str) -> None:
+        candidate = str(candidate or "").strip()
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    add(raw)
+    if raw.endswith("/"):
+        add(os.path.join(raw, filename))
+
+    marker = "/data/angevoice_prompts"
+    if marker in raw:
+        suffix = raw.split(marker, 1)[1].lstrip("/")
+        if not suffix:
+            suffix = filename
+        elif suffix.endswith("/"):
+            suffix = suffix + filename
+        add(os.path.join(PROMPT_CONTAINER_DIR, suffix))
+
+    if os.path.isdir(raw):
+        add(os.path.join(raw, filename))
+
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            candidate_file = os.path.join(candidate, filename)
+            if os.path.exists(candidate_file):
+                return candidate_file
+        if os.path.exists(candidate):
+            return candidate
+
+    for candidate in candidates:
+        if candidate.startswith(PROMPT_CONTAINER_DIR):
+            return candidate
+    return candidates[-1] if candidates else ""
 
 
 def _load_prompt_audio(path: str, filename: str) -> dict:
