@@ -31,6 +31,15 @@ def _safe_compare_bytes(left: bytes, right: bytes) -> bool:
 
 
 
+def _safe_compare(left: str, right: str) -> bool:
+    """Constant-time compare for Unicode credentials (supports CJK etc.)."""
+    return any(
+        _safe_compare_bytes(candidate, expected)
+        for candidate in _candidate_encodings(left)
+        for expected in _candidate_encodings(right)
+    )
+
+
 def _candidate_encodings(value: str) -> list[bytes]:
     candidates: list[bytes] = []
     for encoding in ("utf-8", "latin-1"):
