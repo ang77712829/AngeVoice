@@ -181,6 +181,8 @@ TTS:
 
 ### 第三层：MOSS clone，高级玩法
 
+使用 MOSS 或 MOSS clone 前，请先确认 AngeVoice 侧已启用对应 MOSS 模型，例如 `ANGEVOICE_ENABLED_MODELS` 中包含 `moss-nano-cpu` 或 `moss-nano-cuda`。如果 AngeVoice 只启用了 `kokoro`，小智里选择 MOSS 会请求失败。
+
 先准备一段参考音频：
 
 ```text
