@@ -94,9 +94,6 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                     return
                 cancel_flag["notified"] = True
                 await drain_queue()
-                # Put the cancelled message; consumer will break on seeing it.
-                # done_marker is not needed here since the consumer loop breaks
-                # immediately on type=="cancelled" before waiting for a second item.
                 await queue.put({"type": "cancelled", "request_id": request_id})
                 await queue.put(done_marker)
 
@@ -209,8 +206,6 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                             else:
                                 await websocket.send_json(chunk)
                         except Exception:
-                            # 浏览器刷新、关闭页面或网络中断时，立即取消后端生成，
-                            # 不再把断开的 WebSocket 当作服务端错误反复重试。
                             state.request_cancel(request_id)
                             cancel_flag["cancelled"] = True
                             cancel_flag["by_client"] = True
@@ -249,6 +244,12 @@ def create_ws_router(state: ServiceState) -> APIRouter:
                 await websocket.send_json({"type": "error", "message": "合成超时", "request_id": request_id})
             except Exception:
                 pass
+        except WebSocketDisconnect as exc:
+            # Normal close, browser refresh, xiaozhi-side probe, or client cancellation
+            # should not be logged as a server-side TTS failure.
+            state.request_cancel(request_id)
+            state.finish_request(request_id, "cancelled")
+            logger.info("WS client disconnected before first request payload", extra={"request_id": request_id, "code": exc.code})
         except Exception:
             state.inc_stat("requests_error")
             state.finish_request(request_id, "error")
