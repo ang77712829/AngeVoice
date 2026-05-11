@@ -885,6 +885,40 @@ import_manager_presets() {
   fi
 }
 
+
+recreate_xiaozhi_server() {
+  local compose_bin="$1"
+  local compose_file="$2"
+
+  if [[ -z "$compose_bin" ]]; then
+    warn "未找到 docker compose / docker-compose，无法自动重建容器。请手动执行: docker compose -f $compose_file up -d --force-recreate xiaozhi-esp32-server"
+    return 0
+  fi
+
+  log "自动重建 xiaozhi-esp32-server 容器以加载新增挂载"
+  log "仅重建小智 server 容器，不会删除 mysql/data、redis、uploadfile、models 等持久化数据"
+
+  if $compose_bin -f "$compose_file" up -d --force-recreate xiaozhi-esp32-server; then
+    log "小智 server 容器已通过 compose force-recreate 重建"
+    return 0
+  fi
+
+  warn "compose force-recreate 失败，尝试只删除并重建 xiaozhi-esp32-server 容器"
+
+  if docker ps -a --format '{{.Names}}' | grep -qx 'xiaozhi-esp32-server'; then
+    docker stop xiaozhi-esp32-server >/dev/null 2>&1 || true
+    docker rm xiaozhi-esp32-server >/dev/null 2>&1 || true
+  fi
+
+  if $compose_bin -f "$compose_file" up -d xiaozhi-esp32-server; then
+    log "小智 server 容器已删除旧容器并重新创建"
+    return 0
+  fi
+
+  warn "自动重建失败，请手动检查 compose 文件并执行: docker compose -f $compose_file up -d --force-recreate xiaozhi-esp32-server"
+  return 0
+}
+
 test_angevoice_from_container() {
   local url="${ANGEVOICE_HTTP}/health"
 
@@ -991,7 +1025,7 @@ if [[ "$IMPORT_MANAGER_PRESETS" == "true" && "$SET_MANAGER_DEFAULT" == "ask" ]];
 fi
 
 if [[ "$RESTART" == "ask" ]]; then
-  if ask_yes_no "是否重启 xiaozhi-esp32-server 容器" "Y"; then
+  if ask_yes_no "是否自动重建 xiaozhi-esp32-server 容器以加载适配器挂载" "Y"; then
     RESTART="true"
   else
     RESTART="false"
@@ -1063,12 +1097,8 @@ fi
 
 COMPOSE="$(compose_cmd)"
 
-if [[ -n "$COMPOSE" && "$RESTART" == "true" && "$DRY_RUN" != "true" ]]; then
-  log "重启小智 server 容器"
-
-  if ! $COMPOSE -f "$COMPOSE_FILE" restart xiaozhi-esp32-server; then
-    warn "重启失败，请手动执行: docker compose -f $COMPOSE_FILE restart xiaozhi-esp32-server"
-  fi
+if [[ "$RESTART" == "true" && "$DRY_RUN" != "true" ]]; then
+  recreate_xiaozhi_server "$COMPOSE" "$COMPOSE_FILE"
 fi
 
 if command -v docker >/dev/null 2>&1 && [[ "$DRY_RUN" != "true" ]]; then
@@ -1079,15 +1109,24 @@ if command -v docker >/dev/null 2>&1 && [[ "$DRY_RUN" != "true" ]]; then
 from core.providers.tts import angevoice, angevoice_stream, angevoice_clone
 print("AngeVoice adapters import OK")
 PY
-    然后
+    then
       warn "适配器导入测试失败，请查看容器日志"
     fi
+
+    log "检查容器内 TTS 适配器文件"
+    docker exec xiaozhi-esp32-server sh -lc 'ls -lah /opt/xiaozhi-esp32-server/core/providers/tts/angevoice*.py 2>/dev/null || true'
+    docker exec xiaozhi-esp32-server python - <<'PY' || warn "适配器文件路径检查失败"
+import os
+for name in ["angevoice", "angevoice_stream", "angevoice_clone"]:
+    path = f"core/providers/tts/{name}.py"
+    print(path, os.path.exists(path))
+PY
 
     test_angevoice_from_container
   fi
 fi
 
-猫<EOF
+猫<<EOF
 
 ✅ AngeVoice 小智适配器安装流程完成
 
@@ -1104,7 +1143,8 @@ fi
 提供商表：ai_model_provider
 配置表：ai_model_config
 已导入 CPU/CUDA、流式/非流式、MOSS克隆相关预设。
-  智控台/API模式不会再写 selected_module/TTS 到 .config.yaml，避免启动冲突。
+智能控制台/API模式将不再在.config.yaml中写入selected_module/TTS，以避免启动冲突。
+  脚本会自动重建 xiaozhi-esp32-server 容器，让新增适配器挂载立即生效。
   如果页面没刷新，请重新打开“模型配置 → 语音合成”。
 
 MOSS 克隆参考音频：
@@ -1114,5 +1154,6 @@ MOSS 克隆参考音频：
 更换 MOSS 克隆声音：
   直接替换 reference.wav
   或把 prompt_audio_path 改成 /opt/xiaozhi-esp32-server/data/angevoice_prompts/你的音色.wav
+  注意不要填写宿主机路径 /vol*/...，小智容器内必须使用 /opt/xiaozhi-esp32-server/... 路径
 
 EOF
