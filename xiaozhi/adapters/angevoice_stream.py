@@ -17,6 +17,13 @@ host path from the file manager into the manager UI.  The adapter accepts:
 
 If the prompt audio still cannot be found, the adapter falls back to normal MOSS
 streaming instead of failing the whole xiaozhi TTS response.
+
+AngeVoice models may return different PCM layouts.  Kokoro is usually mono, but
+MOSS exposes the runtime sample rate/channels in the `started` event and can be
+48 kHz stereo.  xiaozhi's Opus encoder expects the PCM bytes to match its own
+sample_rate/channels.  This adapter therefore downmixes/resamples raw PCM chunks
+before feeding them into the Opus encoder, otherwise users hear harsh noise even
+though synthesis itself succeeded.
 """
 
 from __future__ import annotations
@@ -101,14 +108,20 @@ class TTSProvider(TTSProviderBase):
         self.speed = float(speed) if speed not in (None, "") else 1.0
         self.output_file = config.get("output_dir", "tmp/")
         self._pcm_buffer = bytearray()
+        self._source_pcm_buffer = bytearray()
+        self._source_sample_rate = int(config.get("source_sample_rate") or 0)
+        self._source_channels = int(config.get("source_channels") or 0)
+        self._last_meta_logged = ""
         self._apply_percentage_params(config)
 
     async def text_to_speak(self, text, output_file):
         """Collect a whole websocket response for non-stream fallback/testing paths."""
         chunks: list[bytes] = []
         async for item in self._iter_stream_events(str(text or "")):
-            if item[0] == "audio":
-                chunks.append(item[1])
+            if item[0] == "meta":
+                self._apply_stream_meta(item[1])
+            elif item[0] == "audio":
+                chunks.append(self._normalize_pcm_for_opus(item[1]))
         data = b"".join(chunks)
         if output_file:
             with open(output_file, "wb") as f:
@@ -132,6 +145,7 @@ class TTSProvider(TTSProviderBase):
                     self.is_first_sentence = True
                     self.tts_audio_first_sentence = True
                     self._pcm_buffer.clear()
+                    self._source_pcm_buffer.clear()
                 elif ContentType.TEXT == message.content_type:
                     self.tts_text_buff.append(message.content_detail)
                     segment_text = self._get_segment_text()
@@ -143,6 +157,7 @@ class TTSProvider(TTSProviderBase):
                         self._process_audio_file_stream(message.content_file, callback=self.handle_opus)
                 if message.sentence_type == SentenceType.LAST:
                     self._process_remaining_text_stream(opus_handler=self.handle_opus)
+                    self._flush_source_pcm_buffer()
                     self._flush_pcm_buffer(end_of_stream=True)
                     self.tts_audio_queue.put((SentenceType.LAST, [], message.content_detail, message.sentence_id))
             except queue.Empty:
@@ -181,12 +196,15 @@ class TTSProvider(TTSProviderBase):
         async for typ, payload in self._iter_stream_events(text):
             if self.conn.stop_event.is_set() or self.conn.client_abort:
                 break
-            if typ == "audio" and payload:
+            if typ == "meta":
+                self._apply_stream_meta(payload)
+            elif typ == "audio" and payload:
                 self._push_audio_bytes(payload, sentence_id)
             elif typ == "done":
                 break
             elif typ == "error":
                 raise Exception(payload.decode("utf-8", errors="ignore") if isinstance(payload, bytes) else str(payload))
+        self._flush_source_pcm_buffer()
         self._flush_pcm_buffer(end_of_stream=False)
 
     async def _iter_stream_events(self, text: str):
@@ -206,7 +224,9 @@ class TTSProvider(TTSProviderBase):
                         if not data:
                             continue
                         typ = data.get("type") or data.get("event")
-                        if typ in {"audio", "segment_audio"}:
+                        if typ in {"started", "start"}:
+                            yield "meta", data
+                        elif typ in {"audio", "segment_audio"}:
                             yield "audio", _audio_bytes(data)
                         elif typ in {"done", "cancelled"}:
                             yield "done", b""
@@ -233,14 +253,82 @@ class TTSProvider(TTSProviderBase):
             payload["prompt_audio"] = prompt_audio
         return payload
 
+    def _apply_stream_meta(self, meta: dict) -> None:
+        if not isinstance(meta, dict):
+            return
+        sample_rate = _safe_int(meta.get("sample_rate"), self._source_sample_rate or 0)
+        channels = _safe_int(meta.get("channels"), self._source_channels or 0)
+        if sample_rate > 0:
+            self._source_sample_rate = sample_rate
+        if channels > 0:
+            self._source_channels = channels
+        desc = f"src={self._source_sample_rate or '?'}Hz/{self._source_channels or '?'}ch -> opus={self.opus_encoder.sample_rate}Hz/{self.opus_encoder.channels}ch"
+        if desc != self._last_meta_logged:
+            self._last_meta_logged = desc
+            logger.bind(tag=TAG).info(f"AngeVoice流式音频参数: {desc}")
+
     def _push_audio_bytes(self, audio: bytes, sentence_id: str | None) -> None:
         if not audio:
             return
         if self.stream_format.startswith("pcm"):
-            self._pcm_buffer.extend(audio)
+            normalized = self._normalize_pcm_for_opus(audio)
+            if not normalized:
+                return
+            self._pcm_buffer.extend(normalized)
             self._drain_pcm_buffer(sentence_id=sentence_id, end_of_stream=False)
         else:
             self.tts_audio_queue.put((SentenceType.MIDDLE, audio, None, sentence_id or getattr(self, "current_sentence_id", None)))
+
+    def _normalize_pcm_for_opus(self, audio: bytes) -> bytes:
+        """Convert AngeVoice raw PCM to the layout expected by xiaozhi's Opus encoder."""
+        if not audio:
+            return b""
+        src_rate = int(self._source_sample_rate or getattr(self.opus_encoder, "sample_rate", 24000) or 24000)
+        src_channels = int(self._source_channels or 1)
+        src_channels = 1 if src_channels <= 0 else min(src_channels, 2)
+        dst_rate = int(getattr(self.opus_encoder, "sample_rate", src_rate) or src_rate)
+        dst_channels = int(getattr(self.opus_encoder, "channels", 1) or 1)
+        dst_channels = 1 if dst_channels <= 0 else min(dst_channels, 2)
+
+        sample_group_bytes = 2 * src_channels
+        self._source_pcm_buffer.extend(audio)
+        usable = len(self._source_pcm_buffer) // sample_group_bytes * sample_group_bytes
+        if usable <= 0:
+            return b""
+        raw = bytes(self._source_pcm_buffer[:usable])
+        del self._source_pcm_buffer[:usable]
+
+        if src_rate == dst_rate and src_channels == dst_channels:
+            return raw
+
+        import numpy as np
+
+        samples = np.frombuffer(raw, dtype="<i2")
+        if samples.size == 0:
+            return b""
+        if src_channels > 1:
+            samples = samples.reshape(-1, src_channels).astype(np.float32).mean(axis=1)
+        else:
+            samples = samples.astype(np.float32)
+
+        if src_rate != dst_rate and samples.size > 1:
+            out_len = max(1, int(round(samples.size * dst_rate / src_rate)))
+            x_old = np.arange(samples.size, dtype=np.float32)
+            x_new = np.linspace(0, samples.size - 1, out_len, dtype=np.float32)
+            samples = np.interp(x_new, x_old, samples).astype(np.float32)
+
+        samples = np.clip(samples, -32768, 32767).astype("<i2")
+        if dst_channels > 1:
+            samples = np.repeat(samples.reshape(-1, 1), dst_channels, axis=1).reshape(-1)
+        return samples.tobytes()
+
+    def _flush_source_pcm_buffer(self) -> None:
+        if not self._source_pcm_buffer:
+            return
+        # Drop incomplete sample groups rather than feeding misaligned PCM into the Opus encoder.
+        dropped = len(self._source_pcm_buffer)
+        self._source_pcm_buffer.clear()
+        logger.bind(tag=TAG).debug(f"AngeVoice丢弃不足一个PCM采样组的尾部字节: {dropped}")
 
     def _frame_bytes(self) -> int:
         return int(
@@ -300,6 +388,13 @@ def _audio_bytes(data: dict) -> bytes:
         return base64.b64decode(raw)
     except Exception:
         return b""
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default or 0)
 
 
 def _prepare_prompt_audio(path: str, filename: str) -> dict | None:
