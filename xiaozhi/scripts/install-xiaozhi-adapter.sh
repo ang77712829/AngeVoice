@@ -958,10 +958,19 @@ if [[ "$PATCH_COMPOSE" == "ask" ]]; then
 fi
 
 if [[ "$WRITE_CONFIG" == "ask" ]]; then
-  if ask_yes_no "是否写入 data/.config.yaml 兜底配置；使用智控台的用户也建议保留" "Y"; then
-    WRITE_CONFIG="true"
+  if [[ -f data/.config.yaml ]] && grep -Eq '^[[:space:]]*manager-api:' data/.config.yaml; then
+    warn "检测到 data/.config.yaml 使用 manager-api/API 读取配置。智控台模式下不要写入 selected_module/TTS 本地配置，否则小智后端会拒绝启动。"
+    if ask_yes_no "是否仍然写入 data/.config.yaml 本地兜底配置；通常请选择否" "N"; then
+      WRITE_CONFIG="true"
+    else
+      WRITE_CONFIG="false"
+    fi
   else
-    WRITE_CONFIG="false"
+    if ask_yes_no "是否写入 data/.config.yaml 本地配置；无智控台/本地模式建议选择是" "Y"; then
+      WRITE_CONFIG="true"
+    else
+      WRITE_CONFIG="false"
+    fi
   fi
 fi
 
@@ -1021,6 +1030,13 @@ fi
 
 if [[ "$PATCH_COMPOSE" == "true" ]]; then
   patch_compose "$COMPOSE_FILE"
+fi
+
+if [[ "$WRITE_CONFIG" == "true" ]]; then
+  if [[ -f data/.config.yaml ]] && grep -Eq '^[[:space:]]*manager-api:' data/.config.yaml; then
+    warn "已检测到 manager-api/API 配置，跳过写入 selected_module/TTS 本地配置，避免小智后端报“既包含智控台配置又包含本地配置”。"
+    WRITE_CONFIG="false"
+  fi
 fi
 
 if [[ "$WRITE_CONFIG" == "true" ]]; then
@@ -1088,6 +1104,7 @@ fi
 提供商表：ai_model_provider
 配置表：ai_model_config
 已导入 CPU/CUDA、流式/非流式、MOSS克隆相关预设。
+  智控台/API模式不会再写 selected_module/TTS 到 .config.yaml，避免启动冲突。
   如果页面没刷新，请重新打开“模型配置 → 语音合成”。
 
 MOSS 克隆参考音频：
