@@ -50,8 +50,14 @@ _LIAO_PATTERNS_KOKORO = [
     (re.compile(r"得了(?=[$。！？!?；;，,、\s])"), "得瞭"),
 ]
 
-# MOSS: no liao overrides needed (MOSS reads 瞭 as liào, not liao)
-_LIAO_PATTERNS_MOSS: list = []
+# MOSS: replacing 了 with 瞭 makes OpenMOSS lean to liào (4th tone) in
+# phrases such as “春花秋月何时了”.  蓼 is a conservative phonetic hint for
+# liǎo that avoids the common “le” fallback without turning into liào.
+_LIAO_PATTERNS_MOSS = [
+    (re.compile(r"何时了(?=[$。！？!?；;，,、\s])"), "何时蓼"),
+    (re.compile(r"没完没了(?=[$。！？!?；;，,、\s])"), "没完没蓼"),
+    (re.compile(r"一了百了"), "一蓼百蓼"),
+]
 
 # These overrides are deliberately conservative and phrase based.  The right
 # side uses common homophone characters to bias Chinese G2P without adding a

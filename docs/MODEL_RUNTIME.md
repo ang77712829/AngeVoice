@@ -117,13 +117,16 @@ request:
 | `MOSS_CUDA_SELF_TEST_ENABLED` | `true` | Warm up CUDA provider before serving |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | Reject silent/clipped/invalid test output |
 | `MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED` | `true` | Scale MOSS output down when it exceeds the target peak |
-| `MOSS_OUTPUT_TARGET_PEAK` | `0.88` | Softer MOSS output peak target to reduce clipping |
-| `MOSS_OUTPUT_GAIN` | `0.96` | Slight pre-normalization attenuation to preserve dynamics and reduce distortion |
+| `MOSS_OUTPUT_TARGET_PEAK` | `0.78` | Softer MOSS output peak target to reduce clipping and small-speaker bursts |
+| `MOSS_OUTPUT_GAIN` | `0.90` | Slight pre-normalization attenuation to preserve dynamics and reduce distortion |
+| `MOSS_OUTPUT_DECLICK_ENABLED` | `true` | Repair isolated impulse spikes before encoding |
+| `MOSS_OUTPUT_EDGE_FADE_MS` | `2` | Short fade-in/out for MOSS segment boundaries |
+| `MOSS_REALTIME_STREAMING_DECODE` | `false` | Quality-first default. Enable only when lowest first-packet latency is more important than playback smoothness |
 
 
 ## MOSS 进程级隔离
 
-MOSS 进程级隔离默认关闭，默认路径更接近 2.6.4.3 的同进程流式推理，优先保证 NAS/老显卡的实时播放体验。
+MOSS 进程级隔离默认关闭，默认路径为同进程推理；MOSS 逐帧实时解码默认关闭，优先保证 Web/小智播放质量。
 需要排查 CUDA/ONNX Runtime 底层卡死时，可以手动开启隔离；开启后主服务进程会把匹配 provider 的请求发给独立 worker 子进程，worker 长时间无事件或超时时会被 terminate/kill，并在下次请求重建 runtime。
 
 默认配置：
@@ -154,8 +157,11 @@ MOSS_PROMPT_AUDIO_MAX_SECONDS=8
 MOSS_PROMPT_CACHE_MAX_ITEMS=6
 MOSS_STREAM_CHUNK_SECONDS=0.42
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
-MOSS_OUTPUT_TARGET_PEAK=0.88
-MOSS_OUTPUT_GAIN=0.96
+MOSS_REALTIME_STREAMING_DECODE=false
+MOSS_OUTPUT_TARGET_PEAK=0.78
+MOSS_OUTPUT_GAIN=0.90
+MOSS_OUTPUT_DECLICK_ENABLED=true
+MOSS_OUTPUT_EDGE_FADE_MS=2
 ```
 
 For modern GPUs with 8 GB VRAM, keep reference audio short. Long clone samples
@@ -168,10 +174,14 @@ models back to Kokoro/CPU. As a last resort, set `MOSS_CUDA_MEMORY_LIMIT_MB`
 manually, for example `4096` on a Tesla P4. The default stays `0` so larger GPUs
 can use their full VRAM.
 
-MOSS WebSocket streaming uses the official OpenMOSS `generate_audio_frames`
-callback and decodes codec frames incrementally. Kokoro exposes segment-level
-generation through its official pipeline, so AngeVoice bounds the WebSocket
-frame size after each Kokoro segment is generated.
+MOSS WebSocket streaming defaults to a quality-first path: AngeVoice asks the
+official runtime for a complete high-quality chunk, then bounds the WebSocket
+frame size before sending it to the browser or Xiaozhi.  If you need lower
+first-packet latency and can tolerate more chunk-boundary risk, set
+`MOSS_REALTIME_STREAMING_DECODE=true` to use OpenMOSS `generate_audio_frames`
+and codec streaming decode. Kokoro exposes segment-level generation through its
+official pipeline, so AngeVoice bounds the WebSocket frame size after each
+Kokoro segment is generated.
 
 ## Docker Notes
 

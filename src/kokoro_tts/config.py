@@ -175,7 +175,7 @@ class TTSConfig:
     moss_enable_wetext_processing: bool = False
     moss_enable_normalize_tts_text: bool = True
     moss_apply_angevoice_rules: bool = True
-    moss_realtime_streaming_decode: bool = True
+    moss_realtime_streaming_decode: bool = False
     moss_stream_chunk_seconds: float = 0.42
     moss_stream_queue_max_items: int = 8
     moss_cuda_self_test_enabled: bool = True
@@ -183,9 +183,11 @@ class TTSConfig:
     moss_quality_gate_enabled: bool = True
     moss_max_clip_ratio: float = 0.02
     moss_output_peak_normalize_enabled: bool = True
-    moss_output_target_peak: float = 0.88
-    moss_output_gain: float = 0.96
+    moss_output_target_peak: float = 0.78
+    moss_output_gain: float = 0.90
     moss_process_isolation_enabled: bool = False
+    moss_output_declick_enabled: bool = True
+    moss_output_edge_fade_ms: float = 2.0
     moss_process_isolation_providers: str = "cuda"
     moss_process_kill_grace_seconds: float = 2.0
 
@@ -339,6 +341,7 @@ def _apply_env(config: TTSConfig) -> None:
         "MOSS_STREAM_BUDGET_THRESHOLD_HIGH": FloatEnvSpec("moss_stream_budget_threshold_high", 0.0),
         "MOSS_STREAM_CHUNK_MIN_FLOOR": FloatEnvSpec("moss_stream_chunk_min_floor", 0.01),
         "MOSS_PROCESS_KILL_GRACE_SECONDS": FloatEnvSpec("moss_process_kill_grace_seconds", 0.1, 30.0),
+        "MOSS_OUTPUT_EDGE_FADE_MS": FloatEnvSpec("moss_output_edge_fade_ms", 0.0, 20.0),
         "ANGEVOICE_IDLE_TIMEOUT_SECONDS": FloatEnvSpec("model_idle_timeout_seconds", 0.0),
         "ANGEVOICE_IDLE_CHECK_INTERVAL": FloatEnvSpec("model_idle_check_interval", 5.0),
     }
@@ -365,6 +368,7 @@ def _apply_env(config: TTSConfig) -> None:
         "MOSS_QUALITY_GATE_ENABLED": "moss_quality_gate_enabled",
         "MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED": "moss_output_peak_normalize_enabled",
         "MOSS_PROCESS_ISOLATION_ENABLED": "moss_process_isolation_enabled",
+        "MOSS_OUTPUT_DECLICK_ENABLED": "moss_output_declick_enabled",
     }
 
     for env_name, attr in str_env.items():

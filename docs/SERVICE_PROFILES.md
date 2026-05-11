@@ -114,7 +114,7 @@ Tesla P4 已用 Docker 探针验证可在通用 GPU 画像的 `onnxruntime-gpu==
 
 MOSS 克隆参考音频会被裁剪到 `MOSS_PROMPT_AUDIO_MAX_SECONDS`，并缓存编码后的 prompt audio codes。这样可以降低 clone 模式在 8GB 显存和低功耗 CPU 上的重复开销；如果仍然出现 OOM 或爆音，优先缩短参考音频而不是提高并发。
 
-WebSocket 输出会按固定时长切成小音频包。Kokoro 仍按官方 pipeline 段落推理；MOSS 会接入官方 `generate_audio_frames` 回调，在 codec frame 生成过程中增量 decode，避免长文本一次性发送巨型 WebSocket frame。
+WebSocket 输出会按固定时长切成小音频包。Kokoro 仍按官方 pipeline 段落推理；MOSS 默认使用官方高质量 chunk 生成后再分包发送，优先保证 Web/小智播放稳定性。如需最低首包延迟，可手动启用 `MOSS_REALTIME_STREAMING_DECODE=true` 使用官方 `generate_audio_frames` 逐帧回调。
 
 持久化建议：
 

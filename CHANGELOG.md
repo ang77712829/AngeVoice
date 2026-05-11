@@ -17,6 +17,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Se
 - 新增 `xiaozhi/manager/presets.yaml` 智控台可复制预设，不修改小智前端源码，避免侵入上游项目。
 - 新增小智接入教程、快速开始、MOSS clone 参考音频说明和常见问题文档。
 
+### 🔊 MOSS 听感修复
+- MOSS 默认改为质量优先流式：关闭逐帧实时解码，仍通过 WebSocket 分包输出，减少 Web Studio 和小智播放中的电流音、卡顿和 chunk 边界爆音。
+- MOSS 后处理新增 DC offset 清理、孤立脉冲修复、片段边缘短淡入淡出，并将默认输出峰值/增益下调到更适合小喇叭和 Opus 链路的 `0.78` / `0.90`。
+- 修复 MOSS 对“春花秋月何时了”等句式的 `了` 多音字提示：MOSS 使用“蓼”作为 liǎo 提示，避免读成 le 或 liào；Kokoro 仍使用原来的“瞭”提示。
+- 新增 `docs/MOSS_AUDIO_QUALITY.md`，说明 MOSS 质量优先参数、逐帧实时解码取舍和小智播放排障。
+
 ### 🛠️ 修复
 - 修复小智适配器在 `async def text_to_speak()` 中使用同步 `requests.post()` 可能阻塞事件循环的问题，非流式与 clone 适配器改为 `httpx.AsyncClient`。
 - 修复管理后台 Basic Auth 在中文账号/密码、不同浏览器编码场景下可能无法进入或抛出异常的问题，认证比较改为基于原始字节候选的安全比较。

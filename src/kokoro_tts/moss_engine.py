@@ -862,6 +862,8 @@ class MossNanoEngine:
             gain=float(self.config.moss_output_gain),
             target_peak=float(self.config.moss_output_target_peak),
             peak_normalize_enabled=bool(self.config.moss_output_peak_normalize_enabled),
+            declick_enabled=bool(getattr(self.config, "moss_output_declick_enabled", True)),
+            edge_fade_samples=int(self.sample_rate * float(getattr(self.config, "moss_output_edge_fade_ms", 2.0)) / 1000.0),
         )
         if update_quality:
             self._last_output_quality = quality.as_dict()

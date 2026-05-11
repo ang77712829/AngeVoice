@@ -59,7 +59,7 @@ src/kokoro_tts/
 2. `security.py` 校验 WebSocket token 或 Authorization header。
 3. `service_state.py` 用同一个并发信号量保护推理。
 4. `engine_manager.py` 借用目标模型，当前模型不匹配且启用卸载策略时会先切换并卸载旧模型。
-5. 引擎生成 `started/audio/segment_error/done` 消息。Kokoro 保持上游 pipeline 的段落级推理，但在 WebSocket 发送前按固定时长切成小包；MOSS 默认使用线程内官方 `generate_audio_frames` 回调和 codec streaming decoder，以优先保证 NAS/老显卡上的实时流式体验。
+5. 引擎生成 `started/audio/segment_error/done` 消息。Kokoro 保持上游 pipeline 的段落级推理，但在 WebSocket 发送前按固定时长切成小包；MOSS 默认使用官方高质量 chunk 生成后再按固定小包发送；如需最低首包延迟，可开启 `MOSS_REALTIME_STREAMING_DECODE=true` 使用官方逐帧回调和 codec streaming decoder。
 6. 客户端发送 `cancel` 或 `stop` 后，服务停止后续段落推送。
 
 ## 状态对象
@@ -94,7 +94,7 @@ MOSS capability metadata 会声明 `modes=["preset_voice","voice_clone"]` 和 `v
 
 MOSS 适配层不会直接改写上游仓库代码。AngeVoice 在适配层中做四件事：复用单个 MOSS executor 并用 runtime lock 保护官方 runtime；对 clone 参考音频做时长裁剪和 prompt code LRU 缓存；对输出做温和峰值保护，降低 8GB 显存环境下 clone OOM、爆音和削波的概率；保留可选进程级隔离能力，便于排查 CUDA/ONNX Runtime 底层卡死问题。
 
-MOSS 进程级隔离默认关闭，以优先保证 NAS 和老显卡上的实时流式体验。需要排查 CUDA/ONNX Runtime 底层卡死时，可手动设置 `MOSS_PROCESS_ISOLATION_ENABLED=true` 启用；启用后默认只有 `moss-nano-cuda` 走隔离 worker，超时后可终止子进程并在下次请求重建 runtime。CPU 路径默认保持线程内 runtime，以减少进程通信开销。
+MOSS 进程级隔离默认关闭；质量优先流式分包仍在线程内运行。需要排查 CUDA/ONNX Runtime 底层卡死时，可手动设置 `MOSS_PROCESS_ISOLATION_ENABLED=true` 启用；启用后默认只有 `moss-nano-cuda` 走隔离 worker，超时后可终止子进程并在下次请求重建 runtime。CPU 路径默认保持线程内 runtime，以减少进程通信开销。
 
 MOSS CUDA 依赖目标环境的 ONNX Runtime/CUDA/cuDNN 组合。Tesla P4 在通用 GPU Docker 画像中已通过 `onnxruntime-gpu==1.20.2` + `nvidia-cudnn-cu12==9.1.0.70` 探针测试；缺 cuDNN 9 时官方 runtime 会创建 CPU session，AngeVoice 会拒绝该 CUDA 加载并按配置回退 CPU。老架构GPU 镜像通过 ONNX Runtime CUDA 11 feed 预装了 CUDA 11.8 兼容的 MOSS GPU 依赖，但默认只开放 MOSS CPU，方便用户先稳定运行 Kokoro。
 

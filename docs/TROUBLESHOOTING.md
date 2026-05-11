@@ -216,8 +216,11 @@ MOSS_SEED=1234
 MOSS_STREAM_CHUNK_SECONDS=0.42
 MOSS_STREAM_CHUNK_MIN_FLOOR=0.10
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
-MOSS_OUTPUT_TARGET_PEAK=0.88
-MOSS_OUTPUT_GAIN=0.96
+MOSS_REALTIME_STREAMING_DECODE=false
+MOSS_OUTPUT_TARGET_PEAK=0.78
+MOSS_OUTPUT_GAIN=0.90
+MOSS_OUTPUT_DECLICK_ENABLED=true
+MOSS_OUTPUT_EDGE_FADE_MS=2
 ```
 
 排查：
@@ -229,6 +232,21 @@ curl http://127.0.0.1:8101/v1/models/current
 
 如果 `last_output_quality.max_abs_before` 经常接近或超过 `1.0`，不要提高 `MOSS_OUTPUT_GAIN`。如果 clone 一直 OOM，继续缩短 `MOSS_PROMPT_AUDIO_MAX_SECONDS` 到 `5`，或先切换 `moss-nano-cpu` 验证文本和参考音频本身。
 
+### Web 或小智播放 MOSS 有电流音、卡顿、爆音
+
+优先使用质量优先配置：
+
+```bash
+MOSS_REALTIME_STREAMING_DECODE=false
+MOSS_OUTPUT_TARGET_PEAK=0.78
+MOSS_OUTPUT_GAIN=0.90
+MOSS_OUTPUT_DECLICK_ENABLED=true
+MOSS_OUTPUT_EDGE_FADE_MS=2
+```
+
+`MOSS_REALTIME_STREAMING_DECODE=true` 会更早推送小音频块，但在部分参考音频、CUDA/ONNX 组合和小喇叭播放链路上容易放大 chunk 边界不连续，表现为“刺”“噗”“电流音”。默认关闭后仍然通过 WebSocket 分包播放，只是不再使用官方逐帧实时解码路径，听感通常更稳。
+
+
 如果日志显示 `requested=cuda actual=cpu`，或出现 `CUBLAS_STATUS_ALLOC_FAILED` / `BFCArena::AllocateRawInternal`，说明 CUDA provider 初始化失败。优先检查显存是否被其他容器占用：
 
 ```bash
@@ -238,7 +256,7 @@ docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 
 单张 8GB 卡不建议同时跑多个会加载 GPU 模型的容器。`MOSS_CUDA_MEMORY_LIMIT_MB` 默认保持 `0`；只有在 Tesla P4、RTX 3070 这类紧张环境排障时，才建议手动设置成 `4096` 或更低测试。
 
-MOSS 进程级隔离默认关闭，优先保证 NAS/老显卡的实时流式体验：
+MOSS 进程级隔离默认关闭；它和播放音质不是同一个开关：
 
 ```env
 MOSS_PROCESS_ISOLATION_ENABLED=false

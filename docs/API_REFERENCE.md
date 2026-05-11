@@ -616,10 +616,13 @@ If upload must be enabled, restrict to internal network admin endpoints with rev
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
+| `MOSS_REALTIME_STREAMING_DECODE` | `false` | 是否启用 MOSS 官方逐帧实时解码；默认质量优先关闭 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.25` | 音频播放余量低阈值（秒）：低于此值每次只解码 1 帧，优先保证点生成后尽快出声 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.65` | 音频播放余量中阈值（秒）：低于此值每次解码 2 帧 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.20` | 音频播放余量高阈值（秒）：低于此值每次解码 4 帧，高于此值每次解码 8 帧以减少块间抖动 |
 | `MOSS_STREAM_CHUNK_MIN_FLOOR` | `0.10` | 最小流式分包时长下限（秒）：防止过短碎片导致听感卡顿 |
+| `MOSS_OUTPUT_DECLICK_ENABLED` | `true` | 是否启用 MOSS 孤立脉冲修复 |
+| `MOSS_OUTPUT_EDGE_FADE_MS` | `2` | MOSS 片段边缘淡入淡出毫秒数 |
 
 这三个阈值（`LOW` < `MID` < `HIGH`）不是显存占用比例，而是“已生成音频领先实时播放的秒数”。余量越少，解码越小块，优先降低首包延迟；余量越充足，解码块越大，减少块间抖动。
 
@@ -659,7 +662,7 @@ ANGEVOICE_IDLE_CHECK_INTERVAL=30
 | 克隆合成出现 OOM / 爆音 / 失真 | prompt 过长、CUDA provider 不稳定、显存不足 | 降低 `MOSS_PROMPT_AUDIO_MAX_SECONDS` 至 5-8，或改用 `moss-nano-cpu` 测试 |
 | `401 Unauthorized` | 已配置 `KOKORO_API_KEY` 但请求未携带 token | 在请求头添加 Bearer token，或在 WebSocket 首包中添加 `token` 字段 |
 
-| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | 是否启用 MOSS 进程级隔离；默认关闭以优先保证实时流式体验 |
+| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | 是否启用 MOSS 进程级隔离；默认关闭；它只影响隔离 worker，不影响质量优先流式分包 |
 | `MOSS_PROCESS_ISOLATION_PROVIDERS` | `cuda` | 哪些 provider 使用隔离子进程 |
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | worker 超时后终止/强杀的宽限秒数 |
 

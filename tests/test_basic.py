@@ -78,11 +78,36 @@ class TestMossHelpers:
         import numpy as np
         from kokoro_tts.config import TTSConfig
         from kokoro_tts.moss_engine import MossNanoEngine
-        engine = MossNanoEngine(TTSConfig(moss_output_target_peak=0.5))
+        engine = MossNanoEngine(TTSConfig(moss_output_target_peak=0.5, moss_output_gain=1.0))
         output = engine._postprocess_waveform(np.asarray([[1.2, -1.2], [0.1, -0.1]], dtype=np.float32))
         assert output.shape == (2, 2)
         assert float(np.max(np.abs(output))) <= 0.5001
         assert engine.metadata()["last_output_quality"]["scale"] < 1.0
+
+
+    def test_moss_postprocess_repairs_impulses_and_fades_edges(self):
+        import numpy as np
+        from kokoro_tts.moss.postprocess import normalize_waveform
+
+        audio = np.zeros((64, 1), dtype=np.float32)
+        audio[32, 0] = 0.95
+        processed, quality = normalize_waveform(
+            audio,
+            channels=1,
+            target_peak=0.78,
+            declick_enabled=True,
+            edge_fade_samples=4,
+        )
+        assert processed.shape == (64, 1)
+        assert quality.repaired_impulses >= 1
+        assert abs(float(processed[0, 0])) < 1e-6
+        assert float(np.max(np.abs(processed))) <= 0.7801
+
+    def test_moss_liao_override_uses_tone3_hint(self):
+        from kokoro_tts.zh_rules import normalize_chinese_rules
+
+        assert "何时蓼" in normalize_chinese_rules("春花秋月何时了", model="moss-nano-cuda")
+        assert "何时瞭" in normalize_chinese_rules("春花秋月何时了", model="kokoro")
 
     def test_moss_health_flags_and_executor_rebuild(self):
         from kokoro_tts.config import TTSConfig

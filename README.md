@@ -126,7 +126,7 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 | Studio Web UI | 内置控制台，支持模型切换、音色筛选、试听、流式播放、停止生成、API Key 设置和统计卡片 |
 | API 文档页 | `GET /api-docs` 提供可复制调用示例，重点覆盖 MOSS 参考音频克隆和流式克隆 |
 | OpenAI 兼容 API | `POST /v1/audio/speech`，兼容 `model/input/voice/speed/response_format` |
-| MOSS-TTS-Nano | 通过 OpenMOSS 官方 ONNX runtime 接入，支持预设音色、参考音频克隆、CPU 基线和 CUDA 实验模式；默认关闭进程级隔离，优先保证 NAS/老显卡的实时流式体验，必要时可手动开启硬隔离 |
+| MOSS-TTS-Nano | 通过 OpenMOSS 官方 ONNX runtime 接入，支持预设音色、参考音频克隆、CPU 基线和 CUDA 实验模式；默认关闭进程级隔离，并默认使用质量优先的 MOSS 分包流式体验，必要时可手动开启硬隔离 |
 | 多模型运行时 | `/v1/models` 查看、加载、卸载和切换模型；可切换时卸载旧模型并隔离缓存 |
 | WebSocket 流式 | `WS /ws/v1/tts` 小包推送；支持 `cancel` / `stop`；MOSS 克隆可在首包传参考音频 base64 |
 | 中文文本规则 | 自动断句标点、jieba 分词优先、兜底词典、常见多音字上下文修正 |
@@ -348,10 +348,15 @@ environment:
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | 克隆参考音频裁剪时长 |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | 参考音频编码缓存条目数 |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | CUDA 自检失败时回退 CPU |
-| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | 是否启用 MOSS 进程级隔离；默认关闭以优先保证实时流式体验 |
+| `MOSS_REALTIME_STREAMING_DECODE` | `false` | 是否启用 MOSS 官方逐帧实时解码；默认关闭以优先保证 Web/小智播放音质，开启后首包更快但更容易产生碎片感/电流音 |
+| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | 是否启用 MOSS 进程级隔离 |
 | `MOSS_PROCESS_ISOLATION_PROVIDERS` | `cuda` | 哪些 provider 走隔离子进程，逗号分隔 |
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | 超时后终止 worker 的宽限秒数 |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | 拒绝静音、NaN/Inf 或明显 clipping 的 MOSS 自检输出 |
+| `MOSS_OUTPUT_TARGET_PEAK` | `0.78` | MOSS 输出峰值目标，降低小喇叭/Opus链路爆音风险 |
+| `MOSS_OUTPUT_GAIN` | `0.90` | MOSS 后处理预衰减，保留动态同时降低失真 |
+| `MOSS_OUTPUT_DECLICK_ENABLED` | `true` | 修复孤立瞬态尖峰，降低“噗”“刺”“电流音” |
+| `MOSS_OUTPUT_EDGE_FADE_MS` | `2` | MOSS 片段头尾短淡入淡出毫秒数，减少拼接爆音 |
 | `ANGEVOICE_IDLE_TIMEOUT_SECONDS` | `600` | 空闲超时自动卸载所有已加载模型（秒），0=禁用 |
 | `ANGEVOICE_IDLE_CHECK_INTERVAL` | `30` | 空闲检查间隔（秒） |
 | `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.25` | 音频播放余量低阈值（秒），低于此值每次解码 1 帧以尽快出声 |
@@ -418,6 +423,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [排障手册](docs/TROUBLESHOOTING.md)
 - [服务画像](docs/SERVICE_PROFILES.md)
 - [多模型运行时](docs/MODEL_RUNTIME.md)
+- [MOSS 音频听感排障](docs/MOSS_AUDIO_QUALITY.md)
 - [v2.6 功能说明](docs/V2_5_FEATURES.md)
 - [路线图](docs/ROADMAP.md)
 - [老架构 GPU 部署说明](docker/legacy-gpu/README.md)

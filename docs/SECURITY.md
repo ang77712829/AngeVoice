@@ -97,7 +97,7 @@ MOSS_PROMPT_CACHE_MAX_ITEMS=8
 
 ## MOSS 进程级隔离
 
-MOSS 进程级隔离已实现，但默认关闭，以优先保证 NAS、Tesla P4 等老显卡上的实时流式体验。默认路径仍是线程内 MOSS runtime；需要排查 CUDA/ONNX Runtime 底层卡死时，可手动启用：
+MOSS 进程级隔离已实现，但默认关闭；默认路径仍是线程内 MOSS runtime，且 MOSS 逐帧实时解码默认关闭以优先保证 Web/小智播放质量。需要排查 CUDA/ONNX Runtime 底层卡死时，可手动启用隔离：
 
 ```bash
 MOSS_PROCESS_ISOLATION_ENABLED=true
