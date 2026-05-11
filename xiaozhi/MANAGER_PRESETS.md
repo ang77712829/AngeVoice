@@ -26,7 +26,7 @@ root 用户：可以直接运行
 NAS 面板终端：通常需要切到 root / 管理员终端
 ```
 
-注意：脚本只会重建 `xiaozhi-esp32-server` 这个 server 容器，不会删除 MySQL 数据目录、Redis、`models/`、`uploadfile/` 等持久化数据。
+注意：脚本只会重建 `xiaozhi-esp32-server` 这个 server 容器；不会重建 db/redis，也不会删除 MySQL 数据目录、Redis、`models/`、`uploadfile/` 等持久化数据。
 
 ## 为什么只写 .config.yaml 不够？
 
@@ -86,15 +86,17 @@ angevoice_clone  -> angevoice_clone.py
 新增 volume 挂载后，只执行 `docker restart xiaozhi-esp32-server` 不会让新挂载生效。脚本会自动执行：
 
 ```bash
-docker compose -f <compose文件> up -d --force-recreate xiaozhi-esp32-server
+docker compose -f <compose文件> up -d --no-deps --force-recreate xiaozhi-esp32-server
 ```
+
+`--no-deps` 的作用是只重建小智 server 容器，不触碰已运行的 `xiaozhi-esp32-server-db` 和 `xiaozhi-esp32-server-redis`，避免 NAS 面板或已有容器名导致 db/redis 冲突。
 
 如果 compose 重建失败，脚本会尝试只删除并重建 `xiaozhi-esp32-server` 容器：
 
 ```bash
 docker stop xiaozhi-esp32-server
 docker rm xiaozhi-esp32-server
-docker compose -f <compose文件> up -d xiaozhi-esp32-server
+docker compose -f <compose文件> up -d --no-deps xiaozhi-esp32-server
 ```
 
 这一步需要 Docker 权限；普通用户如果没有加入 `docker` 用户组，需要使用 `sudo` 或 root 终端。
