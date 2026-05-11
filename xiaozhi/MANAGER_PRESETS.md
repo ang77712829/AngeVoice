@@ -7,6 +7,27 @@
 1. **适配器文件持久化**：通过 compose 的 `volumes` 把 `angevoice-adapter/*.py` 挂载到小智容器内的 `core/providers/tts/`。
 2. **智控台模型配置持久化**：写入小智数据库中的 `ai_model_provider` 和 `ai_model_config`。
 
+## Docker 权限要求
+
+脚本会自动执行 Docker / Compose 操作，包括：
+
+```text
+patch compose
+重建 xiaozhi-esp32-server 容器
+必要时 stop/rm 旧的 xiaozhi-esp32-server 容器
+重新 up 小智 server 容器
+```
+
+因此运行脚本的用户必须有 Docker 权限：
+
+```text
+root 用户：可以直接运行
+普通用户：需要加入 docker 用户组，或使用 sudo 运行
+NAS 面板终端：通常需要切到 root / 管理员终端
+```
+
+注意：脚本只会重建 `xiaozhi-esp32-server` 这个 server 容器，不会删除 MySQL 数据目录、Redis、`models/`、`uploadfile/` 等持久化数据。
+
 ## 为什么只写 .config.yaml 不够？
 
 `data/.config.yaml` 对无智控台或本地运行场景有用，但带智控台的小智全模块通常以数据库配置为主。只写 `.config.yaml` 可能出现：
@@ -59,6 +80,24 @@ angevoice        -> angevoice.py
 angevoice_stream -> angevoice_stream.py
 angevoice_clone  -> angevoice_clone.py
 ```
+
+## 为什么要重建容器？
+
+新增 volume 挂载后，只执行 `docker restart xiaozhi-esp32-server` 不会让新挂载生效。脚本会自动执行：
+
+```bash
+docker compose -f <compose文件> up -d --force-recreate xiaozhi-esp32-server
+```
+
+如果 compose 重建失败，脚本会尝试只删除并重建 `xiaozhi-esp32-server` 容器：
+
+```bash
+docker stop xiaozhi-esp32-server
+docker rm xiaozhi-esp32-server
+docker compose -f <compose文件> up -d xiaozhi-esp32-server
+```
+
+这一步需要 Docker 权限；普通用户如果没有加入 `docker` 用户组，需要使用 `sudo` 或 root 终端。
 
 ## 默认数据库假设
 
