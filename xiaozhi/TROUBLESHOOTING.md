@@ -57,6 +57,20 @@ docker exec -it xiaozhi-esp32-server ls -lah /opt/xiaozhi-esp32-server/core/prov
 
 ## 4. MOSS clone 没有变成新声音
 
+先确认 AngeVoice 侧已启用 MOSS 模型：
+
+```text
+ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cpu
+```
+
+如果你使用 GPU 或 CUDA 版本，也可以是：
+
+```text
+ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cuda
+```
+
+如果 AngeVoice 只启用了 `kokoro`，小智里选择 `moss-nano-cpu` / `moss-nano-cuda` 会请求失败。
+
 确认参考音频路径：
 
 宿主机：
