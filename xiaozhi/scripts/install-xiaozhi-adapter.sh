@@ -886,36 +886,155 @@ import_manager_presets() {
 }
 
 
+collect_xiaozhi_networks() {
+  local output_file="$1"
+  local name=""
+
+  : > "$output_file"
+
+  for name in xiaozhi-esp32-server xiaozhi-esp32-server-web xiaozhi-esp32-server-db xiaozhi-esp32-server-redis; do
+    if docker ps -a --format '{{.Names}}' | grep -qx "$name"; then
+      docker inspect "$name" --format '{{range $net, $_ := .NetworkSettings.Networks}}{{println $net}}{{end}}' \
+        >> "$output_file" 2>/dev/null || true
+    fi
+  done
+
+  if [[ -s "$output_file" ]]; then
+    sort -u "$output_file" -o "$output_file"
+  fi
+}
+
+reconnect_xiaozhi_server_networks() {
+  local networks_file="$1"
+  local net=""
+
+  if ! docker ps -a --format '{{.Names}}' | grep -qx 'xiaozhi-esp32-server'; then
+    return 0
+  fi
+
+  [[ -f "$networks_file" ]] || return 0
+
+  while IFS= read -r net; do
+    [[ -n "$net" ]] || continue
+    [[ "$net" == "host" || "$net" == "none" ]] && continue
+
+    if ! docker network inspect "$net" >/dev/null 2>&1; then
+      continue
+    fi
+
+    docker network connect "$net" xiaozhi-esp32-server >/dev/null 2>&1 || true
+  done < "$networks_file"
+
+  log "已尝试把 xiaozhi-esp32-server 重新接入已有小智网络，避免 manager-api/db/redis 容器名解析失败"
+}
+
+show_xiaozhi_server_networks() {
+  if docker ps -a --format '{{.Names}}' | grep -qx 'xiaozhi-esp32-server'; then
+    docker inspect xiaozhi-esp32-server --format '{{range $net, $_ := .NetworkSettings.Networks}}{{println $net}}{{end}}' 2>/dev/null \
+      | sed 's/^/[AngeVoice-xiaozhi] 当前 server 网络: /' || true
+  fi
+}
+
 recreate_xiaozhi_server() {
   local compose_bin="$1"
   local compose_file="$2"
+  local networks_file=""
+  local recreated="false"
 
   if [[ -z "$compose_bin" ]]; then
     warn "未找到 docker compose / docker-compose，无法自动重建容器。请手动执行: docker compose -f $compose_file up -d --no-deps --force-recreate xiaozhi-esp32-server"
     return 0
   fi
 
+  networks_file="$(mktemp -t angevoice-xiaozhi-networks.XXXXXX)"
+  collect_xiaozhi_networks "$networks_file"
+
   log "自动重建 xiaozhi-esp32-server 容器以加载新增挂载"
   log "仅重建小智 server 容器，使用 --no-deps，不会重建 db/redis，也不会删除 mysql/data、redis、uploadfile、models 等持久化数据"
+  log "会保留并重连已有小智容器网络，避免 manager-api/db/redis 容器名解析失败"
 
   if $compose_bin -f "$compose_file" up -d --no-deps --force-recreate xiaozhi-esp32-server; then
     log "小智 server 容器已通过 compose --no-deps force-recreate 重建"
+    recreated="true"
+  else
+    warn "compose force-recreate 失败，尝试只删除并重建 xiaozhi-esp32-server 容器"
+
+    if docker ps -a --format '{{.Names}}' | grep -qx 'xiaozhi-esp32-server'; then
+      docker stop xiaozhi-esp32-server >/dev/null 2>&1 || true
+      docker rm xiaozhi-esp32-server >/dev/null 2>&1 || true
+    fi
+
+    if $compose_bin -f "$compose_file" up -d --no-deps xiaozhi-esp32-server; then
+      log "小智 server 容器已删除旧容器并重新创建"
+      recreated="true"
+    else
+      warn "自动重建失败，请手动检查 compose 文件并执行: docker compose -f $compose_file up -d --no-deps --force-recreate xiaozhi-esp32-server"
+    fi
+  fi
+
+  if [[ "$recreated" == "true" ]]; then
+    reconnect_xiaozhi_server_networks "$networks_file"
+    show_xiaozhi_server_networks
+  fi
+
+  rm -f "$networks_file"
+  return 0
+}
+
+manager_api_url_from_config() {
+  [[ -f data/.config.yaml ]] || return 1
+
+  python3 - <<'PY'
+from pathlib import Path
+import re
+
+path = Path("data/.config.yaml")
+text = path.read_text(encoding="utf-8", errors="ignore")
+m = re.search(r"(?ms)^manager-api:\s*\n(?P<body>(?:[ \t]+[^\n]*\n?)*)", text)
+if not m:
+    raise SystemExit(1)
+body = m.group("body")
+url = None
+for line in body.splitlines():
+    mm = re.match(r"\s*url\s*:\s*(.+?)\s*$", line)
+    if mm:
+        url = mm.group(1).strip().strip('"').strip("'")
+        break
+if not url:
+    raise SystemExit(1)
+print(url)
+PY
+}
+
+test_manager_api_dns_from_container() {
+  local url=""
+
+  if ! docker ps --format '{{.Names}}' | grep -q '^xiaozhi-esp32-server$'; then
     return 0
   fi
 
-  warn "compose force-recreate 失败，尝试只删除并重建 xiaozhi-esp32-server 容器"
+  url="$(manager_api_url_from_config 2>/dev/null || true)"
+  [[ -n "$url" ]] || return 0
 
-  if docker ps -a --format '{{.Names}}' | grep -qx 'xiaozhi-esp32-server'; then
-    docker stop xiaozhi-esp32-server >/dev/null 2>&1 || true
-    docker rm xiaozhi-esp32-server >/dev/null 2>&1 || true
-  fi
+  log "测试容器内 manager-api 地址解析: $url"
 
-  if $compose_bin -f "$compose_file" up -d --no-deps xiaozhi-esp32-server; then
-    log "小智 server 容器已删除旧容器并重新创建"
+  if docker exec xiaozhi-esp32-server python - "$url" <<'PY'
+import socket
+import sys
+from urllib.parse import urlparse
+
+url = sys.argv[1]
+host = urlparse(url).hostname
+if not host:
+    raise SystemExit(0)
+ip = socket.gethostbyname(host)
+print(f"manager-api DNS OK: {host} -> {ip}")
+PY
+  then
     return 0
   fi
 
-  warn "自动重建失败，请手动检查 compose 文件并执行: docker compose -f $compose_file up -d --no-deps --force-recreate xiaozhi-esp32-server"
+  warn "容器内无法解析 manager-api 地址。通常是 server 容器没有接入 xiaozhi-esp32-server-web 所在 Docker 网络。脚本已尝试重连网络；如果仍失败，请检查 docker network inspect 和 .config.yaml 的 manager-api.url。"
   return 0
 }
 
@@ -1145,6 +1264,7 @@ cat <<EOF
   已导入 CPU/CUDA、流式/非流式、MOSS clone 相关预设。
   智控台/API模式不会再写 selected_module/TTS 到 .config.yaml，避免启动冲突。
   脚本会自动重建 xiaozhi-esp32-server 容器，让新增适配器挂载立即生效。
+  重建时会使用 --no-deps，并重连已有小智网络，避免 manager-api/db/redis 容器名解析失败。
   如果页面没刷新，请重新打开“模型配置 → 语音合成”。
 
 MOSS 克隆参考音频：
