@@ -22,19 +22,26 @@ AngeVoice models may return different PCM layouts.  Kokoro is usually mono, but
 MOSS exposes the runtime sample rate/channels in the `started` event and can be
 48 kHz stereo.  xiaozhi's Opus encoder expects the PCM bytes to match its own
 sample_rate/channels.  This adapter therefore downmixes/resamples raw PCM chunks
-before feeding them into the Opus encoder, otherwise users hear harsh noise even
-though synthesis itself succeeded.
+before feeding them into the Opus encoder.
+
+Important: resampling must be stateful across chunks.  Stateless per-chunk
+interpolation creates discontinuities at chunk boundaries, which sounds like
+clicks, clipping, stutter, or harsh explosions on small speakers.  We use
+`audioop.ratecv` with persistent state for the actual real-time path.
 """
 
 from __future__ import annotations
 
 import asyncio
+import audioop
 import base64
 import json
 import os
 import queue
 import threading
 import traceback
+import wave
+from io import BytesIO
 
 import aiohttp
 
@@ -99,7 +106,10 @@ class TTSProvider(TTSProviderBase):
         self.model = config.get("model", "kokoro")
         self.voice = config.get("private_voice") or config.get("voice", "zm_010")
         self.stream_format = config.get("stream_format") or config.get("format", "pcm_s16le")
-        self.audio_file_type = "pcm" if self.stream_format.startswith("pcm") else "wav"
+        # The real-time path consumes raw PCM, but xiaozhi's fallback base class
+        # expects a self-describing audio container when it calls text_to_speak().
+        # Return WAV bytes there to avoid pydub's raw PCM `sample_width` error.
+        self.audio_file_type = "wav"
         self.timeout = int(config.get("tts_timeout", config.get("timeout", 180)))
         self.connect_timeout = int(config.get("connect_timeout", 15))
         self.prompt_audio_path = config.get("prompt_audio_path", "") or ""
@@ -111,18 +121,31 @@ class TTSProvider(TTSProviderBase):
         self._source_pcm_buffer = bytearray()
         self._source_sample_rate = int(config.get("source_sample_rate") or 0)
         self._source_channels = int(config.get("source_channels") or 0)
+        self._ratecv_state = None
+        self._ratecv_key: tuple[int, int, int, int] | None = None
         self._last_meta_logged = ""
         self._apply_percentage_params(config)
 
     async def text_to_speak(self, text, output_file):
-        """Collect a whole websocket response for non-stream fallback/testing paths."""
-        chunks: list[bytes] = []
+        """Collect a whole websocket response for non-stream fallback/testing paths.
+
+        xiaozhi's base class may call this path for short prompt sentences, then
+        pass the returned bytes to pydub.  Returning raw PCM with file_type=pcm
+        triggers `sample_width` errors.  We therefore return WAV bytes here while
+        keeping the real-time streaming path raw-PCM -> Opus.
+        """
+        pcm_chunks: list[bytes] = []
+        self._reset_pcm_converter()
         async for item in self._iter_stream_events(str(text or "")):
             if item[0] == "meta":
                 self._apply_stream_meta(item[1])
             elif item[0] == "audio":
-                chunks.append(self._normalize_pcm_for_opus(item[1]))
-        data = b"".join(chunks)
+                converted = self._normalize_pcm_for_opus(item[1])
+                if converted:
+                    pcm_chunks.append(converted)
+        self._flush_source_pcm_buffer()
+        pcm = b"".join(pcm_chunks)
+        data = _pcm_to_wav_bytes(pcm, self._target_sample_rate(), self._target_channels())
         if output_file:
             with open(output_file, "wb") as f:
                 f.write(data)
@@ -146,6 +169,7 @@ class TTSProvider(TTSProviderBase):
                     self.tts_audio_first_sentence = True
                     self._pcm_buffer.clear()
                     self._source_pcm_buffer.clear()
+                    self._reset_pcm_converter()
                 elif ContentType.TEXT == message.content_type:
                     self.tts_text_buff.append(message.content_detail)
                     segment_text = self._get_segment_text()
@@ -193,6 +217,7 @@ class TTSProvider(TTSProviderBase):
             logger.bind(tag=TAG).error(f"AngeVoice流式合成失败: {original_text}，错误: {exc}")
 
     async def _stream_text(self, text: str, sentence_id: str | None = None) -> None:
+        self._reset_pcm_converter()
         async for typ, payload in self._iter_stream_events(text):
             if self.conn.stop_event.is_set() or self.conn.client_abort:
                 break
@@ -262,7 +287,7 @@ class TTSProvider(TTSProviderBase):
             self._source_sample_rate = sample_rate
         if channels > 0:
             self._source_channels = channels
-        desc = f"src={self._source_sample_rate or '?'}Hz/{self._source_channels or '?'}ch -> opus={self.opus_encoder.sample_rate}Hz/{self.opus_encoder.channels}ch"
+        desc = f"src={self._source_sample_rate or '?'}Hz/{self._source_channels or '?'}ch -> opus={self._target_sample_rate()}Hz/{self._target_channels()}ch"
         if desc != self._last_meta_logged:
             self._last_meta_logged = desc
             logger.bind(tag=TAG).info(f"AngeVoice流式音频参数: {desc}")
@@ -279,15 +304,26 @@ class TTSProvider(TTSProviderBase):
         else:
             self.tts_audio_queue.put((SentenceType.MIDDLE, audio, None, sentence_id or getattr(self, "current_sentence_id", None)))
 
+    def _target_sample_rate(self) -> int:
+        return int(getattr(self.opus_encoder, "sample_rate", 0) or getattr(self.conn, "sample_rate", 24000) or 24000)
+
+    def _target_channels(self) -> int:
+        return int(getattr(self.opus_encoder, "channels", 1) or 1)
+
+    def _reset_pcm_converter(self) -> None:
+        self._source_pcm_buffer.clear()
+        self._ratecv_state = None
+        self._ratecv_key = None
+
     def _normalize_pcm_for_opus(self, audio: bytes) -> bytes:
         """Convert AngeVoice raw PCM to the layout expected by xiaozhi's Opus encoder."""
         if not audio:
             return b""
-        src_rate = int(self._source_sample_rate or getattr(self.opus_encoder, "sample_rate", 24000) or 24000)
+        src_rate = int(self._source_sample_rate or self._target_sample_rate() or 24000)
         src_channels = int(self._source_channels or 1)
         src_channels = 1 if src_channels <= 0 else min(src_channels, 2)
-        dst_rate = int(getattr(self.opus_encoder, "sample_rate", src_rate) or src_rate)
-        dst_channels = int(getattr(self.opus_encoder, "channels", 1) or 1)
+        dst_rate = self._target_sample_rate()
+        dst_channels = self._target_channels()
         dst_channels = 1 if dst_channels <= 0 else min(dst_channels, 2)
 
         sample_group_bytes = 2 * src_channels
@@ -301,26 +337,42 @@ class TTSProvider(TTSProviderBase):
         if src_rate == dst_rate and src_channels == dst_channels:
             return raw
 
-        import numpy as np
+        try:
+            converted = raw
+            if src_channels == 2 and dst_channels == 1:
+                converted = audioop.tomono(converted, 2, 0.5, 0.5)
+                rate_in_channels = 1
+            elif src_channels == 1 and dst_channels == 2:
+                # ratecv runs on the current channel count.  Upmix after ratecv.
+                rate_in_channels = 1
+            else:
+                rate_in_channels = src_channels
 
-        samples = np.frombuffer(raw, dtype="<i2")
-        if samples.size == 0:
-            return b""
-        if src_channels > 1:
-            samples = samples.reshape(-1, src_channels).astype(np.float32).mean(axis=1)
-        else:
-            samples = samples.astype(np.float32)
+            key = (src_rate, dst_rate, rate_in_channels, dst_channels)
+            if self._ratecv_key != key:
+                self._ratecv_state = None
+                self._ratecv_key = key
 
-        if src_rate != dst_rate and samples.size > 1:
-            out_len = max(1, int(round(samples.size * dst_rate / src_rate)))
-            x_old = np.arange(samples.size, dtype=np.float32)
-            x_new = np.linspace(0, samples.size - 1, out_len, dtype=np.float32)
-            samples = np.interp(x_new, x_old, samples).astype(np.float32)
+            if src_rate != dst_rate:
+                converted, self._ratecv_state = audioop.ratecv(
+                    converted,
+                    2,
+                    rate_in_channels,
+                    src_rate,
+                    dst_rate,
+                    self._ratecv_state,
+                )
 
-        samples = np.clip(samples, -32768, 32767).astype("<i2")
-        if dst_channels > 1:
-            samples = np.repeat(samples.reshape(-1, 1), dst_channels, axis=1).reshape(-1)
-        return samples.tobytes()
+            if src_channels == 1 and dst_channels == 2:
+                converted = audioop.tostereo(converted, 2, 1.0, 1.0)
+            elif src_channels == 2 and dst_channels == 2:
+                converted = converted
+            elif dst_channels == 1:
+                converted = converted
+            return converted
+        except Exception as exc:
+            logger.bind(tag=TAG).warning(f"AngeVoice PCM转换失败，使用原始PCM，可能出现噪声: {exc}")
+            return raw
 
     def _flush_source_pcm_buffer(self) -> None:
         if not self._source_pcm_buffer:
@@ -331,13 +383,7 @@ class TTSProvider(TTSProviderBase):
         logger.bind(tag=TAG).debug(f"AngeVoice丢弃不足一个PCM采样组的尾部字节: {dropped}")
 
     def _frame_bytes(self) -> int:
-        return int(
-            self.opus_encoder.sample_rate
-            * self.opus_encoder.channels
-            * self.opus_encoder.frame_size_ms
-            / 1000
-            * 2
-        )
+        return int(self._target_sample_rate() * self._target_channels() * self.opus_encoder.frame_size_ms / 1000 * 2)
 
     def _drain_pcm_buffer(self, sentence_id: str | None, end_of_stream: bool) -> None:
         frame_bytes = self._frame_bytes()
@@ -395,6 +441,16 @@ def _safe_int(value, default: int = 0) -> int:
         return int(value)
     except Exception:
         return int(default or 0)
+
+
+def _pcm_to_wav_bytes(pcm: bytes, sample_rate: int, channels: int) -> bytes:
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as wf:
+        wf.setnchannels(max(1, int(channels or 1)))
+        wf.setsampwidth(2)
+        wf.setframerate(max(8000, int(sample_rate or 24000)))
+        wf.writeframes(pcm or b"")
+    return buffer.getvalue()
 
 
 def _prepare_prompt_audio(path: str, filename: str) -> dict | None:
