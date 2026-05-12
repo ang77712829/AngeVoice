@@ -26,7 +26,7 @@ export KOKORO_REQUEST_TIMEOUT_SECONDS="120"
 export KOKORO_IDLE_TIMEOUT_SECONDS="0"
 
 # 5. 启动 (PAI-DSW 会自动暴露 7860 端口)
-python src/kokoro_tts/hf_demo/app.py
+python hf-demo/app.py
 ```
 
 启动后 PAI-DSW 会在界面显示访问链接，点击即可打开 Gradio 演示页面。

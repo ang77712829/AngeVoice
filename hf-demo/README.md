@@ -13,7 +13,7 @@
 
 ```bash
 # 在仓库根目录
-python src/kokoro_tts/hf_demo/app.py
+python hf-demo/app.py
 ```
 
 访问 http://localhost:7860
@@ -33,9 +33,9 @@ python src/kokoro_tts/hf_demo/app.py
 ## 文件说明
 
 ```
-src/kokoro_tts/hf_demo/
+hf-demo/
 ├── app.py      # Gradio 演示界面
 └── README.md   # 本文件
 ```
 
-根目录的 `Dockerfile` 是 HF Spaces / ModelScope 的构建文件，引用 `src/kokoro_tts/hf_demo/app.py`。
+根目录的 `Dockerfile` 是 HF Spaces / ModelScope 的构建文件，引用 `hf-demo/app.py`。

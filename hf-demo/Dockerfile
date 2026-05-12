@@ -60,4 +60,4 @@ ENV MOSS_EXECUTION_PROVIDER=cpu
 ENV MOSS_CPU_THREADS=2
 ENV MOSS_APPLYANGEVOICE_RULES=true
 
-CMD ["python", "src/kokoro_tts/hf_demo/app.py"]
+CMD ["python", "hf-demo/app.py"]
