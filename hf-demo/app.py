@@ -276,9 +276,13 @@ if __name__ == "__main__":
     except Exception:
         logger.warning("Kokoro 预热失败，将在首次合成时加载", exc_info=True)
 
-    demo.launch(
+    launch_kwargs = dict(
         server_name="0.0.0.0",
         server_port=7860,
         share=False,
-        show_api=False,
     )
+    # show_api 需要 Gradio ≥ 4.x，旧版不支持
+    try:
+        demo.launch(**launch_kwargs, show_api=False)
+    except TypeError:
+        demo.launch(**launch_kwargs)
