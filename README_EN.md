@@ -8,12 +8,6 @@ English | [中文](README.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-### 🎙️ Live Demo
-
-| Platform | Link | Notes |
-|----------|------|-------|
-| 🇨🇳 ModelScope Studio | [ange111/AngeVoice](https://modelscope.cn/studios/ange111/AngeVoice) | Accessible in China, no VPN needed |
-
 ## One-command install (recommended)
 
 After Docker and Docker Compose V2 are installed, run the interactive installer. It detects CPU/GPU, older NVIDIA cards, Docker/Compose, GitHub, GHCR, Docker Hub, and local Docker registry mirrors, then recommends the `cpu`, `gpu` or `legacy-gpu` profile.

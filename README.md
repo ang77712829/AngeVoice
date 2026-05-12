@@ -8,12 +8,6 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-### 🎙️ 在线体验
-
-| 平台 | 链接 | 说明 |
-|------|------|------|
-| 🇨🇳 魔搭创空间 | [ange111/AngeVoice](https://modelscope.cn/studios/ange111/AngeVoice) | 国内直连，无需翻墙 |
-
 ## 一键安装（推荐普通用户）
 
 服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、老架构 NVIDIA 显卡、Docker/Compose、GitHub、GHCR、Docker Hub 与本机 Docker registry mirror，并推荐 `cpu` / `gpu` / `legacy-gpu` 画像。
