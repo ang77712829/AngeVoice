@@ -4,12 +4,12 @@
 提供文本输入 → 语音合成 → 在线试听。
 
 目录结构:
-  hf-demo/
+  src/kokoro_tts/hf_demo/
   ├── app.py          # 本文件
   └── README.md       # Space 说明
 
 用法 (在仓库根目录执行):
-  python hf-demo/app.py
+  python src/kokoro_tts/hf_demo/app.py
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 # ── 路径设置 ──────────────────────────────────────────────────
-# app.py 在 hf-demo/ 子目录，向上找仓库根目录的 src/
+# app.py 在 src/kokoro_tts/hf_demo/ 子目录，向上找仓库根目录的 src/
 _HF_DEMO_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _HF_DEMO_DIR.parent
 _SRC_DIR = _REPO_ROOT / "src"

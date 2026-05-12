@@ -29,7 +29,6 @@ RUN git clone --depth 1 https://github.com/OpenMOSS/MOSS-TTS-Nano.git "$MOSS_TTS
 # 复制项目
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ src/
-COPY hf-demo/ hf-demo/
 
 # 安装 AngeVoice
 RUN pip install --no-cache-dir -e .
@@ -56,4 +55,4 @@ ENV MOSS_EXECUTION_PROVIDER=cpu
 ENV MOSS_CPU_THREADS=2
 ENV MOSS_APPLYANGEVOICE_RULES=true
 
-CMD ["python", "hf-demo/app.py"]
+CMD ["python", "src/kokoro_tts/hf_demo/app.py"]
