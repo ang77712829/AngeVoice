@@ -8,6 +8,12 @@ English | [中文](README.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+### 🎙️ Live Demo
+
+| Platform | Link | Notes |
+|----------|------|-------|
+| 🤗 Hugging Face Spaces | [maxblack3/AngeVoice](https://huggingface.co/spaces/maxblack3/AngeVoice) | Free CPU, Kokoro + MOSS dual engine |
+| 🇨🇳 ModelScope Studio | [ange111/AngeVoice](https://modelscope.cn/studios/ange111/AngeVoice) | Accessible in China, no VPN needed |
 
 ## One-command install (recommended)
 
