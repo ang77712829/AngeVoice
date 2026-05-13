@@ -40,13 +40,17 @@ ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidi
 # MOSS-TTS-Nano ONNX runtime is preinstalled for legacy GPU images too, so users
 # can opt into MOSS CUDA after validation without rebuilding the image. The
 # Compose profile keeps that CUDA model hidden by default.
+# Preserve the upstream OpenMOSS license inside prebuilt images.
 RUN if [ "$INSTALL_MOSS" = "true" ]; then \
       git clone --depth 1 "$MOSS_REPO" "$MOSS_TTS_NANO_PATH" && \
+      mkdir -p /app/licenses && \
+      if [ -f "$MOSS_TTS_NANO_PATH/LICENSE" ]; then cp "$MOSS_TTS_NANO_PATH/LICENSE" /app/licenses/MOSS-TTS-Nano-LICENSE; fi && \
       python3 -m pip install --no-cache-dir "sentencepiece>=0.1.99" "huggingface_hub>=0.23" coloredlogs flatbuffers numpy packaging protobuf sympy && \
       python3 -m pip install --no-cache-dir --index-url "$MOSS_RUNTIME_INDEX_URL" "$MOSS_RUNTIME_PACKAGE"; \
     fi
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md README_EN.md LICENSE THIRD_PARTY_NOTICES.md ACKNOWLEDGEMENTS.md ./
+COPY licenses/ licenses/
 COPY src/ src/
 
 RUN python3 -m pip install --no-cache-dir -e .
