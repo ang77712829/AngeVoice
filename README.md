@@ -36,16 +36,16 @@ bash scripts/install.sh
 cat /opt/angevoice/outputs/.angevoice-api-key
 ```
 
-请把这个 token 粘贴到 Studio 设置里的 Bearer Token。Docker 默认配置已预留管理后台参数，但 `ANGEVOICE_ADMIN_PASSWORD` 是占位符，必须替换成真实强密码后才能启动。
+请把这个 token 粘贴到 Studio 设置里的 Bearer Token。Docker 默认配置已开启管理后台，默认凭据为 `admin` / `admin123`，生产环境建议修改为强密码。
 
 **管理后台登录凭据：**
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `ANGEVOICE_ADMIN_USERNAME` | `admin` | 管理后台登录用户名 |
-| `ANGEVOICE_ADMIN_PASSWORD` | （必须设置） | 管理后台登录密码；Docker 占位符 `change-me-please-use-a-strong-password` 会被拒绝启动 |
+| `ANGEVOICE_ADMIN_PASSWORD` | `admin123` | 管理后台登录密码（Docker 默认值；生产环境建议修改为强密码） |
 
-首次使用请在 `docker/angevoice.env` 中修改 `ANGEVOICE_ADMIN_PASSWORD` 为你自己的强密码。未设置或使用占位密码时，服务会拒绝启动并报错。
+Docker 默认配置使用 `admin` / `admin123` 作为管理后台登录凭据。首次使用建议在 `docker/angevoice.env` 中修改 `ANGEVOICE_ADMIN_PASSWORD` 为你自己的强密码。
 
 安装完成后脚本会创建 `AngeVoice` 管理命令。以后直接输入：
 
@@ -357,7 +357,7 @@ environment:
 | `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | WebSocket 输出小包时长 |
 | `KOKORO_CACHE_ENABLED` | `true` | 是否启用内存 LRU 缓存 |
 | `KOKORO_BATCH_ENABLED` | `true` | 是否启用批量合成 |
-| `KOKORO_ADMIN_ENABLED` | Docker 默认 `true` | 是否启用管理后台和管理接口；开启后必须设置真实 `ANGEVOICE_ADMIN_PASSWORD`，占位密码会被拒绝 |
+| `KOKORO_ADMIN_ENABLED` | Docker 默认 `true` | 是否启用管理后台和管理接口；开启后必须设置 `ANGEVOICE_ADMIN_PASSWORD`（默认 `admin123`） |
 | `KOKORO_MP3_ENABLED` | `false` | 是否启用 MP3 输出，依赖 ffmpeg |
 | `ANGEVOICE_ENABLED_MODELS` | `kokoro,moss-nano-cpu` | 启用的模型 ID，逗号分隔；GPU 画像会覆盖并额外开放 `moss-nano-cuda` |
 | `ANGEVOICE_DEFAULT_MODEL` | `kokoro` | 启动时加载的默认模型 |
@@ -399,7 +399,7 @@ environment:
 ## 安全说明
 
 - 公网部署建议设置 `KOKORO_API_KEY`；生产模板可用 `KOKORO_API_KEY=auto` 自动生成，查看路径默认是 `outputs/.angevoice-api-key`，并在反向代理层限制来源。
-- 管理后台/管理接口启用时必须设置真实 `ANGEVOICE_ADMIN_PASSWORD`；Docker 示例里的占位密码会被拒绝。账号和密码支持中文，公网部署还建议同时设置 `KOKORO_API_KEY` 并限制来源。
+- 管理后台/管理接口启用时必须设置 `ANGEVOICE_ADMIN_PASSWORD`；Docker 默认值为 `admin123`，生产环境建议修改为强密码。账号和密码支持中文，公网部署还建议同时设置 `KOKORO_API_KEY` 并限制来源。
 - `.pt` 音色上传默认关闭。只上传可信来源文件；PyTorch 权重文件不应来自不可信渠道。
 
 ⚠️ **安全警告**：公网环境**不建议**开启 `KOKORO_VOICE_UPLOAD_ENABLED`。
