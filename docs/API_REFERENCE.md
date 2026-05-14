@@ -617,6 +617,7 @@ If upload must be enabled, restrict to internal network admin endpoints with rev
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
 | `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启以降低首包等待；如出现电流音/卡顿可改为 `false` 走质量优先整块生成后分包 |
+| `MOSS_SEGMENT_LENGTH` | `140` | MOSS 专用分段长度，减少长文本段间拼接、爆音和卡顿；不影响 Kokoro 的 `KOKORO_SEGMENT_LENGTH` |
 | `KOKORO_TRUST_PROXY_HEADERS` | `false` | 是否信任 `X-Forwarded-For`/`X-Real-IP`；裸露公网保持 false，反代后确认可信再开启 |
 | `KOKORO_ADMIN_ALLOW_API_KEY` | `false` | 是否允许普通 Bearer API Key 登录管理后台；共享 API Key 给客户端时保持 false |
 | `KOKORO_PUBLIC_STATUS_ENDPOINTS` | `true` | 是否公开 `/v1/models`、`/v1/models/current`、`/v1/audio/voices` 和页面模型目录 bootstrap；设为 false 后目录接口需要 Bearer Token，`/health` 仅返回最小健康信息 |

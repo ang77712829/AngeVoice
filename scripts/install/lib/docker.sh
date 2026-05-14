@@ -23,13 +23,20 @@ recommend_profile() {
   if ! has_nvidia_gpu; then
     echo "cpu"; return
   fi
+  # 默认只要检测到 NVIDIA GPU，就优先推荐通用 gpu 画像。
+  # legacy-gpu 是 CUDA 11.8 兼容兜底画像，仅在 gpu 画像无法启动或运行不稳定时再尝试。
+  echo "gpu"
+}
+
+is_legacy_gpu_candidate() {
   local name
   name="$(detect_gpu_name | tr '[:upper:]' '[:lower:]')"
   case "$name" in
-    *p4*|*p40*|*v100*|*1080*|*1070*|*1060*) echo "legacy-gpu" ;;
-    *) echo "gpu" ;;
+    *p4*|*p40*|*v100*|*1080*|*1070*|*1060*) return 0 ;;
+    *) return 1 ;;
   esac
 }
+
 
 compose_dir_for_profile() {
   case "$1" in

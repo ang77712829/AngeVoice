@@ -191,10 +191,7 @@ Docker profiles preinstall the matching MOSS runtime but still start with
 - CPU image: `kokoro,moss-nano-cpu`; `MOSS_CUDA_ENABLED=false`.
 - Modern GPU image: `kokoro,moss-nano-cpu,moss-nano-cuda`;
   `MOSS_EXECUTION_PROVIDER=cuda`.
-- Legacy GPU image (老架构GPU 镜像): preinstalls CUDA 11.8 compatible MOSS GPU dependencies
-  from the official ONNX Runtime CUDA 11 feed, but exposes only
-  `kokoro,moss-nano-cpu` until the user explicitly enables `moss-nano-cuda`
-  and `MOSS_CUDA_ENABLED=true`.
+- Legacy GPU image (老架构GPU 镜像): CUDA 11.8 compatibility fallback. It preinstalls CUDA 11 compatible MOSS GPU dependencies but exposes only `kokoro,moss-nano-cpu` by default. Use it only when the standard `gpu` image cannot start or is unstable; try `docker-compose.moss-cuda.yml` only for testing MOSS CUDA.
 
 Keep `../../moss_models:/opt/MOSS-TTS-Nano/models` mounted to persist
 downloaded ONNX assets, and keep `../../outputs:/app/outputs` mounted when
@@ -205,9 +202,7 @@ pass the built-in self-test before it is considered usable.
 ONNX Runtime's CUDA compatibility matrix is the source of truth for CUDA/cuDNN
 wheel selection: https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html
 
-Tesla P4 validation result: CUDA inference passed in Docker with
-`onnxruntime-gpu==1.20.2`, `nvidia-cudnn-cu12==9.1.0.70`, CUDA 12.1, and the
-official MOSS runtime. Without cuDNN 9, ONNX Runtime advertises
+Tesla P4 validation result: with a recent host driver, the standard GPU image passed CUDA inference in Docker with `onnxruntime-gpu==1.20.2`, `nvidia-cudnn-cu12==9.1.0.70`, CUDA 12.1, and the official MOSS runtime. Prefer the standard `gpu` image first; use `legacy-gpu` as fallback. Without cuDNN 9, ONNX Runtime advertises
 `CUDAExecutionProvider` but creates CPU sessions, which AngeVoice rejects and
 falls back from.
 
@@ -243,3 +238,8 @@ selected `onnxruntime-gpu` wheel.
 5. 国家判断失败时按可达性兜底，最后才回到 Hugging Face。
 
 这样国内用户即使访问 `ipapi.co` 慢或失败，也不会轻易误落到 Hugging Face。
+
+
+## MOSS long-text segmentation
+
+`MOSS_SEGMENT_LENGTH=140` controls MOSS-only text segmentation. It is separate from `KOKORO_SEGMENT_LENGTH` so Kokoro can keep shorter segments while MOSS uses longer chunks to reduce long-text stitching artifacts, stutter and pops.

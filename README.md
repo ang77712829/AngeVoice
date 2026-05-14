@@ -10,7 +10,7 @@
 
 ## 一键安装（推荐普通用户）
 
-服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、老架构 NVIDIA 显卡、Docker/Compose、GitHub、GHCR、Docker Hub 与本机 Docker registry mirror，并推荐 `cpu` / `gpu` / `legacy-gpu` 画像。
+服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、Docker/Compose、GitHub、GHCR、Docker Hub 与本机 Docker registry mirror。检测到 NVIDIA GPU 时默认推荐通用 `gpu` 画像；`legacy-gpu` 仅作为 `gpu` 无法启动或 CUDA/cuDNN 不兼容时的保底尝试。
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/scripts/install.sh)
@@ -24,7 +24,7 @@ cd AngeVoice
 bash scripts/install.sh
 ```
 
-默认 Docker 配置集中在 `docker/angevoice.env`，CPU/NAS 场景开箱安全；GPU 和 legacy-gpu 画像只覆盖必要的 CUDA 参数。
+默认 Docker 配置集中在 `docker/angevoice.env`，CPU/NAS 场景开箱安全；`gpu` 是推荐的 NVIDIA 画像，`legacy-gpu` 是 CUDA 11.8 兼容兜底画像。
 
 脚本在源码目录内运行时会**就地安装/更新**，不会再额外克隆到 `/opt/angevoice`，更适合 NAS 文件管理。远程 `curl` 方式没有本地项目目录时会自动 bootstrap 完整仓库到 `/opt/angevoice`，所以 `bash <(curl ...install.sh)` 不会因为 `scripts/install/lib/*.sh` 模块缺失而失败。安装完成后会自动读取本机局域网 IP，输出完整访问地址，例如 `http://192.168.1.10:8101`。
 
@@ -36,7 +36,16 @@ bash scripts/install.sh
 cat /opt/angevoice/outputs/.angevoice-api-key
 ```
 
-请把这个 token 粘贴到 Studio 设置里的 Bearer Token。默认管理后台关闭；如需网页查看/轮换，请开启 `KOKORO_ADMIN_ENABLED=true` 并设置 `ANGEVOICE_ADMIN_PASSWORD`。
+请把这个 token 粘贴到 Studio 设置里的 Bearer Token。Docker 默认配置已预留管理后台参数，但 `ANGEVOICE_ADMIN_PASSWORD` 是占位符，必须替换成真实强密码后才能启动。
+
+**管理后台登录凭据：**
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `ANGEVOICE_ADMIN_USERNAME` | `admin` | 管理后台登录用户名 |
+| `ANGEVOICE_ADMIN_PASSWORD` | （必须设置） | 管理后台登录密码；Docker 占位符 `change-me-please-use-a-strong-password` 会被拒绝启动 |
+
+首次使用请在 `docker/angevoice.env` 中修改 `ANGEVOICE_ADMIN_PASSWORD` 为你自己的强密码。未设置或使用占位密码时，服务会拒绝启动并报错。
 
 安装完成后脚本会创建 `AngeVoice` 管理命令。以后直接输入：
 
@@ -170,15 +179,18 @@ curl http://127.0.0.1:8101/v1/models
 
 > **容器健康状态**：每个 Docker 镜像内置 `HEALTHCHECK`，每 30 秒自动请求 `/health` 端点。返回 `{"status":"ok"}` 或 `{"status":"idle"}` 都判定为 healthy；`idle` 表示模型已被空闲卸载但服务正常可用。`start-period=60s` 确保模型加载期间不会误判。可用 `docker inspect --format='{{json .State.Health}}' <container>` 查看。
 
-### Docker CPU / 老架构 GPU
+### Docker CPU / legacy-gpu 兜底
 
 ```bash
 # CPU，默认端口 8100
 cd docker/cpu && sudo docker compose up -d
 
-# 老架构 GPU，默认端口 8102
+# legacy-gpu，默认端口 8102
+# 仅在 docker/gpu 无法启动或 CUDA/cuDNN 不兼容时使用。
 cd docker/legacy-gpu && sudo docker compose up -d
 ```
+
+> 有 NVIDIA GPU 时建议先试 `docker/gpu`。Tesla P4/P40/V100 等老卡如果宿主机驱动较新，也可能在通用 `gpu` 画像下表现更好；`legacy-gpu` 不是性能最优保证，而是兼容保底。
 
 ### pip 开发安装
 
@@ -345,20 +357,21 @@ environment:
 | `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | WebSocket 输出小包时长 |
 | `KOKORO_CACHE_ENABLED` | `true` | 是否启用内存 LRU 缓存 |
 | `KOKORO_BATCH_ENABLED` | `true` | 是否启用批量合成 |
-| `KOKORO_ADMIN_ENABLED` | `false` | 是否启用管理后台和管理接口；开启后必须设置 `ANGEVOICE_ADMIN_PASSWORD` |
+| `KOKORO_ADMIN_ENABLED` | Docker 默认 `true` | 是否启用管理后台和管理接口；开启后必须设置真实 `ANGEVOICE_ADMIN_PASSWORD`，占位密码会被拒绝 |
 | `KOKORO_MP3_ENABLED` | `false` | 是否启用 MP3 输出，依赖 ffmpeg |
-| `ANGEVOICE_ENABLED_MODELS` | `kokoro` | 启用的模型 ID，逗号分隔 |
+| `ANGEVOICE_ENABLED_MODELS` | `kokoro,moss-nano-cpu` | 启用的模型 ID，逗号分隔；GPU 画像会覆盖并额外开放 `moss-nano-cuda` |
 | `ANGEVOICE_DEFAULT_MODEL` | `kokoro` | 启动时加载的默认模型 |
 | `ANGEVOICE_MODEL_UNLOAD_ON_SWITCH` | `true` | 切换模型时卸载旧模型 |
-| `ANGEVOICE_SAVE_OUTPUTS` | `false` | 是否保存 HTTP 合成结果 |
+| `ANGEVOICE_SAVE_OUTPUTS` | `true` | 是否保存 HTTP 合成结果，Docker 默认写入 `/app/outputs` |
 | `ANGEVOICE_MODEL_SOURCE` | `auto` | 模型下载源：`auto` 先探测 Hugging Face/ModelScope 可达性，再用国家判断；也可手动设为 `modelscope` / `huggingface` |
 | `KOKORO_MODELSCOPE_REPO` | `AI-ModelScope/Kokoro-82M-v1.1-zh` | 国内自动下载 Kokoro 的 ModelScope 仓库 |
 | `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | 国内自动下载 MOSS ONNX 的 ModelScope 仓库 |
 | `MOSS_MODEL_DIR` | - | MOSS ONNX 模型目录；未设置时可由自动源站策略下载/填充 |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider：`cpu` / `cuda` |
-| `MOSS_CUDA_ENABLED` | `true` | 是否允许注册/切换 `moss-nano-cuda` |
+| `MOSS_CUDA_ENABLED` | `false` | 是否允许注册/切换 `moss-nano-cuda`；CPU/legacy-gpu 默认关闭，通用 GPU 画像开启 |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | MOSS 克隆参考音频上传大小上限 |
-| `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | 克隆参考音频裁剪时长 |
+| `MOSS_SEGMENT_LENGTH` | `140` | MOSS 专用长文本分段长度，减少长文本段间拼接、卡顿和爆音；不影响 Kokoro 的 `KOKORO_SEGMENT_LENGTH` |
+| `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `8` | 克隆参考音频裁剪时长 |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | 参考音频编码缓存条目数 |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | CUDA 自检失败时回退 CPU |
 | `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启以降低首包等待；如出现电流音/卡顿可改为 `false` 走质量优先整块生成后分包 |
@@ -386,7 +399,7 @@ environment:
 ## 安全说明
 
 - 公网部署建议设置 `KOKORO_API_KEY`；生产模板可用 `KOKORO_API_KEY=auto` 自动生成，查看路径默认是 `outputs/.angevoice-api-key`，并在反向代理层限制来源。
-- 管理后台/管理接口默认关闭；开启 `KOKORO_ADMIN_ENABLED=true` 时必须设置 `ANGEVOICE_ADMIN_PASSWORD`，账号和密码支持中文，公网部署还建议同时设置 `KOKORO_API_KEY` 并限制来源。
+- 管理后台/管理接口启用时必须设置真实 `ANGEVOICE_ADMIN_PASSWORD`；Docker 示例里的占位密码会被拒绝。账号和密码支持中文，公网部署还建议同时设置 `KOKORO_API_KEY` 并限制来源。
 - `.pt` 音色上传默认关闭。只上传可信来源文件；PyTorch 权重文件不应来自不可信渠道。
 
 ⚠️ **安全警告**：公网环境**不建议**开启 `KOKORO_VOICE_UPLOAD_ENABLED`。

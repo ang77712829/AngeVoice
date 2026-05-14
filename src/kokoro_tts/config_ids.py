@@ -14,6 +14,16 @@ PLACEHOLDER_API_KEYS = {
     "staging-change-me-to-real-key",
 }
 
+PLACEHOLDER_ADMIN_PASSWORDS = {
+    "change-me",
+    "change-me-please-use-a-strong-password",
+    "your-real-strong-password",
+    "你的真实强密码",
+    "请改为至少16位强密码",
+    "<strong-password>",
+    "strong-password",
+}
+
 MOSS_GENERIC_MODEL_IDS = {"moss", "moss-nano", "moss-tts-nano"}
 MOSS_CPU_MODEL_IDS = {"moss-cpu", "moss-nano-cpu", "moss-tts-nano-cpu"}
 MOSS_CUDA_MODEL_IDS = {"moss-cuda", "moss-gpu", "moss-nano-cuda", "moss-tts-nano-cuda"}

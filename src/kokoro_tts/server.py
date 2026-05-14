@@ -32,6 +32,7 @@ _WORKER_ENV_EXPORTS = {
     "KOKORO_MAX_CONCURRENT_REQUESTS": "max_concurrent_requests",
     "KOKORO_MAX_TEXT_LENGTH": "max_text_length",
     "KOKORO_SEGMENT_LENGTH": "segment_length",
+    "MOSS_SEGMENT_LENGTH": "moss_segment_length",
     "KOKORO_CACHE_MAX_ITEMS": "cache_max_items",
     "KOKORO_BATCH_MAX_ITEMS": "batch_max_items",
     "KOKORO_BATCH_CONCURRENCY": "batch_concurrency",

@@ -10,7 +10,7 @@ English | [中文](README.md)
 
 ## One-command install (recommended)
 
-After Docker and Docker Compose V2 are installed, run the interactive installer. It detects CPU/GPU, older NVIDIA cards, Docker/Compose, GitHub, GHCR, Docker Hub, and local Docker registry mirrors, then recommends the `cpu`, `gpu` or `legacy-gpu` profile.
+After Docker and Docker Compose V2 are installed, run the interactive installer. It detects CPU/GPU, Docker/Compose, GitHub, GHCR, Docker Hub, and local Docker registry mirrors. When an NVIDIA GPU is found, it recommends the standard `gpu` profile first; `legacy-gpu` is a fallback for hosts where `gpu` cannot start or CUDA/cuDNN is incompatible.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/scripts/install.sh)
@@ -24,7 +24,7 @@ cd AngeVoice
 bash scripts/install.sh
 ```
 
-Shared Docker defaults live in `docker/angevoice.env`. They are CPU/NAS-safe by default; GPU profiles only override the required CUDA settings.
+Shared Docker defaults live in `docker/angevoice.env`. They are CPU/NAS-safe by default. The standard `gpu` profile is the recommended NVIDIA path; `legacy-gpu` is a CUDA 11.8 compatibility fallback.
 
 When the script is run from an existing source checkout, it installs/updates **in place** and no longer clones another copy into `/opt/angevoice`, which is friendlier for NAS file managers. The `/opt/angevoice` fallback is only used for remote `curl` installs where no local project directory exists. After startup, the script prints the detected LAN URL, for example `http://192.168.1.10:8101`.
 
@@ -127,15 +127,18 @@ curl http://127.0.0.1:8101/v1/models
 
 > **Container health status**: Every Docker image includes a built-in `HEALTHCHECK` that hits `/health` every 30 seconds. A `{"status":"ok"}` or `{"status":"idle"}` response marks the container as **healthy**. `idle` means the current model was unloaded by the idle timer but the service is ready to auto-load it on the next request. The 60-second start period allows model loading before the first check. Inspect with `docker inspect --format='{{json .State.Health}}' <container>`.
 
-### Docker CPU / Legacy GPU
+### Docker CPU / legacy-gpu fallback
 
 ```bash
 # CPU, default port 8100
 cd docker/cpu && sudo docker compose up -d
 
-# Legacy GPU, default port 8102
+# legacy-gpu, default port 8102
+# Use only when docker/gpu cannot start or CUDA/cuDNN is incompatible.
 cd docker/legacy-gpu && sudo docker compose up -d
 ```
+
+> Try `docker/gpu` first on NVIDIA hosts. Tesla P4/P40/V100 can also perform better with the standard `gpu` image when the host driver is recent; `legacy-gpu` is a compatibility fallback, not a guaranteed faster path.
 
 ### Editable pip install
 
@@ -300,9 +303,9 @@ environment:
 | `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | WebSocket chunk duration |
 | `KOKORO_CACHE_ENABLED` | `true` | Enable LRU audio cache |
 | `KOKORO_BATCH_ENABLED` | `true` | Enable batch synthesis |
-| `KOKORO_ADMIN_ENABLED` | `false` | Enable admin APIs |
+| `KOKORO_ADMIN_ENABLED` | Docker default `true` | Enable admin UI/API. Requires a real `ANGEVOICE_ADMIN_PASSWORD`; placeholders are rejected. |
 | `KOKORO_MP3_ENABLED` | `false` | Enable MP3 output, requires ffmpeg |
-| `ANGEVOICE_ENABLED_MODELS` | `kokoro` | Comma-separated enabled model IDs |
+| `ANGEVOICE_ENABLED_MODELS` | `kokoro,moss-nano-cpu` | Comma-separated enabled model IDs. GPU profiles override this and also expose `moss-nano-cuda`. |
 | `ANGEVOICE_DEFAULT_MODEL` | `kokoro` | Startup model |
 | `ANGEVOICE_MODEL_UNLOAD_ON_SWITCH` | `true` | Unload old engine when switching |
 | `ANGEVOICE_SAVE_OUTPUTS` | `false` | Save HTTP synthesis outputs |
@@ -311,9 +314,10 @@ environment:
 | `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | ModelScope MOSS ONNX repository for China-friendly auto downloads |
 | `MOSS_MODEL_DIR` | - | MOSS ONNX model directory; auto source selection can populate it when omitted |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider: `cpu` / `cuda` |
-| `MOSS_CUDA_ENABLED` | `true` | Allow registering/switching `moss-nano-cuda` |
+| `MOSS_CUDA_ENABLED` | `false` | Allow/register `moss-nano-cuda`; CPU/legacy-gpu keep it off, standard GPU enables it. |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | MOSS clone reference-audio upload limit |
-| `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | Reference-audio trim duration |
+| `MOSS_SEGMENT_LENGTH` | `140` | MOSS-only long-text segment length. Reduces long-text stitching, stutter and artifacts without changing Kokoro segmentation. |
+| `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `8` | Reference-audio trim duration |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | Encoded prompt-audio cache size |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | Fall back to CPU when CUDA self-test fails |
 | `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | Enable MOSS process isolation; loaded engines must be unloaded/rebuilt before this takes effect |

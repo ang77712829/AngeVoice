@@ -99,7 +99,7 @@ print(importlib.util.find_spec("onnx_tts_runtime"))
 PY
 ```
 
-CPU 镜像默认不注册 `moss-nano-cuda`；老架构 GPU 画像虽然预装了 MOSS GPU 依赖，但默认也会通过 `MOSS_CUDA_ENABLED=false` 隐藏 CUDA MOSS。
+CPU 镜像默认不注册 `moss-nano-cuda`；legacy-gpu 虽然预装 CUDA 11.8 兼容的 MOSS GPU 依赖，但默认也通过 `MOSS_CUDA_ENABLED=false` 隐藏 CUDA MOSS。请先尝试通用 `gpu` 画像，只有它无法启动或不稳定时再使用 `legacy-gpu`。
 
 如果 CUDA 模式失败但 CPU 可用，保持：
 
@@ -116,7 +116,7 @@ MOSS_CUDA_ENABLED=true
 MOSS_EXECUTION_PROVIDER=cuda
 ```
 
-Tesla P4 实测可跑 MOSS CUDA，但 GPU 镜像必须带 cuDNN 9。推荐组合：
+Tesla P4 / P40 / V100 等老卡如果宿主机驱动较新，也建议优先尝试通用 `gpu` 画像。MOSS CUDA 推荐组合：
 
 ```text
 onnxruntime-gpu==1.20.2
@@ -588,3 +588,8 @@ AngeVoice --restart
 ```bash
 KOKORO_TRUST_PROXY_HEADERS=true
 ```
+
+
+## MOSS 长文本仍有卡顿/爆音
+
+优先确认 `MOSS_SEGMENT_LENGTH=140` 已生效。它只影响 MOSS 分段，不影响 Kokoro。长文本段数过多时，段间拼接会增加卡顿和爆音概率；可尝试 140~180。

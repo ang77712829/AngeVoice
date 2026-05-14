@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AngeVoice 一键安装与管理脚本
-# 自动检测 Docker、Compose、GPU、镜像网络，并推荐 CPU/GPU/legacy-gpu 画像。
+# 自动检测 Docker、Compose、GPU、镜像网络，并推荐 CPU/GPU 画像；legacy-gpu 作为兼容兜底。
 
 set -euo pipefail
 
@@ -378,7 +378,16 @@ main() {
   fi
 
   if [[ "$NON_INTERACTIVE" != "true" ]]; then
-    log "检测到 GPU：$(detect_gpu_name || true)"
+    local gpu_name
+    gpu_name="$(detect_gpu_name || true)"
+    if [[ -n "$gpu_name" ]]; then
+      log "检测到 NVIDIA GPU：$gpu_name"
+      if is_legacy_gpu_candidate; then
+        warn "默认推荐通用 gpu 画像；legacy-gpu 仅作为 gpu 无法启动/不稳定时的保底尝试。"
+      fi
+    else
+      log "未检测到 NVIDIA GPU。"
+    fi
     read -r -p "使用画像 [$profile]，可输入 cpu/gpu/legacy-gpu 覆盖: " chosen
     profile="${chosen:-$profile}"
   fi

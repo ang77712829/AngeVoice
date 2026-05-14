@@ -1,6 +1,8 @@
 # AngeVoice 服务画像说明 / Service Profiles
 
-AngeVoice 按通用服务版和老显卡/保守兼容版两个部署画像维护。两者共享同一套 API、Studio Web UI、中文规则、缓存、统计和安全校验，只在运行时参数、CUDA 基础镜像和端口默认值上有所不同。
+AngeVoice 主要维护三类部署画像：`cpu`、推荐的通用 `gpu`、以及兼容兜底的 `legacy-gpu`。三者共享同一套 API、Studio Web UI、中文规则、缓存、统计和安全校验，只在运行时参数、CUDA 基础镜像和端口默认值上不同。
+
+有 NVIDIA GPU 时请先尝试 `docker/gpu`。`legacy-gpu` 是 CUDA 11.8 兼容兜底画像，仅在 `gpu` 镜像无法启动、CUDA/cuDNN 不兼容或旧驱动环境不稳定时使用，不保证性能优于 `gpu`。
 
 ## 1. 通用服务版
 
@@ -35,9 +37,9 @@ ANGEVOICE_MODEL_UNLOAD_ON_SWITCH=true
 - WebSocket JSON + 可选 binary 音频帧
 - 可选多模型运行时：Docker 画像预装匹配的 MOSS runtime，可通过 Studio 或 `/v1/models/switch` 切换，MOSS 克隆模式会显示参考音频上传控件
 
-## 2. 老显卡/保守兼容版
+## 2. legacy-gpu 兼容兜底版
 
-适合旧驱动、旧 GPU、NAS、低功耗主机或不希望使用激进 GPU 运行时的环境。
+适合通用 `gpu` 画像无法启动、CUDA/cuDNN 不兼容、旧驱动、NAS 或低功耗主机。它是保底方案，不是性能最优保证。
 
 推荐配置：
 
@@ -46,21 +48,23 @@ KOKORO_WORKERS=1
 KOKORO_MAX_CONCURRENT_REQUESTS=1
 KOKORO_CACHE_ENABLED=true
 KOKORO_CACHE_MAX_ITEMS=64
-KOKORO_STREAM_BINARY_ENABLED=false
+KOKORO_STREAM_BINARY_ENABLED=true
 KOKORO_STREAM_CHUNK_SECONDS=0.50
 KOKORO_REQUEST_TIMEOUT_SECONDS=600
-KOKORO_SEGMENT_LENGTH=80
+KOKORO_SEGMENT_LENGTH=100
 ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cpu
 MOSS_EXECUTION_PROVIDER=cpu
 MOSS_CUDA_ENABLED=false
-ANGEVOICE_SAVE_OUTPUTS=true
+MOSS_SEGMENT_LENGTH=140
+MOSS_REALTIME_STREAMING_DECODE=true
 MOSS_PROMPT_AUDIO_MAX_SECONDS=8
-MOSS_PROMPT_CACHE_MAX_ITEMS=6
+MOSS_PROMPT_CACHE_MAX_ITEMS=8
 MOSS_SAMPLE_MODE=fixed
 MOSS_SEED=1234
-MOSS_STREAM_CHUNK_SECONDS=0.35
+MOSS_STREAM_CHUNK_SECONDS=0.42
+MOSS_STREAM_QUEUE_MAX_ITEMS=8
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
-MOSS_OUTPUT_TARGET_PEAK=0.90
+MOSS_OUTPUT_TARGET_PEAK=0.78
 ```
 
 建议：
@@ -69,9 +73,9 @@ MOSS_OUTPUT_TARGET_PEAK=0.90
 - 不建议多 worker 同时加载 GPU 模型。
 - 如果确实设置 `KOKORO_WORKERS>1`，AngeVoice 会使用 Uvicorn factory/import-string 模式启动；每个 worker 仍会加载独立模型和缓存。
 - 遇到音频噪声、爆音或推理异常时，优先关闭半精度、TensorRT、flash attention 等加速。
-- 长文本建议降低 `KOKORO_SEGMENT_LENGTH`，减少单段失败概率。
-- WebSocket 建议先使用 JSON base64 模式，确认稳定后再开启 binary 模式。
-- MOSS-TTS-Nano 在老架构GPU 画像中默认只开放 CPU ONNX；镜像已通过 ONNX Runtime CUDA 11 feed 预装了 CUDA 11.8 兼容的 MOSS GPU 依赖，`moss-nano-cuda` 需要用户手动加入并打开 `MOSS_CUDA_ENABLED=true` 后才会出现在 UI。
+- Kokoro 保持 `KOKORO_SEGMENT_LENGTH=100`；MOSS 使用独立的 `MOSS_SEGMENT_LENGTH=140`，减少长文本段间拼接和爆音。
+- WebSocket 默认 binary 音频，兼容旧客户端时可改回 JSON/base64。
+- MOSS-TTS-Nano 在 legacy-gpu 画像中默认只开放 CPU ONNX；镜像预装 CUDA 11.8 兼容的 MOSS GPU 依赖，如需测试请使用 `docker-compose.moss-cuda.yml`。
 
 ## 3. MOSS-TTS-Nano 可选画像
 
@@ -114,7 +118,7 @@ Tesla P4 已用 Docker 探针验证可在通用 GPU 画像的 `onnxruntime-gpu==
 
 MOSS 克隆参考音频会被裁剪到 `MOSS_PROMPT_AUDIO_MAX_SECONDS`，并缓存编码后的 prompt audio codes。这样可以降低 clone 模式在 8GB 显存和低功耗 CPU 上的重复开销；如果仍然出现 OOM 或爆音，优先缩短参考音频而不是提高并发。
 
-WebSocket 输出会按固定时长切成小音频包。Kokoro 仍按官方 pipeline 段落推理；MOSS 默认使用官方高质量 chunk 生成后再分包发送，优先保证 Web/小智播放稳定性。如需最低首包延迟，可手动启用 `MOSS_REALTIME_STREAMING_DECODE=true` 使用官方 `generate_audio_frames` 逐帧回调。
+WebSocket 输出会按固定时长切成小音频包。Kokoro 仍按官方 pipeline 段落推理；MOSS 默认启用 `MOSS_REALTIME_STREAMING_DECODE=true` 以降低首包等待。如果逐帧模式出现电流音、卡顿或边界噪声，可改为 `false`。长文本建议使用 `MOSS_SEGMENT_LENGTH=140` 或更高，减少段间拼接。
 
 持久化建议：
 

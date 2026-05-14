@@ -577,7 +577,7 @@ class MossNanoEngine(MossStreamingMixin):
         return moss_segment_text(
             text,
             max_text_length=int(self.config.max_text_length),
-            segment_length=int(self.config.segment_length),
+            segment_length=int(getattr(self.config, "moss_segment_length", self.config.segment_length)),
         )
 
     def _temp_output_path(self) -> str:

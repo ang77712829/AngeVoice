@@ -48,6 +48,7 @@ class TestConfig:
         assert config.moss_process_isolation_enabled is False
         assert config.moss_process_isolation_providers == "cuda"
         assert config.moss_realtime_streaming_decode is True
+        assert config.moss_segment_length == 140
         assert config.model_source == "auto"
 
     def test_env_override(self, monkeypatch):
@@ -57,6 +58,7 @@ class TestConfig:
         monkeypatch.setenv("KOKORO_MAX_QUEUE_LENGTH", "3")
         monkeypatch.setenv("ANGEVOICE_IDLE_TIMEOUT_SECONDS", "30")
         monkeypatch.setenv("MOSS_PROCESS_ISOLATION_ENABLED", "false")
+        monkeypatch.setenv("MOSS_SEGMENT_LENGTH", "160")
         monkeypatch.setenv("ANGEVOICE_MODEL_SOURCE", "modelscope")
         from kokoro_tts.config import load_config
         config = load_config()
@@ -66,6 +68,7 @@ class TestConfig:
         assert config.max_queue_length == 3
         assert config.model_idle_timeout_seconds == 30
         assert config.moss_process_isolation_enabled is False
+        assert config.moss_segment_length == 160
         assert config.model_source == "modelscope"
 
 

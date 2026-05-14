@@ -89,6 +89,7 @@ INT_ENV: dict[str, IntEnvSpec] = {
     "KOKORO_MAX_CONCURRENT_REQUESTS": IntEnvSpec("max_concurrent_requests", 1),
     "KOKORO_MAX_TEXT_LENGTH": IntEnvSpec("max_text_length", 1),
     "KOKORO_SEGMENT_LENGTH": IntEnvSpec("segment_length", 20),
+    "MOSS_SEGMENT_LENGTH": IntEnvSpec("moss_segment_length", 20),
     "KOKORO_CACHE_MAX_ITEMS": IntEnvSpec("cache_max_items", 0),
     "KOKORO_BATCH_MAX_ITEMS": IntEnvSpec("batch_max_items", 1),
     "KOKORO_BATCH_CONCURRENCY": IntEnvSpec("batch_concurrency", 1),

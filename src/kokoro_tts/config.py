@@ -19,6 +19,7 @@ from .config_ids import (
     MODEL_FILENAME,
     MOSS_GENERIC_MODEL_IDS,
     PLACEHOLDER_API_KEYS,
+    PLACEHOLDER_ADMIN_PASSWORDS,
     normalize_config_model_id,
 )
 
@@ -52,6 +53,7 @@ class TTSConfig:
     sample_rate: int = 24000
     max_text_length: int = 10000
     segment_length: int = 100
+    moss_segment_length: int = 140
     default_speed: float = 1.0
     default_voice: str = "zm_010"
 
@@ -183,6 +185,8 @@ class TTSConfig:
         admin_password = (os.environ.get("ANGEVOICE_ADMIN_PASSWORD") or "").strip()
         if self.admin_enabled and not admin_password:
             raise ValueError("KOKORO_ADMIN_ENABLED=true requires ANGEVOICE_ADMIN_PASSWORD")
+        if self.admin_enabled and admin_password.lower() in PLACEHOLDER_ADMIN_PASSWORDS:
+            raise ValueError("ANGEVOICE_ADMIN_PASSWORD is still a placeholder; set a real strong password")
         if self.voice_upload_enabled and not self.admin_enabled:
             raise ValueError("KOKORO_VOICE_UPLOAD_ENABLED=true requires KOKORO_ADMIN_ENABLED=true")
         if not self.enabled_models:

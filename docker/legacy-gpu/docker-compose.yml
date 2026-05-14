@@ -11,9 +11,7 @@ services:
       args:
         # 固定 PyTorch 版本，NAS/家用服务器复现更稳定。
         PYTORCH_VERSION: "2.5.1"
-
-        # 老架构 GPU 镜像预装 CUDA 11.8 兼容的 MOSS runtime。
-        # 本文件是"开启 MOSS CUDA 的实验配置"，会同时开放 moss-nano-cuda。
+        # legacy-gpu 是兼容兜底画像：预装 CUDA 11.8 兼容的 MOSS runtime，默认只开放 MOSS CPU。
         INSTALL_MOSS: "true"
         MOSS_RUNTIME_PACKAGE: "onnxruntime-gpu==1.20.1"
         MOSS_RUNTIME_INDEX_URL: "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/"
@@ -23,111 +21,63 @@ services:
       - "8102:8000"
 
     env_file:
-      # 默认值按 CPU/NAS 安全场景设计；本文件只覆盖 legacy-gpu + MOSS CUDA 的必要差异。
+      # 共用默认配置；legacy-gpu 只覆盖旧环境兼容所需参数。
       - ../angevoice.env
 
     volumes:
-      # Kokoro 模型目录：只读挂载，避免容器误改模型文件。
-      # 注意：GitHub Source ZIP 里的 .pt/.pth 可能只是 Git LFS 指针，
-      # 首次启动会自动从 Hugging Face / ModelScope 下载真实模型。
+      # 模型目录：只读挂载，避免容器误改模型文件。
       - ../../models:/app/models:ro
-
       # Hugging Face 缓存：持久化到宿主机，避免重复下载。
       - ../../hf_cache:/root/.cache/huggingface
-
       # 前端资源：本地修改后重启容器即可生效。
       - ../../src/kokoro_tts/templates/index.html:/app/src/kokoro_tts/templates/index.html:ro
       - ../../src/kokoro_tts/static:/app/src/kokoro_tts/static:ro
-
       # MOSS ONNX 模型缓存。
       - ../../moss_models:/opt/MOSS-TTS-Nano/models
-
       # 合成输出目录；auto API key 默认也会写到 /app/outputs/.angevoice-api-key。
       - ../../outputs:/app/outputs
-
       # 可选：开启音色上传时取消注释，并在 ../angevoice.env 中开启 KOKORO_VOICE_UPLOAD_ENABLED。
       # - ../../models/voices:/app/models/voices:rw
 
     environment:
       # ============================================================
-      # legacy-gpu GPU 实验配置
+      # legacy-gpu 兼容兜底配置
       # ============================================================
+      # 推荐先使用 docker/gpu 画像；只有 gpu 画像无法启动、CUDA/cuDNN 不兼容、
+      # 或旧驱动环境运行不稳定时，再切到本 legacy-gpu 画像。
       #
-      # 适合：
-      # - Tesla P4 / P40 / V100
-      # - GTX 10 系等老架构 NVIDIA GPU
-      # - 想测试 Kokoro CUDA + MOSS CUDA 的用户
-      #
-      # 注意：
-      # - Kokoro CUDA 通常比较稳
-      # - MOSS CUDA 依赖 ONNX Runtime、CUDA、cuDNN、驱动版本匹配
-      # - 老显卡上 MOSS CUDA 可能出现加载失败、CPU fallback、卡死、爆音或性能不稳定
-      # - 如果只想稳，用默认 docker-compose.yml，不要用这个实验版
+      # 本画像默认：
+      # - Kokoro 使用 CUDA，保证普通 TTS 仍可用 GPU 加速
+      # - MOSS 默认 CPU 稳定模式，避免老显卡上 MOSS CUDA 的 CUBLAS/OOM/fallback 问题
+      # - 如需测试 MOSS CUDA，请使用 docker-compose.moss-cuda.yml
 
-      # Kokoro 默认使用 CUDA。
-      # 这是 legacy-gpu 画像的主要用途：让老 NVIDIA GPU 跑 Kokoro 推理。
       KOKORO_DEVICE: cuda
-
-      # 老显卡首轮加载和长文本合成可能较慢，超时放宽到 600 秒。
       KOKORO_REQUEST_TIMEOUT_SECONDS: "600"
+      KOKORO_SEGMENT_LENGTH: "100"
 
-      # 老显卡显存较小，分段略短一点更稳。
-      KOKORO_SEGMENT_LENGTH: "80"
-
-      # 本文件默认同时启用：
-      # - kokoro：默认模型，走 CUDA
-      # - moss-nano-cpu：MOSS CPU 稳定模式
-      # - moss-nano-cuda：MOSS CUDA 实验模式
-      ANGEVOICE_ENABLED_MODELS: kokoro,moss-nano-cpu,moss-nano-cuda
+      ANGEVOICE_ENABLED_MODELS: kokoro,moss-nano-cpu
       ANGEVOICE_DEFAULT_MODEL: kokoro
 
-      # MOSS 默认 provider 改为 cuda。
-      # 这样用户选择 moss 或 moss-nano 时会优先解析到 CUDA 版本。
-      MOSS_EXECUTION_PROVIDER: cuda
-      MOSS_CUDA_ENABLED: "true"
-
-      # 默认不开启进程级隔离，减少老机器/低配机器的进程通信与重载开销。
-      # 如果 ONNX Runtime / CUDA 底层卡死或 active_count 异常，可在管理后台强制释放，或手动改为 true。
+      MOSS_EXECUTION_PROVIDER: cpu
+      MOSS_CUDA_ENABLED: "false"
       MOSS_PROCESS_ISOLATION_ENABLED: "false"
       MOSS_PROCESS_ISOLATION_PROVIDERS: cuda
-      MOSS_PROCESS_KILL_GRACE_SECONDS: "2"
 
-      # MOSS clone 参考音频建议短一点，老机器更稳。
-      MOSS_PROMPT_AUDIO_MAX_SECONDS: "8"
-      MOSS_PROMPT_CACHE_MAX_ITEMS: "6"
-
-      # MOSS 流式分包参数。
-      # 0.35 秒偏低延迟；如果听到卡顿/电流音，可改回 0.42。
-      # 默认开启逐帧流式，降低首包等待；如出现电流音/卡顿，可改为 false。
       MOSS_REALTIME_STREAMING_DECODE: "true"
-      MOSS_STREAM_CHUNK_SECONDS: "0.35"
-      MOSS_STREAM_QUEUE_MAX_ITEMS: "6"
+      MOSS_SEGMENT_LENGTH: "140"
+      MOSS_STREAM_CHUNK_SECONDS: "0.42"
+      MOSS_STREAM_QUEUE_MAX_ITEMS: "8"
+      MOSS_OUTPUT_TARGET_PEAK: "0.78"
+      MOSS_OUTPUT_GAIN: "0.90"
 
-      # 老显卡/小音箱场景下，0.90 音量更足。
-      # 如果听到爆音、刺耳、电流音，可改回 0.78。
-      MOSS_OUTPUT_TARGET_PEAK: "0.90"
-
-      # WebSocket 二进制音频：
-      # true  = 减少 base64 JSON 开销，适合浏览器/现代客户端
-      # false = 兼容只处理 JSON base64 的旧客户端
       KOKORO_STREAM_BINARY_ENABLED: "true"
-
-      # 老显卡/NAS 降低缓存和批量规模，避免内存/显存压力过大。
       KOKORO_CACHE_MAX_ITEMS: "64"
       KOKORO_BATCH_MAX_ITEMS: "10"
 
-      # NVIDIA Container Runtime 参数。
-      # all = 容器内可见全部 GPU。
-      # 如果只想给某一张卡，可改成 GPU UUID 或编号，例如：
-      #   NVIDIA_VISIBLE_DEVICES: "0"
       NVIDIA_VISIBLE_DEVICES: all
-
-      # compute,utility 足够用于 PyTorch/ONNX 推理和 nvidia-smi。
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
 
-    # Docker Compose V2 推荐写法。
-    # 如果你的 Docker Compose 太旧不支持 gpus: all，
-    # 可改回 deploy.resources.reservations.devices 写法。
+    # Docker Compose V2 推荐写法。旧环境可改回 deploy.resources.reservations.devices。
     gpus: all
 
     healthcheck:
