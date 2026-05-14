@@ -31,6 +31,27 @@ huggingface-cli download hexgrad/Kokoro-82M-v1.1-zh \
   --include "config.json" "kokoro-v1_1-zh.pth" "voices/*.pt"
 ```
 
+
+## Git LFS pointer 文件专项
+
+GitHub 的 Source code ZIP 和未安装 `git-lfs` 的普通 `git clone` 可能只拿到指针文件，而不是真实模型。打开模型文件如果看到：
+
+```text
+version https://git-lfs.github.com/spec/v1
+oid sha256:...
+size ...
+```
+
+说明它不是可用权重。AngeVoice 会用文件大小和内容特征避免把 pointer 当真实模型；首次运行会按 `ANGEVOICE_MODEL_SOURCE` 自动下载真实模型。国内网络建议保持 `ANGEVOICE_MODEL_SOURCE=auto`，让服务先探测 Hugging Face / ModelScope 可达性，再决定源站。
+
+修复方式：
+
+```bash
+git lfs install
+git lfs pull
+# 或删除 pointer 文件后重启服务，让 AngeVoice 自动下载
+```
+
 ## 2. Docker 能启动但 `/health` 很久才 ok
 
 首次加载模型会下载或初始化权重，GPU 机器也需要 CUDA 初始化。建议：
@@ -244,7 +265,7 @@ MOSS_OUTPUT_DECLICK_ENABLED=true
 MOSS_OUTPUT_EDGE_FADE_MS=2
 ```
 
-`MOSS_REALTIME_STREAMING_DECODE=true` 会更早推送小音频块，但在部分参考音频、CUDA/ONNX 组合和小喇叭播放链路上容易放大 chunk 边界不连续，表现为“刺”“噗”“电流音”。默认开启逐帧实时解码以降低延迟；实时路径不会对每个小块做边缘淡入淡出，避免产生连续卡顿。若个别设备仍有噪声，可设为 false 走质量优先整块生成。
+`MOSS_REALTIME_STREAMING_DECODE=true` 会更早推送小音频块，但在部分参考音频、CUDA/ONNX 组合和小喇叭播放链路上容易放大 chunk 边界不连续，表现为“刺”“噗”“电流音”。默认开启逐帧实时解码以降低首包等待、改善 Web/小智体感；若个别设备出现噪声、卡顿或边界不连续，可改为 false 走质量优先整块生成。
 
 
 如果日志显示 `requested=cuda actual=cpu`，或出现 `CUBLAS_STATUS_ALLOC_FAILED` / `BFCArena::AllocateRawInternal`，说明 CUDA provider 初始化失败。优先检查显存是否被其他容器占用：
@@ -319,7 +340,8 @@ KOKORO_ADMIN_ENABLED=false
 修复：
 
 ```bash
-KOKORO_API_KEY=<paste-generated-token-here>
+KOKORO_API_KEY=auto
+ANGEVOICE_API_KEY_FILE=/app/outputs/.angevoice-api-key
 KOKORO_ADMIN_ENABLED=false
 KOKORO_VOICE_UPLOAD_ENABLED=false
 ```
@@ -335,10 +357,12 @@ ANGEVOICE_ADMIN_PASSWORD=<strong-password>
 
 ## 10. `/stats` 或 `/requests` 返回 401
 
-如果设置了：
+如果设置了手动 key，或生产模板使用 `KOKORO_API_KEY=auto` 自动生成了 key：
 
 ```bash
-KOKORO_API_KEY=<paste-generated-token-here>
+KOKORO_API_KEY=auto
+ANGEVOICE_API_KEY_FILE=/app/outputs/.angevoice-api-key
+# 或 KOKORO_API_KEY=<your-real-secret>
 ```
 
 请求需要携带：
@@ -348,7 +372,17 @@ curl http://127.0.0.1:8000/stats \
   -H "Authorization: Bearer YOUR_GENERATED_TOKEN"
 ```
 
-Studio Web UI 可在右上角设置面板保存 Bearer Token。
+Studio Web UI 会在需要鉴权但本地没有 token 时自动打开设置面板；已开启管理后台时可跳到 `/admin` 的 API Key 区域查看/轮换，未开启时请查看启动日志或 `ANGEVOICE_API_KEY_FILE`。
+
+### 查看自动生成 API Key
+
+一键 Docker 安装的默认路径：
+
+```bash
+cat /opt/angevoice/outputs/.angevoice-api-key
+```
+
+如果你用自定义目录安装，把 `/opt/angevoice` 换成自己的项目目录。不要把完整 key 发到论坛、Issue 或群聊截图里。
 
 ## 11. WebSocket 连接成功但无音频
 
@@ -397,8 +431,10 @@ docker exec -it angevoice-gpu ls -lh /app/models/voices
 
 ```bash
 KOKORO_ADMIN_ENABLED=true
+ANGEVOICE_ADMIN_PASSWORD=<strong-password>
 KOKORO_VOICE_UPLOAD_ENABLED=true
-KOKORO_API_KEY=<paste-generated-token-here>
+KOKORO_API_KEY=auto
+# 或 KOKORO_API_KEY=<your-real-secret>
 ```
 
 Docker 还需要 voices 目录可写：
@@ -543,3 +579,12 @@ AngeVoice --restart
 如果账号或密码包含中文，建议使用最新版本。管理后台 Basic Auth 已经改为按原始字节解析，并同时兼容 UTF-8 / latin-1，避免浏览器编码差异导致一直无法登录。
 
 公网部署时不建议直接暴露 `/admin`。建议只在内网访问，或通过反向代理限制 IP。
+
+
+## 反代后限流 IP 不准 / 裸露公网被绕过
+
+默认 `KOKORO_TRUST_PROXY_HEADERS=false`，限流使用 TCP 对端 IP，不读取客户端可伪造的 `X-Forwarded-For`。只有确认服务位于可信反向代理后面，且外部不能直连后端端口时，才设置：
+
+```bash
+KOKORO_TRUST_PROXY_HEADERS=true
+```

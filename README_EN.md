@@ -8,7 +8,6 @@ English | [中文](README.md)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-
 ## One-command install (recommended)
 
 After Docker and Docker Compose V2 are installed, run the interactive installer. It detects CPU/GPU, older NVIDIA cards, Docker/Compose, GitHub, GHCR, Docker Hub, and local Docker registry mirrors, then recommends the `cpu`, `gpu` or `legacy-gpu` profile.
@@ -93,7 +92,7 @@ Good fits:
 | Studio Web UI | Built-in console with model switching, voice filtering, preview, streaming playback, stop generation, API-key settings, and metrics |
 | API docs page | `GET /api-docs` provides copyable examples, especially for MOSS reference-audio clone and streaming clone |
 | OpenAI-compatible API | `POST /v1/audio/speech` with `model/input/voice/speed/response_format` |
-| MOSS-TTS-Nano | OpenMOSS ONNX runtime adapter with preset voices, reference-audio cloning, CPU baseline, and experimental CUDA mode; process isolation is off by default to prioritize real-time streaming on NAS/older GPUs, and can be enabled manually when hard isolation is required |
+| MOSS-TTS-Nano | OpenMOSS ONNX runtime adapter with preset voices, reference-audio cloning, CPU baseline, and experimental CUDA mode; process isolation is off by default to reduce process overhead on NAS/older GPUs, and can be enabled manually when hard isolation is required |
 | Multi-model runtime | `/v1/models` lists, loads, unloads, and switches engines; cache keys are isolated by model |
 | WebSocket streaming | `WS /ws/v1/tts`; bounded chunks, `cancel` / `stop`, MOSS clone audio in the first JSON message |
 | Chinese text rules | Auto pause punctuation, jieba-first segmentation, fallback lexicon, and common polyphone overrides |
@@ -295,8 +294,9 @@ environment:
 |---|---|---|
 | `KOKORO_DEVICE` | `auto` | `auto` / `cpu` / `cuda` |
 | `KOKORO_WORKERS` | `1` | Uvicorn workers; keep 1 for GPU |
-| `KOKORO_MAX_CONCURRENT_REQUESTS` | `1` | Max in-process synthesis concurrency |
-| `KOKORO_API_KEY` | - | Enables Bearer auth; placeholder values are rejected |
+| `KOKORO_MAX_CONCURRENT_REQUESTS` | `1` | Max in-process synthesis concurrency; conservative for NAS/old GPUs, raise to 2-4 only on larger GPUs |
+| `KOKORO_API_KEY` | - | Enables Bearer auth; `auto` generates and persists a strong random key on first start; placeholder values are rejected |
+| `ANGEVOICE_API_KEY_FILE` | `/app/outputs/.angevoice-api-key` | Persistent key file used by `KOKORO_API_KEY=auto`; admin UI can reveal/rotate it |
 | `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | WebSocket chunk duration |
 | `KOKORO_CACHE_ENABLED` | `true` | Enable LRU audio cache |
 | `KOKORO_BATCH_ENABLED` | `true` | Enable batch synthesis |
@@ -306,14 +306,17 @@ environment:
 | `ANGEVOICE_DEFAULT_MODEL` | `kokoro` | Startup model |
 | `ANGEVOICE_MODEL_UNLOAD_ON_SWITCH` | `true` | Unload old engine when switching |
 | `ANGEVOICE_SAVE_OUTPUTS` | `false` | Save HTTP synthesis outputs |
-| `MOSS_MODEL_DIR` | - | MOSS ONNX model directory |
+| `ANGEVOICE_MODEL_SOURCE` | `auto` | Model download source: `auto` probes Hugging Face/ModelScope reachability first, then falls back to country detection; can be forced to `modelscope` / `huggingface` |
+| `KOKORO_MODELSCOPE_REPO` | `AI-ModelScope/Kokoro-82M-v1.1-zh` | ModelScope Kokoro repository for China-friendly auto downloads |
+| `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | ModelScope MOSS ONNX repository for China-friendly auto downloads |
+| `MOSS_MODEL_DIR` | - | MOSS ONNX model directory; auto source selection can populate it when omitted |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider: `cpu` / `cuda` |
 | `MOSS_CUDA_ENABLED` | `true` | Allow registering/switching `moss-nano-cuda` |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | MOSS clone reference-audio upload limit |
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | Reference-audio trim duration |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | Encoded prompt-audio cache size |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | Fall back to CPU when CUDA self-test fails |
-| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | Enable MOSS process isolation; disabled by default to prioritize real-time streaming |
+| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | Enable MOSS process isolation; loaded engines must be unloaded/rebuilt before this takes effect |
 | `MOSS_PROCESS_ISOLATION_PROVIDERS` | `cuda` | Providers executed in an isolated worker process |
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | Grace seconds before force-killing a timed-out worker |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | Reject silent, NaN/Inf, or heavily clipped MOSS self-test output |
@@ -323,10 +326,12 @@ environment:
 | `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.65` | Audio lead mid threshold; below this decode 2 frames |
 | `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.20` | Audio lead high threshold; below this decode 4 frames, above this decode 8 frames |
 | `MOSS_STREAM_CHUNK_MIN_FLOOR` | `0.10` | Minimum stream chunk floor (seconds) to avoid tiny choppy fragments |
+| `KOKORO_TRUST_PROXY_HEADERS` | `false` | Do not trust `X-Forwarded-For` by default; enable only behind a trusted reverse proxy |
+| `KOKORO_PUBLIC_STATUS_ENDPOINTS` | `true` | Keep `/v1/models`, `/v1/models/current`, and `/v1/audio/voices` public; set false to require Bearer auth for them while leaving `/health` public |
 
 ## Security notes
 
-- Set `KOKORO_API_KEY` for public or semi-public deployments.
+- Set `KOKORO_API_KEY` for public or semi-public deployments; `KOKORO_API_KEY=auto` can generate a persistent random key on first start. The default Docker path is `outputs/.angevoice-api-key`.
 - Admin UI/APIs are disabled by default. If enabled, `ANGEVOICE_ADMIN_PASSWORD` is required; non-ASCII usernames/passwords are supported; public deployments should also set `KOKORO_API_KEY` and restrict access at the reverse proxy.
 - `.pt` voice upload is disabled by default. Only upload trusted files.
 
@@ -387,4 +392,6 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 
 ## License
 
-MIT
+AngeVoice project code is MIT.
+Kokoro and MOSS-TTS-Nano remain under their upstream licenses.
+See `THIRD_PARTY_NOTICES.md` and `ACKNOWLEDGEMENTS.md`.

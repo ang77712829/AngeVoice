@@ -121,7 +121,7 @@ request:
 | `MOSS_OUTPUT_GAIN` | `0.90` | Slight pre-normalization attenuation to preserve dynamics and reduce distortion |
 | `MOSS_OUTPUT_DECLICK_ENABLED` | `true` | Repair isolated impulse spikes before encoding |
 | `MOSS_OUTPUT_EDGE_FADE_MS` | `2` | Short fade-in/out for MOSS segment boundaries |
-| `MOSS_REALTIME_STREAMING_DECODE` | `true` | Low-latency default with stateful smoothing. Disable only when quality-first full-chunk generation is preferred |
+| `MOSS_REALTIME_STREAMING_DECODE` | `true` | Low-latency default: use OpenMOSS frame streaming for earlier first audio. Set false for quality-first chunk generation if artifacts appear |
 
 
 ## MOSS 进程级隔离
@@ -230,3 +230,16 @@ selected `onnxruntime-gpu` wheel.
 ### MOSS 模块拆分
 
 `moss_engine.py` 保留对外兼容的 `MossNanoEngine`，但运行时加载、自检、文本分段、prompt audio 缓存、流式预算和音频后处理已拆到 `src/kokoro_tts/moss/` 子包，便于后续单测和定位失真/卡顿问题。
+
+
+## 模型下载源自动选择
+
+`ANGEVOICE_MODEL_SOURCE=auto` 的顺序是：
+
+1. 尊重显式 `modelscope` / `huggingface`。
+2. 短超时探测 `https://huggingface.co` 与 `https://www.modelscope.cn`。
+3. HF 不可达但 ModelScope 可达时走 ModelScope；HF 可达但 ModelScope 不可达时走 Hugging Face。
+4. 两者都可达或都不可达时，再用 `ANGEVOICE_MODEL_SOURCE_DETECT_URL` 做国家/地区判断；CN 走 ModelScope。
+5. 国家判断失败时按可达性兜底，最后才回到 Hugging Face。
+
+这样国内用户即使访问 `ipapi.co` 慢或失败，也不会轻易误落到 Hugging Face。

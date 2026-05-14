@@ -126,6 +126,17 @@ button {
   border: 0;
 }
 
+.hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hint a {
+  color: var(--accent);
+}
+
 .app-shell {
   width: min(1380px, calc(100% - 32px));
   margin: 0 auto;

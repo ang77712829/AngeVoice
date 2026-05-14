@@ -22,7 +22,13 @@ def make_verify_api_key(cfg: TTSConfig):
             auth = request.headers.get("Authorization", "")
             token = _extract_bearer_token(auth)
             if not hmac.compare_digest(token, cfg.api_key or ""):
-                raise HTTPException(status_code=401, detail="Invalid API key")
+                raise HTTPException(
+                    status_code=401,
+                    detail=(
+                        "Invalid API key. Open Studio settings and paste your token; "
+                        "admins can view or rotate the key in /admin when admin is enabled."
+                    ),
+                )
 
     return verify_api_key
 

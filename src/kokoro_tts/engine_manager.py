@@ -231,7 +231,21 @@ class EngineManager:
             engine = self._create_engine(target_id)
             self._engines[target_id] = engine
         if load and not bool(getattr(engine, "is_loaded", False)):
-            engine.load()
+            try:
+                engine.load()
+            except Exception:
+                # Loading failures (especially MOSS CUDA fallback/ORT allocation failures)
+                # must not leave a half-initialized engine or stale busy state behind.
+                self._active_counts[target_id] = 0
+                unload = getattr(engine, "unload", None)
+                if callable(unload):
+                    try:
+                        unload(force=True)
+                    except TypeError:
+                        unload()
+                    except Exception:
+                        logger.debug("加载失败后的模型清理失败：%s", target_id, exc_info=True)
+                raise
             self._touch_model(target_id)
         return engine
 
@@ -250,8 +264,46 @@ class EngineManager:
                 return False
             unload = getattr(engine, "unload", None)
             if callable(unload):
-                unload()
+                try:
+                    unload(force=force)
+                except TypeError:
+                    unload()
+            if force:
+                self._active_counts[target_id] = 0
             return True
+
+
+    def drop_model(self, model_id: str, *, force: bool = False, raise_if_busy: bool = True) -> bool:
+        """Unload and remove an engine object so next load rebuilds it from current config."""
+        target_id = self.normalize_model_id(model_id)
+        with self._lock:
+            active = self._active_count(target_id)
+            if active > 0 and not force:
+                message = f"Model {target_id} is busy: active_count={active}"
+                if raise_if_busy:
+                    raise HTTPException(status_code=409, detail=message)
+                logger.info("跳过忙碌模型重建：%s active_count=%d", target_id, active)
+                return False
+            engine = self._engines.pop(target_id, None)
+            if engine is None:
+                return False
+            unload = getattr(engine, "unload", None)
+            if callable(unload):
+                try:
+                    unload(force=force)
+                except TypeError:
+                    unload()
+            if force:
+                self._active_counts[target_id] = 0
+            return True
+
+    def drop_matching(self, predicate, *, force: bool = False) -> list[str]:
+        """Drop all cached engine objects that match predicate(model_id)."""
+        dropped: list[str] = []
+        for model_id in list(self._engines):
+            if predicate(model_id) and self.drop_model(model_id, force=force, raise_if_busy=False):
+                dropped.append(model_id)
+        return dropped
 
     def unload_inactive(self, *, force: bool = False, include_current: bool = True) -> list[str]:
         unloaded: list[str] = []

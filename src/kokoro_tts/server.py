@@ -53,6 +53,16 @@ _WORKER_ENV_EXPORTS = {
     "ANGEVOICE_OUTPUT_DIR": "output_dir",
     "ANGEVOICE_SAVE_OUTPUTS": "save_outputs",
     "ANGEVOICE_OUTPUT_MAX_FILES": "output_max_files",
+    "ANGEVOICE_MODEL_SOURCE": "model_source",
+    "ANGEVOICE_MODEL_SOURCE_DETECT_URL": "model_source_detect_url",
+    "ANGEVOICE_MODEL_SOURCE_DETECT_TIMEOUT_SECONDS": "model_source_detect_timeout_seconds",
+    "ANGEVOICE_MODEL_SOURCE_PROBE_TIMEOUT_SECONDS": "model_source_probe_timeout_seconds",
+    "ANGEVOICE_MODEL_SOURCE_PROBE_HF_URL": "model_source_probe_hf_url",
+    "ANGEVOICE_MODEL_SOURCE_PROBE_MODELSCOPE_URL": "model_source_probe_modelscope_url",
+    "ANGEVOICE_API_KEY_FILE": "api_key_file",
+    "KOKORO_HF_REPO": "kokoro_hf_repo",
+    "KOKORO_MODELSCOPE_REPO": "kokoro_modelscope_repo",
+    "MOSS_MODELSCOPE_REPO": "moss_modelscope_repo",
     "ANGEVOICE_IDLE_TIMEOUT_SECONDS": "model_idle_timeout_seconds",
     "ANGEVOICE_IDLE_CHECK_INTERVAL": "model_idle_check_interval",
     "MOSS_EXECUTION_PROVIDER": "moss_execution_provider",
@@ -90,6 +100,8 @@ _WORKER_ENV_EXPORTS = {
     "KOKORO_RATE_LIMIT_QPS": "rate_limit_qps",
     "KOKORO_RATE_LIMIT_BURST": "rate_limit_burst",
     "KOKORO_MAX_QUEUE_LENGTH": "max_queue_length",
+    "KOKORO_TRUST_PROXY_HEADERS": "trust_proxy_headers",
+    "KOKORO_PUBLIC_STATUS_ENDPOINTS": "public_status_endpoints",
 }
 
 
@@ -155,7 +167,12 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
 
     if cfg.rate_limit_qps > 0:
         logger.info("Rate limiting enabled: %.1f QPS, burst=%d", cfg.rate_limit_qps, cfg.rate_limit_burst)
-        app.add_middleware(RateLimitMiddleware, qps=cfg.rate_limit_qps, burst=cfg.rate_limit_burst)
+        app.add_middleware(
+            RateLimitMiddleware,
+            qps=cfg.rate_limit_qps,
+            burst=cfg.rate_limit_burst,
+            trust_proxy_headers=cfg.trust_proxy_headers,
+        )
     if cfg.max_queue_length > 0:
         logger.info("Global queue limit enabled: %d concurrent requests", cfg.max_queue_length)
         app.add_middleware(GlobalQueueMiddleware, max_concurrent=cfg.max_queue_length)
@@ -175,6 +192,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
     except Exception:
         logger.debug("Jinja2 templates are unavailable", exc_info=True)
 
+    state.templates = templates
     app.include_router(create_status_router(state, verify_api_key, templates=templates))
     app.include_router(create_admin_router(state))
     app.include_router(create_audio_router(state, verify_api_key))

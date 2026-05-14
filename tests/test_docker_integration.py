@@ -59,6 +59,22 @@ class TestHTTPEndpoints:
             assert "voices" in resp.json()
 
     @pytest.mark.asyncio
+    async def test_model_and_voice_lists_can_require_api_key(self, mock_engine):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.server import create_app
+
+        config = TTSConfig(api_key="secret-token", public_status_endpoints=False)
+        app = create_app(config=config, engine=mock_engine)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            assert (await client.get("/health")).status_code == 200
+            assert (await client.get("/v1/models")).status_code == 401
+            assert (await client.get("/v1/audio/voices")).status_code == 401
+            headers = {"Authorization": "Bearer secret-token"}
+            assert (await client.get("/v1/models", headers=headers)).status_code == 200
+            assert (await client.get("/v1/audio/voices", headers=headers)).status_code == 200
+
+    @pytest.mark.asyncio
     async def test_openai_tts_success(self, app_with_mock, mock_engine):
         mock_engine.synthesize.side_effect = None
         mock_engine.synthesize.return_value = b"RIFF\x00\x00\x00\x00WAVE" + b"\x00" * 100

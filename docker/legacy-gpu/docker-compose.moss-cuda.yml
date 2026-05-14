@@ -1,0 +1,23 @@
+name: angevoice-legacy-gpu
+
+services:
+  angevoice-legacy-gpu:
+    extends:
+      file: docker-compose.yml
+      service: angevoice-legacy-gpu
+    environment:
+      # MOSS CUDA 实验配置：默认版已经让 Kokoro 使用 GPU；本文件额外开放 moss-nano-cuda。
+      # Tesla P4/P40/GTX10 等老卡可能出现 CUBLAS_STATUS_ALLOC_FAILED、fallback CPU、首包慢或爆音。
+      # 遇到问题请切回默认 docker-compose.yml。
+      ANGEVOICE_ENABLED_MODELS: kokoro,moss-nano-cpu,moss-nano-cuda
+      MOSS_EXECUTION_PROVIDER: cuda
+      MOSS_CUDA_ENABLED: "true"
+      MOSS_PROCESS_ISOLATION_ENABLED: "true"
+      MOSS_PROCESS_ISOLATION_PROVIDERS: cuda
+      MOSS_REALTIME_STREAMING_DECODE: "true"
+      MOSS_MAX_NEW_FRAMES: "300"
+      MOSS_VOICE_CLONE_MAX_TEXT_TOKENS: "45"
+      MOSS_PROMPT_CACHE_MAX_ITEMS: "4"
+      MOSS_STREAM_CHUNK_SECONDS: "0.35"
+      MOSS_STREAM_QUEUE_MAX_ITEMS: "6"
+      MOSS_OUTPUT_TARGET_PEAK: "0.78"

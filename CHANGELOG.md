@@ -6,6 +6,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Se
 
 ---
 
+## [2.6.4.6] - 2026-05-14
+
+### 🚦 模型源站与国内体验
+- `ANGEVOICE_MODEL_SOURCE=auto` 改为先短超时探测 Hugging Face / ModelScope 可达性，再做国家/地区判断，并缓存进程内有效源站，避免国内用户因 `ipapi.co` 超时误落到 Hugging Face 或重复探测拖慢冷启动。
+- 管理后台展示模型源站的 mode/effective/country/reachability 信息，支持手动切换 `auto` / `modelscope` / `huggingface`。
+
+### 🔐 生产安全与管理后台
+- 生产模板改为 `KOKORO_API_KEY=auto`：首次启动自动生成强随机 API Key 并写入 `ANGEVOICE_API_KEY_FILE`，避免占位符导致服务不可用；安装脚本会打印 key 文件查看命令。
+- 管理后台新增 API Key 状态、显示当前 key、生成/轮换 key。
+- 新增 `KOKORO_TRUST_PROXY_HEADERS=false`，默认不信任 `X-Forwarded-For` / `X-Real-IP`，避免裸露公网时被伪造绕过限流。
+- 新增 `KOKORO_PUBLIC_STATUS_ENDPOINTS`，公网敏感部署可让 `/v1/models`、`/v1/models/current`、`/v1/audio/voices` 也要求 Bearer Token。
+- Admin 参数页明确标注“立即生效 / 重启生效 / 卸载模型重建生效”；MOSS 进程隔离变更会尝试卸载已缓存 MOSS engine，下次加载按新配置重建。
+
+### 🔊 MOSS 与前端提示
+- 前端和文档明确提示 MOSS-TTS-Nano 暂不支持语速调节，使用 MOSS 时 speed 必须为 `1.0`。
+- WebSocket session 增加显式状态机（created/accepted/authenticated/queued/running/cancelling/done/error），为后续更强取消和真实 MOSS E2E 观测打基础。
+- README、API Reference、Security、Troubleshooting 补齐 MOSS 进程隔离、WebSocket 取消语义、Git LFS pointer、自动 API Key 和反代安全说明。
+
+### 🧪 CI / 发布
+- 版本对齐为 `2.6.4.6`。
+- Docker smoke 拆成手动/定时重型 workflow；PR/Push CI 保留轻量测试、compose config 和 CPU Dockerfile build check，降低模型下载源网络波动导致的误红。
+- `scripts/install.sh` 继续拆分共享 helper 到 `scripts/install/lib/common.sh`、`docker.sh`、`network.sh`，并修复 `bash <(curl ...install.sh)` 远程执行时找不到模块的回归：缺少本地模块时自动 bootstrap 完整仓库。
+
+---
+
 ## [2.6.4.5] - 2026-05-11
 
 ### 🔌 小智适配

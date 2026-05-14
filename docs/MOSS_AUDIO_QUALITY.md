@@ -1,6 +1,6 @@
 # MOSS 音频听感与小智播放排障
 
-本页记录 AngeVoice v2.6.4.5 之后对 MOSS 听感的默认策略。
+本页记录 AngeVoice v2.6.4.6 之后对 MOSS 听感的默认策略。
 
 ## 默认策略：质量优先
 
@@ -62,15 +62,22 @@ Kokoro 和 MOSS 对“了”的多音字行为不同：
 
 AngeVoice 会在进入模型前按模型类型做内部提示替换，对外 API 不需要改写文本。
 
+## MOSS 文本规则路由和日期上下文
+
+MOSS 文本清洗现在显式以 `model=moss-*` 调用 AngeVoice 中文规则，避免误套 Kokoro 专用的替换字典。也就是说，Kokoro 仍可用较激进的同音字提示修正多音字，而 MOSS 只应用确认有效的保底规则和通用文本规范化，减少把“重庆、银行、调整”等词误改成 Kokoro 提示字的风险。
+
+短日期会按上下文判断：`4.20号`、`活动在4.20开始`、`4.20更新` 会读作“四月二十日”；裸小数、版本号和金额不会无脑改日期，例如 `版本4.20` 保持版本/小数语义，`4.20元` 仍按金额读。
+
+不建议把 `MOSS-Audio-Tokenizer` 直接替换进 MOSS-TTS-Nano。本项目当前只接入与 MOSS-TTS-Nano ONNX runtime 配套的 tokenizer/codec，避免 token 空间或 codec codebook 不匹配导致音质下降或不可用。
 
 ## 低延迟实时模式修正
 
-`MOSS_REALTIME_STREAMING_DECODE=true` 仍然是推荐默认值，适合小智、WebSocket 和 NAS 实时播放。
+`MOSS_REALTIME_STREAMING_DECODE=true` 是推荐默认值，适合小智、WebSocket 和 NAS 稳定播放；`true` 是低延迟可选模式。
 
 需要注意的是，实时模式会产生很多很小的音频块。如果对每个小块都做 1~3ms 的 edge fade，会在播放端形成连续的微小音量缺口，听起来像卡顿、抖动或爆音。因此当前实现只在整段/整块输出上使用边缘淡入淡出，实时逐帧小块只保留去 DC、去孤立脉冲和峰值保护，不再逐小块 fade。
 
 如需最大听感稳定性、可以接受更慢首包，可手动设置：
 
 ```env
-MOSS_REALTIME_STREAMING_DECODE=false
+MOSS_REALTIME_STREAMING_DECODE=true
 ```

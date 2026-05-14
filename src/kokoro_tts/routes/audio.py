@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from ..api_models import TTSRequest
 from ..prompt_audio import save_prompt_audio_bytes
 from ..service_state import ServiceState
+from ..validation import validate_model_speed, validate_tts_text
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,11 @@ def create_audio_router(state: ServiceState, verify_api_key) -> APIRouter:
     @router.post("/v1/audio/speech")
     async def openai_tts(req: TTSRequest, _=Depends(verify_api_key)):
         request_id = state.new_request_id()
+        text = validate_tts_text(req.input, cfg, field_name="input")
+        model = state.model_manager.normalize_model_id(req.model)
+        speed = validate_model_speed(model, req.speed)
         audio_bytes, media_type = await _run_tts_call(
-            lambda: state.synthesize_response_threaded(req.input, req.voice, req.speed, req.response_format, request_id, req.model),
+            lambda: state.synthesize_response_threaded(text, req.voice, speed, req.response_format, request_id, model),
             request_id,
         )
         return StreamingResponse(BytesIO(audio_bytes), media_type=media_type, headers={"X-Request-ID": request_id})
@@ -82,15 +86,14 @@ def create_audio_router(state: ServiceState, verify_api_key) -> APIRouter:
             prompt_audio_path, prompt_audio_id = await _save_prompt_audio_upload(upload, request_id, cfg.moss_prompt_upload_max_bytes)
 
         try:
-            if not text:
-                raise HTTPException(status_code=400, detail="缺少 text 参数")
-            if len(text) > cfg.max_text_length:
-                raise HTTPException(status_code=400, detail=f"文本过长，上限 {cfg.max_text_length} 字符")
+            text = validate_tts_text(text, cfg)
+            model = state.model_manager.normalize_model_id(model)
+            speed = validate_model_speed(model, speed)
             audio_bytes, media_type = await _run_tts_call(
                 lambda: state.synthesize_response_threaded(
                     text,
                     voice,
-                    float(speed),
+                    speed,
                     fmt,
                     request_id,
                     model,
@@ -108,8 +111,9 @@ def create_audio_router(state: ServiceState, verify_api_key) -> APIRouter:
     @router.get("/api/tts")
     async def tts_get(text: str, voice: str = "zm_010", speed: float = 1.0, response_format: str = "wav", model: str | None = None, _=Depends(verify_api_key)):
         request_id = state.new_request_id()
-        if not text:
-            raise HTTPException(status_code=400, detail="缺少 text 参数")
+        text = validate_tts_text(text, cfg)
+        model = state.model_manager.normalize_model_id(model)
+        speed = validate_model_speed(model, speed)
         audio_bytes, media_type = await _run_tts_call(
             lambda: state.synthesize_response_threaded(text, voice, speed, response_format, request_id, model),
             request_id,

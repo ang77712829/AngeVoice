@@ -17,8 +17,6 @@ _ANY_PUNCT = "。！？!？；;，,、：:"
 _PAUSE_PUNCT = "，"
 
 _LEXICON = {
-    "春花秋月",
-    "何时",
     "往事",
     "知多少",
     "小楼",
@@ -42,30 +40,17 @@ _MAX_WORD_LEN = max(len(word) for word in _LEXICON)
 # MOSS G2P: has its own robust polyphone handling; most replacements break it.
 # Only add confirmed MOSS fixes here.
 
-_LIAO_PATTERNS_KOKORO = [
-    (re.compile(r"何时了(?=[$。！？!?；;，,、\s])"), "何时瞭"),
-    (re.compile(r"没完没了(?=[$。！？!?；;，,、\s])"), "没完没瞭"),
-    (re.compile(r"一了百了"), "一瞭百瞭"),
-    (re.compile(r"不了(?=[$。！？!?；;，,、\s])"), "不瞭"),
-    (re.compile(r"得了(?=[$。！？!?；;，,、\s])"), "得瞭"),
-]
-
-# MOSS: replacing 了 with 瞭 makes OpenMOSS lean to liào (4th tone) in
-# phrases such as “春花秋月何时了”.  蓼 is a conservative phonetic hint for
-# liǎo that avoids the common “le” fallback without turning into liào.
-_LIAO_PATTERNS_MOSS = [
-    (re.compile(r"何时了(?=[$。！？!?；;，,、\s])"), "何时蓼"),
-    (re.compile(r"没完没了(?=[$。！？!?；;，,、\s])"), "没完没蓼"),
-    (re.compile(r"一了百了"), "一蓼百蓼"),
-]
+# “春花秋月何时了”一类古诗句不再做字符替换提示。
+# 之前将“了”替换为“瞭/蓼”会在部分 MOSS/Kokoro 路径里读成奇怪音，
+# 默认交给上游 G2P + jieba/内置词典处理，避免为了一个 case 破坏更多文本。
+_LIAO_PATTERNS_KOKORO: tuple = ()
+_LIAO_PATTERNS_MOSS: tuple = ()
 
 # These overrides are deliberately conservative and phrase based.  The right
 # side uses common homophone characters to bias Chinese G2P without adding a
 # separate markup language to the public API.
 _POLYPHONE_PHRASES_KOKORO = (
     # 了: le / liao
-    ("春花秋月何时了", "春花秋月何时瞭"),
-    ("何时了", "何时瞭"),
     ("没完没了", "没完没瞭"),
     ("一了百了", "一瞭百瞭"),
     ("了然", "瞭然"),
@@ -404,8 +389,6 @@ def apply_auto_punctuation(text: str) -> str:
         normalized = "".join(punctuated_lines)
 
     normalized = _LONG_CHINESE_RUN_RE.sub(_punctuate_long_run, normalized)
-    if "何时了" in normalized and not _contains_pause(normalized):
-        normalized += "。"
     return normalized
 
 

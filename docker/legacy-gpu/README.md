@@ -165,12 +165,16 @@ HTTP 合成结果和 MOSS ONNX 模型会通过 Compose 挂载持久化：
 - ../../outputs:/app/outputs
 ```
 
-To try MOSS CUDA on legacy GPU, manually add `moss-nano-cuda` and set
-`MOSS_CUDA_ENABLED=true`; keep it only if the built-in self-test and listening
-test are clean.
+To try MOSS CUDA on legacy GPU, manually add `moss-nano-cuda`, set
+`MOSS_CUDA_ENABLED=true`, and only enable `MOSS_PROCESS_ISOLATION_ENABLED=true` when debugging CUDA/ONNX Runtime hangs
+with `MOSS_PROCESS_ISOLATION_PROVIDERS=cuda` so timeout/cancel recovery can kill
+the worker instead of waiting on a stuck CUDA thread. Keep it only if the built-in
+self-test and listening test are clean.
 
-如果要在老架构GPU 上尝试 MOSS CUDA，需要手动加入 `moss-nano-cuda` 并设置
-`MOSS_CUDA_ENABLED=true`；只有内置自检和人工试听都正常时才建议长期使用。
+如果要在老架构 GPU 上尝试 MOSS CUDA，需要手动加入 `moss-nano-cuda`，设置
+`MOSS_CUDA_ENABLED=true`，并仅在排查 CUDA/ONNX Runtime 卡死时再同步设置 `MOSS_PROCESS_ISOLATION_ENABLED=true`、
+`MOSS_PROCESS_ISOLATION_PROVIDERS=cuda`，这样超时/取消恢复时可以杀掉 worker，
+而不是等待卡死的 CUDA 线程。只有内置自检和人工试听都正常时才建议长期使用。
 
 For Tesla P4 specifically, the modern GPU profile has been validated with
 `onnxruntime-gpu==1.20.2` and `nvidia-cudnn-cu12==9.1.0.70`. Use the legacy
@@ -195,7 +199,8 @@ Admin APIs are disabled by default. Enable them only with an API key:
 
 ```yaml
 - KOKORO_ADMIN_ENABLED=true
-- KOKORO_API_KEY=<paste-generated-token-here>
+- ANGEVOICE_ADMIN_PASSWORD=<strong-password>
+- KOKORO_API_KEY=auto  # 或填入自己的强随机 token
 ```
 
 Voice upload also requires:

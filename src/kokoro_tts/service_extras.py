@@ -4,12 +4,7 @@
 ``server.py`` 继续膨胀。
 """
 
-from __future__ import annotations
-
 import asyncio
-import base64
-import binascii
-import hmac
 import os
 import json
 import logging
@@ -25,22 +20,14 @@ from fastapi import Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from .admin_auth import make_verify_admin
+from .validation import validate_model_speed, validate_tts_text
+
 logger = logging.getLogger(__name__)
 
 ALLOWED_MP3_BITRATES = {"64k", "96k", "128k", "160k", "192k", "256k", "320k"}
 _fallback_stats_lock = threading.Lock()
 
-
-def _admin_credential_candidates(value: str) -> list[bytes]:
-    candidates: list[bytes] = []
-    for encoding in ("utf-8", "latin-1"):
-        try:
-            encoded = value.encode(encoding)
-        except UnicodeEncodeError:
-            continue
-        if encoded not in candidates:
-            candidates.append(encoded)
-    return candidates
 
 
 class BatchItem(BaseModel):
@@ -136,38 +123,7 @@ def register_extra_routes(
         with _fallback_stats_lock:
             stats[name] = stats.get(name, 0) + delta
 
-    async def verify_admin(request: Request):
-        if not cfg.admin_enabled:
-            raise HTTPException(status_code=404, detail="Admin API disabled")
-
-        auth = request.headers.get("Authorization", "")
-        if cfg.api_key and auth.lower().startswith("bearer "):
-            token = auth[7:].strip()
-            if hmac.compare_digest(token, cfg.api_key or ""):
-                return
-
-        admin_password = (os.environ.get("ANGEVOICE_ADMIN_PASSWORD") or "").strip()
-        if not admin_password:
-            raise HTTPException(status_code=503, detail="Admin password is not configured")
-
-        if auth.lower().startswith("basic "):
-            raw = auth.split(" ", 1)[1].strip()
-            try:
-                decoded = base64.b64decode(raw, validate=True)
-                username_bytes, password_bytes = decoded.split(b":", 1)
-            except (binascii.Error, ValueError):
-                username_bytes, password_bytes = b"", b""
-            expected_username = os.environ.get("ANGEVOICE_ADMIN_USERNAME", "admin") or "admin"
-            username_ok = any(hmac.compare_digest(username_bytes, item) for item in _admin_credential_candidates(expected_username))
-            password_ok = any(hmac.compare_digest(password_bytes, item) for item in _admin_credential_candidates(admin_password))
-            if username_ok and password_ok:
-                return
-
-        raise HTTPException(
-            status_code=401,
-            detail="Admin login required",
-            headers={"WWW-Authenticate": 'Basic realm="AngeVoice Admin", charset="UTF-8"'},
-        )
+    verify_admin = make_verify_admin(cfg)
 
     def normalize_extra_format(fmt: str) -> str:
         fmt = (fmt or "wav").lower()
@@ -179,6 +135,12 @@ def register_extra_routes(
 
     async def synthesize_optional_mp3(text: str, voice: str, speed: float, fmt: str, request_id: str, model: str | None = None):
         fmt = normalize_extra_format(fmt)
+        text = validate_tts_text(text, cfg)
+        model = model or None
+        resolved_model = getattr(getattr(app, "state", object()), "angevoice", None)
+        if resolved_model is not None:
+            model = resolved_model.model_manager.normalize_model_id(model)
+        speed = validate_model_speed(model, speed)
         if fmt != "mp3":
             return await synthesize_threaded(text, voice, speed, fmt, request_id, model)
         wav_bytes, _ = await synthesize_threaded(text, voice, speed, "wav", request_id, model)
@@ -211,16 +173,18 @@ def register_extra_routes(
         batch_sem = asyncio.Semaphore(max(1, int(getattr(cfg, "batch_concurrency", 1))))
 
         async def run_item(index: int, item: BatchItem):
-            if not item.text:
-                return index, None, {"index": index, "status": "error", "error": "text is empty"}
             item_id = f"{batch_id}-{index + 1:03d}"
             voice = item.voice or req.voice
             speed = item.speed if item.speed is not None else req.speed
             model = item.model or req.model
             filename = _safe_zip_filename(item.filename, index, ext)
+            try:
+                text = validate_tts_text(item.text, cfg)
+            except HTTPException as exc:
+                return index, None, {"index": index, "status": "error", "error": exc.detail}
             async with batch_sem:
                 try:
-                    audio_bytes, _media_type = await synthesize_optional_mp3(item.text, voice, speed, fmt, item_id, model)
+                    audio_bytes, _media_type = await synthesize_optional_mp3(text, voice, speed, fmt, item_id, model)
                     return index, (filename, audio_bytes), {"index": index, "status": "ok", "filename": filename, "bytes": len(audio_bytes)}
                 except HTTPException as exc:
                     return index, None, {"index": index, "status": "error", "error": exc.detail}

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-EXPECTED_VERSION = "2.6.4.5"
+EXPECTED_VERSION = "2.6.4.6"
 
 
 def _has_module(name: str) -> bool:
@@ -47,6 +47,8 @@ class TestConfig:
         assert config.model_idle_unload_current is True
         assert config.moss_process_isolation_enabled is False
         assert config.moss_process_isolation_providers == "cuda"
+        assert config.moss_realtime_streaming_decode is True
+        assert config.model_source == "auto"
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("KOKORO_PORT", "9000")
@@ -55,6 +57,7 @@ class TestConfig:
         monkeypatch.setenv("KOKORO_MAX_QUEUE_LENGTH", "3")
         monkeypatch.setenv("ANGEVOICE_IDLE_TIMEOUT_SECONDS", "30")
         monkeypatch.setenv("MOSS_PROCESS_ISOLATION_ENABLED", "false")
+        monkeypatch.setenv("ANGEVOICE_MODEL_SOURCE", "modelscope")
         from kokoro_tts.config import load_config
         config = load_config()
         assert config.port == 9000
@@ -63,6 +66,50 @@ class TestConfig:
         assert config.max_queue_length == 3
         assert config.model_idle_timeout_seconds == 30
         assert config.moss_process_isolation_enabled is False
+        assert config.model_source == "modelscope"
+
+
+    def test_auto_api_key_generates_persistent_secret(self, monkeypatch, tmp_path):
+        from kokoro_tts.config import load_config
+
+        key_file = tmp_path / "api_key.txt"
+        monkeypatch.setenv("KOKORO_API_KEY", "auto")
+        monkeypatch.setenv("ANGEVOICE_API_KEY_FILE", str(key_file))
+        cfg = load_config(model_dir=str(tmp_path / "models"))
+        assert cfg.api_key and cfg.api_key.startswith("av_")
+        assert cfg.api_key_auto_generated is True
+        assert key_file.read_text(encoding="utf-8").strip() == cfg.api_key
+
+        cfg2 = load_config(model_dir=str(tmp_path / "models"))
+        assert cfg2.api_key == cfg.api_key
+
+    def test_model_source_auto_uses_reachability_before_country(self):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts import model_sources
+
+        cfg = TTSConfig(model_source="auto")
+        with patch.object(model_sources, "_probe_reachability", return_value=(False, True)), \
+             patch.object(model_sources, "_detect_country", return_value=""):
+            assert model_sources.resolve_model_source(cfg) == "modelscope"
+
+        cfg = TTSConfig(model_source="auto")
+        with patch.object(model_sources, "_probe_reachability", return_value=(True, True)), \
+             patch.object(model_sources, "_detect_country", return_value="CN"):
+            assert model_sources.resolve_model_source(cfg) == "modelscope"
+
+        cfg = TTSConfig(model_source="auto")
+        with patch.object(model_sources, "_probe_reachability", return_value=(True, False)), \
+             patch.object(model_sources, "_detect_country", return_value="CN"):
+            assert model_sources.resolve_model_source(cfg) == "huggingface"
+
+    def test_model_source_auto_uses_cached_effective_source(self):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts import model_sources
+
+        cfg = TTSConfig(model_source="auto")
+        cfg.model_source_effective = "modelscope"
+        with patch.object(model_sources, "_probe_reachability", side_effect=AssertionError("cache miss")):
+            assert model_sources.resolve_model_source(cfg) == "modelscope"
 
     def test_moss_cuda_can_be_disabled(self):
         from kokoro_tts.config import TTSConfig
@@ -71,6 +118,29 @@ class TestConfig:
         assert config.enabled_models == ["kokoro", "moss-nano-cpu"]
         assert config.default_model == "moss-nano-cpu"
         assert config.moss_execution_provider == "cpu"
+
+
+class TestValidationHelpers:
+    @pytest.mark.skipif(not _has_module("fastapi"), reason="fastapi not installed")
+    def test_text_length_validation_is_shared(self):
+        from fastapi import HTTPException
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.validation import validate_tts_text
+
+        cfg = TTSConfig(max_text_length=3)
+        assert validate_tts_text(" 你好 ", cfg) == "你好"
+        with pytest.raises(HTTPException):
+            validate_tts_text("四个字符", cfg)
+
+    @pytest.mark.skipif(not _has_module("fastapi"), reason="fastapi not installed")
+    def test_moss_rejects_speed_adjustment(self):
+        from fastapi import HTTPException
+        from kokoro_tts.validation import validate_model_speed
+
+        assert validate_model_speed("moss-nano-cpu", 1.0) == 1.0
+        with pytest.raises(HTTPException):
+            validate_model_speed("moss-nano-cpu", 1.2)
+        assert validate_model_speed("kokoro", 1.2) == 1.2
 
 
 class TestMossHelpers:
@@ -103,11 +173,41 @@ class TestMossHelpers:
         assert abs(float(processed[0, 0])) < 1e-6
         assert float(np.max(np.abs(processed))) <= 0.7801
 
-    def test_moss_liao_override_uses_tone3_hint(self):
+    def test_fragile_liao_hint_is_not_rewritten_by_default(self):
         from kokoro_tts.zh_rules import normalize_chinese_rules
 
-        assert "何时蓼" in normalize_chinese_rules("春花秋月何时了", model="moss-nano-cuda")
-        assert "何时瞭" in normalize_chinese_rules("春花秋月何时了", model="kokoro")
+        assert "春花秋月何时了" in normalize_chinese_rules("春花秋月何时了", model="moss-nano-cuda")
+        assert "春花秋月何时了" in normalize_chinese_rules("春花秋月何时了", model="kokoro")
+
+
+    def test_moss_text_rules_use_moss_route_not_kokoro_polyphone_dictionary(self):
+        from kokoro_tts.moss.text import clean_text
+
+        cleaned = clean_text("春花秋月何时了，重庆4.20更新。", apply_angevoice_rules=True, model="moss-nano-cuda")
+        assert "何时蓼" not in cleaned
+        assert "何时瞭" not in cleaned
+        assert "虫庆" not in cleaned
+        assert "重庆" in cleaned
+        assert "四月二十日更新" in cleaned
+
+    def test_short_dot_date_uses_context_and_preserves_decimal_or_version(self):
+        from kokoro_tts.engine import normalize_text_for_tts
+
+        assert "四月二十日" in normalize_text_for_tts("活动在4.20开始")
+        assert "四月二十日" in normalize_text_for_tts("4.20号更新")
+        assert "4.20" in normalize_text_for_tts("版本4.20已经发布")
+        assert "4.20" in normalize_text_for_tts("比例是4.20")
+        assert "四元二角" in normalize_text_for_tts("价格是4.20元")
+
+    def test_moss_rejects_speed_control_directly(self):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.moss_engine import MossNanoEngine
+
+        engine = MossNanoEngine(TTSConfig(), execution_provider="cpu")
+        engine._loaded = True
+        engine._runtime = object()
+        with pytest.raises(ValueError, match="暂不支持语速调节"):
+            engine._validate_request("你好", "Junhao", 1.2)
 
     def test_moss_health_flags_and_executor_rebuild(self):
         from kokoro_tts.config import TTSConfig
@@ -146,6 +246,16 @@ class TestEngineManager:
         assert manager.unload_inactive(include_current=True) == ["kokoro"]
         engine.unload.assert_called_once()
 
+    def test_drop_model_removes_engine_for_config_rebuild(self):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.engine_manager import EngineManager
+
+        engine = MagicMock(); engine.is_loaded = True
+        manager = EngineManager(TTSConfig(enabled_models=["kokoro"], default_model="kokoro"), initial_engine=engine)
+        assert manager.drop_model("kokoro") is True
+        engine.unload.assert_called_once()
+        assert "kokoro" not in manager._engines
+
 
 class TestSecurityAndMiddleware:
 
@@ -165,6 +275,18 @@ class TestSecurityAndMiddleware:
         from kokoro_tts.config import TTSConfig
         with pytest.raises(ValueError, match="placeholder"):
             TTSConfig(api_key="CHANGE-ME-TO-A-REAL-SECRET-KEY").validate_security()
+
+
+    def test_rate_limit_ignores_forwarded_headers_by_default(self):
+        from types import SimpleNamespace
+        from kokoro_tts.rate_limit import _extract_client_key
+
+        class Request:
+            headers = {"x-forwarded-for": "1.2.3.4", "x-real-ip": "5.6.7.8"}
+            client = SimpleNamespace(host="10.0.0.9")
+
+        assert _extract_client_key(Request()) == "ip:10.0.0.9"
+        assert _extract_client_key(Request(), trust_proxy_headers=True) == "ip:1.2.3.4"
 
     @pytest.mark.skipif(not _has_module("fastapi"), reason="fastapi not installed")
     def test_rate_limit_middleware_initializes_and_limits(self):

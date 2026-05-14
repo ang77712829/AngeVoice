@@ -149,7 +149,7 @@ Content-Type: application/json
 | `model` | string | `kokoro` | `kokoro`、`moss-nano-cpu`、`moss-nano-cuda` 或别名 |
 | `input` | string | 必填 | 待合成文本，`text` 也可作为别名 |
 | `voice` | string | 模型默认 | Kokoro 音色 ID 或 MOSS 预设音色 |
-| `speed` | number | `1.0` | 范围 `0.5` 到 `2.0`；MOSS 暂不支持语速调节 |
+| `speed` | number | `1.0` | 范围 `0.5` 到 `2.0`；MOSS 暂不支持语速调节，使用 MOSS 时必须为 `1.0`，否则返回 400 |
 | `response_format` | string | `wav` | 可选 `wav`、`pcm`、`mp3`（需开启） |
 
 Kokoro 示例：
@@ -336,7 +336,7 @@ ws://localhost:8000/ws/v1/tts
 | `model` | string | 当前默认模型 | 可选，指定模型 ID |
 | `text` | string | 必填 | 待合成文本 |
 | `voice` | string | 模型默认音色 | Kokoro 音色 ID 或 MOSS 预设 |
-| `speed` | number | 配置默认值 | 范围 `0.5` 到 `2.0`；MOSS 暂不支持语速调节 |
+| `speed` | number | 配置默认值 | 范围 `0.5` 到 `2.0`；MOSS 暂不支持语速调节，使用 MOSS 时必须为 `1.0`，否则返回 400 |
 | `format` | string | `pcm_s16le` | 可选 `pcm_s16le` 或 `wav` |
 | `binary` | boolean | `false` | 启用后发送二进制音频帧（需满足条件） |
 | `token` | string | 空 | 启用 API key 时需传递 |
@@ -616,7 +616,10 @@ If upload must be enabled, restrict to internal network admin endpoints with rev
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启低延迟；实时路径跳过逐小块边缘淡入淡出 |
+| `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启以降低首包等待；如出现电流音/卡顿可改为 `false` 走质量优先整块生成后分包 |
+| `KOKORO_TRUST_PROXY_HEADERS` | `false` | 是否信任 `X-Forwarded-For`/`X-Real-IP`；裸露公网保持 false，反代后确认可信再开启 |
+| `KOKORO_ADMIN_ALLOW_API_KEY` | `false` | 是否允许普通 Bearer API Key 登录管理后台；共享 API Key 给客户端时保持 false |
+| `KOKORO_PUBLIC_STATUS_ENDPOINTS` | `true` | 是否公开 `/v1/models`、`/v1/models/current`、`/v1/audio/voices` 和页面模型目录 bootstrap；设为 false 后目录接口需要 Bearer Token，`/health` 仅返回最小健康信息 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.25` | 音频播放余量低阈值（秒）：低于此值每次只解码 1 帧，优先保证点生成后尽快出声 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.65` | 音频播放余量中阈值（秒）：低于此值每次解码 2 帧 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.20` | 音频播放余量高阈值（秒）：低于此值每次解码 4 帧，高于此值每次解码 8 帧以减少块间抖动 |
@@ -662,7 +665,7 @@ ANGEVOICE_IDLE_CHECK_INTERVAL=30
 | 克隆合成出现 OOM / 爆音 / 失真 | prompt 过长、CUDA provider 不稳定、显存不足 | 降低 `MOSS_PROMPT_AUDIO_MAX_SECONDS` 至 5-8，或改用 `moss-nano-cpu` 测试 |
 | `401 Unauthorized` | 已配置 `KOKORO_API_KEY` 但请求未携带 token | 在请求头添加 Bearer token，或在 WebSocket 首包中添加 `token` 字段 |
 
-| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | 是否启用 MOSS 进程级隔离；默认关闭；它只影响隔离 worker，不影响质量优先流式分包 |
+| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | 是否启用 MOSS 进程级隔离；默认关闭；低配/老机器建议保持关闭，它只影响隔离 worker，不影响质量优先流式分包 |
 | `MOSS_PROCESS_ISOLATION_PROVIDERS` | `cuda` | 哪些 provider 使用隔离子进程 |
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | worker 超时后终止/强杀的宽限秒数 |
 

@@ -8,7 +8,6 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-
 ## 一键安装（推荐普通用户）
 
 服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、老架构 NVIDIA 显卡、Docker/Compose、GitHub、GHCR、Docker Hub 与本机 Docker registry mirror，并推荐 `cpu` / `gpu` / `legacy-gpu` 画像。
@@ -27,7 +26,17 @@ bash scripts/install.sh
 
 默认 Docker 配置集中在 `docker/angevoice.env`，CPU/NAS 场景开箱安全；GPU 和 legacy-gpu 画像只覆盖必要的 CUDA 参数。
 
-脚本在源码目录内运行时会**就地安装/更新**，不会再额外克隆到 `/opt/angevoice`，更适合 NAS 文件管理。远程 `curl` 方式没有本地项目目录时才会使用 `/opt/angevoice`。安装完成后会自动读取本机局域网 IP，输出完整访问地址，例如 `http://192.168.1.10:8101`。
+脚本在源码目录内运行时会**就地安装/更新**，不会再额外克隆到 `/opt/angevoice`，更适合 NAS 文件管理。远程 `curl` 方式没有本地项目目录时会自动 bootstrap 完整仓库到 `/opt/angevoice`，所以 `bash <(curl ...install.sh)` 不会因为 `scripts/install/lib/*.sh` 模块缺失而失败。安装完成后会自动读取本机局域网 IP，输出完整访问地址，例如 `http://192.168.1.10:8101`。
+
+生产 Docker 模板默认 `KOKORO_API_KEY=auto`。首次启动会自动生成 API Key 并写入：
+
+```bash
+/opt/angevoice/outputs/.angevoice-api-key
+# 查看命令
+cat /opt/angevoice/outputs/.angevoice-api-key
+```
+
+请把这个 token 粘贴到 Studio 设置里的 Bearer Token。默认管理后台关闭；如需网页查看/轮换，请开启 `KOKORO_ADMIN_ENABLED=true` 并设置 `ANGEVOICE_ADMIN_PASSWORD`。
 
 安装完成后脚本会创建 `AngeVoice` 管理命令。以后直接输入：
 
@@ -287,7 +296,7 @@ WebSocket 流式克隆时，参考音频放在首个 JSON 的 `prompt_audio.data
 
 ## 模型文件
 
-首次运行时，如果本地没有完整模型文件，服务会自动从 Hugging Face 下载。离线部署或想提升冷启动速度，建议手动准备：
+首次运行时，如果本地没有完整模型文件，服务会按 `ANGEVOICE_MODEL_SOURCE` 自动选择下载源。`auto` 不再只依赖 `ipapi.co`：它会先短超时探测 Hugging Face 与 ModelScope 可达性；若 HF 不可达而 ModelScope 可达会直接走 ModelScope；两者都可达时再用国家/地区判断；国家判断失败时按可达性兜底。也可在管理后台或环境变量中强制设为 `modelscope` / `huggingface`。离线部署或想提升冷启动速度，建议手动准备：
 
 ```bash
 pip install huggingface_hub
@@ -304,7 +313,7 @@ models/kokoro-v1_1-zh.pth
 models/voices/*.pt
 ```
 
-普通 `git clone` 可能只拿到 Git LFS 指针文件，不一定是真实模型文件。Docker Compose 已持久化 Hugging Face 缓存，避免容器重建后重复下载。
+普通 `git clone` 或 GitHub Source code ZIP 可能只拿到 Git LFS 指针文件，不一定是真实模型文件。如果文件内容以 `version https://git-lfs.github.com/spec/v1` 开头，它只是指针，不是真模型。服务会在首次运行时自动下载真实权重；Docker Compose 已持久化 Hugging Face/ModelScope 缓存，避免容器重建后重复下载。
 
 ## Docker 持久化
 
@@ -330,8 +339,9 @@ environment:
 |---|---|---|
 | `KOKORO_DEVICE` | `auto` | `auto` / `cpu` / `cuda` |
 | `KOKORO_WORKERS` | `1` | Uvicorn worker 数；GPU 建议保持 1 |
-| `KOKORO_MAX_CONCURRENT_REQUESTS` | `1` | 单进程最大合成并发 |
-| `KOKORO_API_KEY` | - | 设置后启用 Bearer 鉴权；占位值会被拒绝 |
+| `KOKORO_MAX_CONCURRENT_REQUESTS` | `1` | 单进程最大合成并发；NAS/老显卡默认保守，高显存 GPU 可调到 2~4 |
+| `KOKORO_API_KEY` | - | 设置后启用 Bearer 鉴权；`auto` 会首次启动生成强随机 key 并写入 `ANGEVOICE_API_KEY_FILE`；占位值会被拒绝 |
+| `ANGEVOICE_API_KEY_FILE` | `/app/outputs/.angevoice-api-key` | `KOKORO_API_KEY=auto` 时的持久化 key 文件，管理后台可查看/轮换 |
 | `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | WebSocket 输出小包时长 |
 | `KOKORO_CACHE_ENABLED` | `true` | 是否启用内存 LRU 缓存 |
 | `KOKORO_BATCH_ENABLED` | `true` | 是否启用批量合成 |
@@ -341,15 +351,18 @@ environment:
 | `ANGEVOICE_DEFAULT_MODEL` | `kokoro` | 启动时加载的默认模型 |
 | `ANGEVOICE_MODEL_UNLOAD_ON_SWITCH` | `true` | 切换模型时卸载旧模型 |
 | `ANGEVOICE_SAVE_OUTPUTS` | `false` | 是否保存 HTTP 合成结果 |
-| `MOSS_MODEL_DIR` | - | MOSS ONNX 模型目录 |
+| `ANGEVOICE_MODEL_SOURCE` | `auto` | 模型下载源：`auto` 先探测 Hugging Face/ModelScope 可达性，再用国家判断；也可手动设为 `modelscope` / `huggingface` |
+| `KOKORO_MODELSCOPE_REPO` | `AI-ModelScope/Kokoro-82M-v1.1-zh` | 国内自动下载 Kokoro 的 ModelScope 仓库 |
+| `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | 国内自动下载 MOSS ONNX 的 ModelScope 仓库 |
+| `MOSS_MODEL_DIR` | - | MOSS ONNX 模型目录；未设置时可由自动源站策略下载/填充 |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider：`cpu` / `cuda` |
 | `MOSS_CUDA_ENABLED` | `true` | 是否允许注册/切换 `moss-nano-cuda` |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | MOSS 克隆参考音频上传大小上限 |
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | 克隆参考音频裁剪时长 |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | 参考音频编码缓存条目数 |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | CUDA 自检失败时回退 CPU |
-| `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启以优先保证低延迟；实时路径会跳过逐小块边缘淡入淡出，降低爆音和卡顿 |
-| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | 是否启用 MOSS 进程级隔离 |
+| `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启以降低首包等待；如出现电流音/卡顿可改为 `false` 走质量优先整块生成后分包 |
+| `MOSS_PROCESS_ISOLATION_ENABLED` | `false` | 是否启用 MOSS 进程级隔离；已加载 engine 需要卸载/重建后生效，管理后台会提示/尝试卸载 |
 | `MOSS_PROCESS_ISOLATION_PROVIDERS` | `cuda` | 哪些 provider 走隔离子进程，逗号分隔 |
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | 超时后终止 worker 的宽限秒数 |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | 拒绝静音、NaN/Inf 或明显 clipping 的 MOSS 自检输出 |
@@ -363,12 +376,16 @@ environment:
 | `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.65` | 音频播放余量中阈值（秒），低于此值每次解码 2 帧 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.20` | 音频播放余量高阈值（秒），低于此值每次解码 4 帧，高于此值每次解码 8 帧 |
 | `MOSS_STREAM_CHUNK_MIN_FLOOR` | `0.10` | 流式最小分包时长下限（秒），避免过短碎片造成卡顿感 |
+| `KOKORO_RATE_LIMIT_QPS` | `0` | 按 API Key 或客户端 IP 限流，0=关闭；运行中修改需重启中间件生效 |
+| `KOKORO_MAX_QUEUE_LENGTH` | `0` | 全局 in-flight 请求上限，0=关闭；运行中修改需重启中间件生效 |
+| `KOKORO_TRUST_PROXY_HEADERS` | `false` | 默认不信任 `X-Forwarded-For`/`X-Real-IP`，避免裸露公网时被伪造绕过限流；确认在可信反代后面才设 true |
+| `KOKORO_PUBLIC_STATUS_ENDPOINTS` | `true` | 是否公开 `/v1/models`、`/v1/models/current`、`/v1/audio/voices` 和页面模型目录 bootstrap；公网敏感部署可设为 false，`/health` 仅返回最小健康信息 |
 
 完整配置见 [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) 和各 Docker Compose 文件。
 
 ## 安全说明
 
-- 公网部署建议设置 `KOKORO_API_KEY`，并在反向代理层限制来源。
+- 公网部署建议设置 `KOKORO_API_KEY`；生产模板可用 `KOKORO_API_KEY=auto` 自动生成，查看路径默认是 `outputs/.angevoice-api-key`，并在反向代理层限制来源。
 - 管理后台/管理接口默认关闭；开启 `KOKORO_ADMIN_ENABLED=true` 时必须设置 `ANGEVOICE_ADMIN_PASSWORD`，账号和密码支持中文，公网部署还建议同时设置 `KOKORO_API_KEY` 并限制来源。
 - `.pt` 音色上传默认关闭。只上传可信来源文件；PyTorch 权重文件不应来自不可信渠道。
 
@@ -377,13 +394,15 @@ environment:
 如果必须开放，建议只在内网管理端使用，并配合反代 IP 白名单。
 `.pt` 文件是 PyTorch 序列化格式，理论上可执行任意代码。
 - 不建议把 `/admin/*` 直接暴露到公网。
+- 默认情况下普通 Bearer API Key 不能登录管理后台；如需兼容旧用法，可显式设置 `KOKORO_ADMIN_ALLOW_API_KEY=true`。
+- 设置 `KOKORO_PUBLIC_STATUS_ENDPOINTS=false` 后，模型/音色 JSON 接口和页面 bootstrap 会隐藏详细目录；公开 `/health` 只返回最小健康信息。
 
 详见 [`docs/SECURITY.md`](docs/SECURITY.md)。
 
 ## 已知限制
 
 - AngeVoice 不是独立训练的新模型，音质、许可证和语言能力受上游模型影响。
-- `moss-nano-cuda` 是实验模式；老显卡长期服务前建议充分试听确认无爆音、失真或 clipping。
+- `moss-nano-cuda` 是实验模式；老显卡/NAS 默认不建议开启进程隔离；只有排查 CUDA/ONNX Runtime 卡死时再设置 `MOSS_PROCESS_ISOLATION_ENABLED=true` 且保留 `MOSS_PROCESS_ISOLATION_PROVIDERS=cuda`，长期服务前充分试听确认无爆音、失真或 clipping。
 - 长文本依赖分段合成，极长文本建议走批量/任务队列工作流。
 - GPU 场景不建议多 worker 同时加载模型，容易造成显存占用翻倍。
 - MP3 输出依赖 ffmpeg。
@@ -430,4 +449,6 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 
 ## License
 
-MIT
+AngeVoice project code is MIT.
+Kokoro and MOSS-TTS-Nano remain under their upstream licenses.
+See `THIRD_PARTY_NOTICES.md` and `ACKNOWLEDGEMENTS.md`.

@@ -10,49 +10,17 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-MODEL_FILENAME = "kokoro-v1_1-zh.pth"
-PLACEHOLDER_API_KEYS = {
-    "change-me",
-    "change-me-to-a-real-secret-key",
-    "change-me-to-a-real-secret",
-    "replace-with-a-long-random-token",
-    "<paste-generated-token-here>",
-    "paste-generated-token-here",
-    "<your-generated-secret>",
-    "your-generated-secret",
-    "staging-change-me-to-real-key",
-}
-MOSS_GENERIC_MODEL_IDS = {"moss", "moss-nano", "moss-tts-nano"}
-MOSS_CPU_MODEL_IDS = {"moss-cpu", "moss-nano-cpu", "moss-tts-nano-cpu"}
-MOSS_CUDA_MODEL_IDS = {"moss-cuda", "moss-gpu", "moss-nano-cuda", "moss-tts-nano-cuda"}
-
-
-def _normalize_config_model_id(model_id: str, moss_provider: str) -> str:
-    raw = str(model_id or "").strip().lower()
-    if raw in MOSS_GENERIC_MODEL_IDS:
-        return "moss-nano-cuda" if moss_provider == "cuda" else "moss-nano-cpu"
-    if raw in MOSS_CPU_MODEL_IDS:
-        return "moss-nano-cpu"
-    if raw in MOSS_CUDA_MODEL_IDS:
-        return "moss-nano-cuda"
-    return raw
-
-
-class IntEnvSpec(NamedTuple):
-    attr: str
-    min_value: int | None = None
-    max_value: int | None = None
-
-
-class FloatEnvSpec(NamedTuple):
-    attr: str
-    min_value: float | None = None
-    max_value: float | None = None
-
+from .config_env import apply_env
+from .config_ids import (
+    MODEL_FILENAME,
+    MOSS_GENERIC_MODEL_IDS,
+    PLACEHOLDER_API_KEYS,
+    normalize_config_model_id,
+)
 
 def _find_models_dir() -> Path:
     candidates = [
@@ -61,51 +29,13 @@ def _find_models_dir() -> Path:
         Path(__file__).resolve().parent.parent.parent / "models",
         Path("/app/models"),
     ]
-    for p in candidates:
-        if p and p.exists() and (p / MODEL_FILENAME).exists():
-            logger.info(f"找到模型目录: {p}")
-            return p
-
+    for path in candidates:
+        if path and path.exists() and (path / MODEL_FILENAME).exists():
+            logger.info("找到模型目录: %s", path)
+            return path
     fallback = Path.cwd() / "models"
-    logger.warning(f"未找到模型目录，使用兜底路径: {fallback}")
+    logger.warning("未找到模型目录，使用兜底路径: %s", fallback)
     return fallback
-
-
-def _get_env_int(name: str, default: int) -> int:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        logger.warning(f"忽略无效整数环境变量 {name}={value!r}")
-        return default
-
-
-def _get_env_float(name: str, default: float) -> float:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        logger.warning(f"忽略无效浮点环境变量 {name}={value!r}")
-        return default
-
-
-def _get_env_bool(name: str, default: bool) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on", "y"}
-
-
-def _clamp(value, min_value=None, max_value=None):
-    if min_value is not None:
-        value = max(min_value, value)
-    if max_value is not None:
-        value = min(max_value, value)
-    return value
 
 
 @dataclass
@@ -127,6 +57,8 @@ class TTSConfig:
 
     cors_origins: list = field(default_factory=lambda: ["http://localhost:8000"])
     api_key: Optional[str] = None
+    api_key_file: Path = field(default_factory=lambda: Path("/app/outputs/.angevoice-api-key"))
+    api_key_auto_generated: bool = False
 
     stream_enabled: bool = True
     stream_format: str = "pcm_s16le"
@@ -143,6 +75,7 @@ class TTSConfig:
     batch_max_items: int = 20
     batch_concurrency: int = 1
     admin_enabled: bool = False
+    admin_allow_api_key: bool = False
     voice_upload_enabled: bool = False
     voice_upload_max_bytes: int = 10 * 1024 * 1024
     mp3_enabled: bool = False
@@ -156,6 +89,21 @@ class TTSConfig:
     save_outputs: bool = False
     output_dir: Path = field(default_factory=lambda: Path("/app/outputs"))
     output_max_files: int = 1000
+
+    # 模型源站：auto 先短超时探测 HF/ModelScope 可达性，再做国家/地区判断。
+    model_source: str = "auto"
+    model_source_detect_url: str = "https://ipapi.co/country/"
+    model_source_detect_timeout_seconds: float = 1.5
+    model_source_probe_timeout_seconds: float = 1.5
+    model_source_probe_hf_url: str = "https://huggingface.co"
+    model_source_probe_modelscope_url: str = "https://www.modelscope.cn"
+    model_source_effective: str = "auto"
+    model_source_country: str = ""
+    model_source_hf_reachable: bool | None = None
+    model_source_modelscope_reachable: bool | None = None
+    kokoro_hf_repo: str = "hexgrad/Kokoro-82M-v1.1-zh"
+    kokoro_modelscope_repo: str = "AI-ModelScope/Kokoro-82M-v1.1-zh"
+    moss_modelscope_repo: str = "openmoss/MOSS-TTS-Nano-100M-ONNX"
 
     moss_model_dir: Optional[Path] = None
     moss_repo_path: Optional[Path] = None
@@ -195,6 +143,8 @@ class TTSConfig:
     rate_limit_qps: float = 0.0
     rate_limit_burst: int = 5
     max_queue_length: int = 0
+    trust_proxy_headers: bool = False
+    public_status_endpoints: bool = True
 
     # MOSS 流式解码预算阈值：按已输出音频领先实时播放的秒数决定解码帧数。
     moss_stream_budget_threshold_low: float = 0.25
@@ -238,13 +188,16 @@ class TTSConfig:
         if not self.enabled_models:
             raise ValueError("ANGEVOICE_ENABLED_MODELS cannot be empty")
         self.enabled_models = [str(item).strip().lower() for item in self.enabled_models if str(item).strip()]
+        self.model_source = str(self.model_source or "auto").strip().lower()
+        if self.model_source not in {"auto", "huggingface", "modelscope"}:
+            raise ValueError("ANGEVOICE_MODEL_SOURCE must be auto, huggingface, or modelscope")
         self.moss_execution_provider = str(self.moss_execution_provider or "cpu").strip().lower()
         if self.moss_execution_provider not in {"cpu", "cuda"}:
             raise ValueError("MOSS_EXECUTION_PROVIDER must be cpu or cuda")
         filtered_models: list[str] = []
         for item in self.enabled_models:
             provider = "cpu" if not self.moss_cuda_enabled and item in MOSS_GENERIC_MODEL_IDS else self.moss_execution_provider
-            normalized_item = _normalize_config_model_id(item, provider)
+            normalized_item = normalize_config_model_id(item, provider)
             if not self.moss_cuda_enabled and normalized_item == "moss-nano-cuda":
                 logger.warning("Ignoring %s because MOSS_CUDA_ENABLED=false", item)
                 continue
@@ -260,7 +213,7 @@ class TTSConfig:
             if not self.moss_cuda_enabled and str(self.default_model or "").strip().lower() in MOSS_GENERIC_MODEL_IDS
             else self.moss_execution_provider
         )
-        self.default_model = _normalize_config_model_id(self.default_model or self.enabled_models[0], default_provider)
+        self.default_model = normalize_config_model_id(self.default_model or self.enabled_models[0], default_provider)
         if not self.moss_cuda_enabled and self.default_model == "moss-nano-cuda":
             replacement = "moss-nano-cpu" if "moss-nano-cpu" in self.enabled_models else self.enabled_models[0]
             logger.warning("Default model %s is disabled; using %s", self.default_model, replacement)
@@ -289,126 +242,10 @@ class TTSConfig:
         return "cpu"
 
 
-def _apply_env(config: TTSConfig) -> None:
-    str_env: dict[str, str] = {
-        "KOKORO_HOST": "host",
-        "KOKORO_DEVICE": "device",
-        "KOKORO_DEFAULT_VOICE": "default_voice",
-        "KOKORO_STREAM_FORMAT": "stream_format",
-        "KOKORO_MP3_BITRATE": "mp3_bitrate",
-        "ANGEVOICE_DEFAULT_MODEL": "default_model",
-        "ANGEVOICE_OUTPUT_DIR": "output_dir",
-        "MOSS_EXECUTION_PROVIDER": "moss_execution_provider",
-        "MOSS_DEFAULT_VOICE": "moss_default_voice",
-        "MOSS_SAMPLE_MODE": "moss_sample_mode",
-        "MOSS_PROCESS_ISOLATION_PROVIDERS": "moss_process_isolation_providers",
-    }
-    int_env: dict[str, IntEnvSpec] = {
-        "KOKORO_PORT": IntEnvSpec("port", 1),
-        "KOKORO_WORKERS": IntEnvSpec("workers", 1),
-        "KOKORO_MAX_CONCURRENT_REQUESTS": IntEnvSpec("max_concurrent_requests", 1),
-        "KOKORO_MAX_TEXT_LENGTH": IntEnvSpec("max_text_length", 1),
-        "KOKORO_SEGMENT_LENGTH": IntEnvSpec("segment_length", 20),
-        "KOKORO_CACHE_MAX_ITEMS": IntEnvSpec("cache_max_items", 0),
-        "KOKORO_BATCH_MAX_ITEMS": IntEnvSpec("batch_max_items", 1),
-        "KOKORO_BATCH_CONCURRENCY": IntEnvSpec("batch_concurrency", 1),
-        "KOKORO_VOICE_UPLOAD_MAX_BYTES": IntEnvSpec("voice_upload_max_bytes", 1),
-        "ANGEVOICE_OUTPUT_MAX_FILES": IntEnvSpec("output_max_files", 0),
-        "MOSS_CPU_THREADS": IntEnvSpec("moss_cpu_threads", 1),
-        "MOSS_PROMPT_UPLOAD_MAX_BYTES": IntEnvSpec("moss_prompt_upload_max_bytes", 1),
-        "MOSS_PROMPT_CACHE_MAX_ITEMS": IntEnvSpec("moss_prompt_cache_max_items", 0),
-        "MOSS_MAX_NEW_FRAMES": IntEnvSpec("moss_max_new_frames", 1),
-        "MOSS_VOICE_CLONE_MAX_TEXT_TOKENS": IntEnvSpec("moss_voice_clone_max_text_tokens", 1),
-        "MOSS_SEED": IntEnvSpec("moss_seed", -1),
-        "MOSS_CUDA_MEMORY_LIMIT_MB": IntEnvSpec("moss_cuda_memory_limit_mb", 0),
-        "MOSS_STREAM_QUEUE_MAX_ITEMS": IntEnvSpec("moss_stream_queue_max_items", 1, 64),
-        "KOKORO_RATE_LIMIT_BURST": IntEnvSpec("rate_limit_burst", 0),
-        "KOKORO_MAX_QUEUE_LENGTH": IntEnvSpec("max_queue_length", 0),
-    }
-    float_env: dict[str, FloatEnvSpec] = {
-        "KOKORO_DEFAULT_SPEED": FloatEnvSpec("default_speed"),
-        "KOKORO_REQUEST_TIMEOUT_SECONDS": FloatEnvSpec("request_timeout_seconds", 1.0),
-        "KOKORO_STREAM_CHUNK_SECONDS": FloatEnvSpec("stream_chunk_seconds", 0.05, 2.0),
-        "ANGEVOICE_MODEL_SWITCH_TIMEOUT_SECONDS": FloatEnvSpec("model_switch_timeout_seconds", 1.0),
-        "MOSS_PROMPT_AUDIO_MAX_SECONDS": FloatEnvSpec("moss_prompt_audio_max_seconds", 0.0),
-        "MOSS_STREAM_CHUNK_SECONDS": FloatEnvSpec("moss_stream_chunk_seconds", 0.05, 2.0),
-        "MOSS_MAX_CLIP_RATIO": FloatEnvSpec("moss_max_clip_ratio", 0.0, 1.0),
-        "MOSS_OUTPUT_TARGET_PEAK": FloatEnvSpec("moss_output_target_peak", 0.1, 1.0),
-        "MOSS_OUTPUT_GAIN": FloatEnvSpec("moss_output_gain", 0.1, 2.0),
-        "KOKORO_RATE_LIMIT_QPS": FloatEnvSpec("rate_limit_qps", 0.0),
-        "MOSS_STREAM_BUDGET_THRESHOLD_LOW": FloatEnvSpec("moss_stream_budget_threshold_low", 0.0),
-        "MOSS_STREAM_BUDGET_THRESHOLD_MID": FloatEnvSpec("moss_stream_budget_threshold_mid", 0.0),
-        "MOSS_STREAM_BUDGET_THRESHOLD_HIGH": FloatEnvSpec("moss_stream_budget_threshold_high", 0.0),
-        "MOSS_STREAM_CHUNK_MIN_FLOOR": FloatEnvSpec("moss_stream_chunk_min_floor", 0.01),
-        "MOSS_PROCESS_KILL_GRACE_SECONDS": FloatEnvSpec("moss_process_kill_grace_seconds", 0.1, 30.0),
-        "MOSS_OUTPUT_EDGE_FADE_MS": FloatEnvSpec("moss_output_edge_fade_ms", 0.0, 20.0),
-        "ANGEVOICE_IDLE_TIMEOUT_SECONDS": FloatEnvSpec("model_idle_timeout_seconds", 0.0),
-        "ANGEVOICE_IDLE_CHECK_INTERVAL": FloatEnvSpec("model_idle_check_interval", 5.0),
-    }
-    bool_env: dict[str, str] = {
-        "KOKORO_STREAM_BINARY_ENABLED": "stream_binary_enabled",
-        "KOKORO_CACHE_ENABLED": "cache_enabled",
-        "KOKORO_QUEUE_STATUS_ENABLED": "queue_status_enabled",
-        "KOKORO_METRICS_ENABLED": "metrics_enabled",
-        "KOKORO_BATCH_ENABLED": "batch_enabled",
-        "KOKORO_ADMIN_ENABLED": "admin_enabled",
-        "KOKORO_VOICE_UPLOAD_ENABLED": "voice_upload_enabled",
-        "KOKORO_MP3_ENABLED": "mp3_enabled",
-        "ANGEVOICE_MODEL_SWITCH_ENABLED": "model_switch_enabled",
-        "ANGEVOICE_MODEL_UNLOAD_ON_SWITCH": "model_unload_on_switch",
-        "ANGEVOICE_SAVE_OUTPUTS": "save_outputs",
-        "ANGEVOICE_IDLE_UNLOAD_CURRENT": "model_idle_unload_current",
-        "MOSS_CUDA_ENABLED": "moss_cuda_enabled",
-        "MOSS_ENABLE_WETEXT_PROCESSING": "moss_enable_wetext_processing",
-        "MOSS_ENABLE_NORMALIZE_TTS_TEXT": "moss_enable_normalize_tts_text",
-        "MOSS_APPLY_ANGEVOICE_RULES": "moss_apply_angevoice_rules",
-        "MOSS_REALTIME_STREAMING_DECODE": "moss_realtime_streaming_decode",
-        "MOSS_CUDA_SELF_TEST_ENABLED": "moss_cuda_self_test_enabled",
-        "MOSS_AUTO_FALLBACK_CPU": "moss_auto_fallback_cpu",
-        "MOSS_QUALITY_GATE_ENABLED": "moss_quality_gate_enabled",
-        "MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED": "moss_output_peak_normalize_enabled",
-        "MOSS_PROCESS_ISOLATION_ENABLED": "moss_process_isolation_enabled",
-        "MOSS_OUTPUT_DECLICK_ENABLED": "moss_output_declick_enabled",
-    }
-
-    for env_name, attr in str_env.items():
-        if os.environ.get(env_name) is not None:
-            setattr(config, attr, os.environ[env_name])
-    if isinstance(config.output_dir, str):
-        config.output_dir = Path(config.output_dir).expanduser()
-
-    for env_name, spec in int_env.items():
-        if os.environ.get(env_name) is not None:
-            value = _get_env_int(env_name, getattr(config, spec.attr))
-            setattr(config, spec.attr, _clamp(value, spec.min_value, spec.max_value))
-
-    for env_name, spec in float_env.items():
-        if os.environ.get(env_name) is not None:
-            value = _get_env_float(env_name, getattr(config, spec.attr))
-            setattr(config, spec.attr, _clamp(value, spec.min_value, spec.max_value))
-
-    for env_name, attr in bool_env.items():
-        if os.environ.get(env_name) is not None:
-            setattr(config, attr, _get_env_bool(env_name, getattr(config, attr)))
-
-    if os.environ.get("KOKORO_API_KEY"):
-        config.api_key = os.environ["KOKORO_API_KEY"]
-    if os.environ.get("KOKORO_CORS_ORIGINS"):
-        config.cors_origins = [o.strip() for o in os.environ["KOKORO_CORS_ORIGINS"].split(",") if o.strip()]
-    if os.environ.get("ANGEVOICE_ENABLED_MODELS"):
-        config.enabled_models = [item.strip().lower() for item in os.environ["ANGEVOICE_ENABLED_MODELS"].split(",") if item.strip()]
-    if os.environ.get("MOSS_MODEL_DIR"):
-        config.moss_model_dir = Path(os.environ["MOSS_MODEL_DIR"]).expanduser()
-    if os.environ.get("MOSS_TTS_NANO_PATH"):
-        config.moss_repo_path = Path(os.environ["MOSS_TTS_NANO_PATH"]).expanduser()
-    if os.environ.get("MOSS_PROMPT_AUDIO_PATH"):
-        config.moss_prompt_audio_path = Path(os.environ["MOSS_PROMPT_AUDIO_PATH"]).expanduser()
-
-
 def load_config(model_dir: Optional[str] = None, device: Optional[str] = None, host: Optional[str] = None, port: Optional[int] = None, **kwargs) -> TTSConfig:
     """加载运行时配置，并应用环境变量和函数参数覆盖。"""
     config = TTSConfig()
-    _apply_env(config)
+    apply_env(config)
     if model_dir:
         config.model_dir = Path(model_dir)
     if device:
@@ -422,5 +259,7 @@ def load_config(model_dir: Optional[str] = None, device: Optional[str] = None, h
             setattr(config, k, v)
     if isinstance(config.output_dir, str):
         config.output_dir = Path(config.output_dir).expanduser()
+    if isinstance(config.api_key_file, str):
+        config.api_key_file = Path(config.api_key_file).expanduser()
     config.validate_security()
     return config

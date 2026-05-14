@@ -269,7 +269,10 @@ function ensureAuthToken() {
   if (!bootstrap.authRequired || state.token) {
     return true;
   }
-  setProgress('服务已启用 API Key，请先在右上角设置中填写 Bearer Token', true);
+  const adminTip = bootstrap.adminEnabled
+    ? '可点击设置窗口里的管理后台链接，在 API Key 区域复制或轮换。'
+    : `管理后台未启用时，请查看启动日志或 ${bootstrap.apiKeyFile || 'ANGEVOICE_API_KEY_FILE'}。`;
+  setProgress(`服务已启用 API Key，请先填写 Bearer Token。${adminTip} KOKORO_API_KEY=auto 会在首次启动自动生成。`, true);
   els.tokenInput.value = '';
   els.settingsDialog.showModal();
   return false;
@@ -282,6 +285,7 @@ function setBusy(value) {
 
 function updateButtons() {
   els.generateBtn.disabled = state.busy;
+  els.generateBtn.textContent = state.busy ? '处理中...' : (currentModelNeedsWake() ? '立即唤醒' : '立即生成');
   els.previewBtn.disabled = state.busy;
   if (els.model) {
     els.model.disabled = state.busy || bootstrap.modelSwitchEnabled === false;
@@ -292,6 +296,18 @@ function updateButtons() {
 
 function currentModel() {
   return state.models.find(model => model.id === state.selectedModel) || state.models.find(model => model.current) || state.models[0] || null;
+}
+
+function currentModelNeedsWake(model = currentModel()) {
+  if (!model) return false;
+  return model.available !== false && (model.loaded === false || model.idle_unloaded === true);
+}
+
+function currentModelSpeedValue(model = currentModel()) {
+  if (model?.speed_supported === false) {
+    return 1.0;
+  }
+  return Number(els.speed.value) || 1.0;
 }
 
 function modelSupportsVoiceClone(model = currentModel()) {
@@ -339,7 +355,16 @@ function applyModelUi() {
   if (els.speed) {
     const speedSupported = model.speed_supported !== false;
     els.speed.disabled = !speedSupported;
-    els.speed.title = speedSupported ? '' : '当前模型暂不支持语速调节';
+    els.speed.title = speedSupported ? '' : '当前模型暂不支持语速调节，MOSS 固定 speed=1.0';
+    if (!speedSupported) {
+      els.speed.value = '1.0';
+    }
+    els.speedValue.textContent = Number(els.speed.value || 1).toFixed(1);
+  }
+  if (currentModelNeedsWake(model)) {
+    const idleLabel = model.idle_unloaded ? '已休眠，点击“立即唤醒”加载模型' : '未加载，点击“立即唤醒”加载模型';
+    els.modelStatus.textContent = idleLabel;
+    els.modelStatus.className = 'warn-text';
   }
   const cloneSupported = modelSupportsVoiceClone(model);
   if (els.clonePanel) {
@@ -381,6 +406,30 @@ function updateModelData(models = [], current = '') {
     state.selectedModel = current;
   }
   renderModelSelect();
+}
+
+async function wakeCurrentModel() {
+  const model = currentModel();
+  if (!model || !currentModelNeedsWake(model)) {
+    return false;
+  }
+  setBusy(true);
+  setProgress(`正在唤醒 ${model.id}，首次下载/加载可能需要更久...`);
+  try {
+    const response = await apiFetch(`/v1/models/${encodeURIComponent(model.id)}/load`, { method: 'POST' });
+    if (!response.ok) {
+      throw new Error(await readError(response));
+    }
+    const result = await response.json().catch(() => ({}));
+    setProgress(result.message || `${model.id} 已唤醒，可以立即生成`);
+    await refreshServiceState();
+    return true;
+  } catch (error) {
+    setProgress(error.message || '模型唤醒失败', true);
+    return false;
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function switchModel(modelId) {
@@ -836,16 +885,21 @@ function bindEvents() {
     if (!ensureAuthToken()) {
       return;
     }
+    if (currentModelNeedsWake()) {
+      await wakeCurrentModel();
+      return;
+    }
     state.selectedVoice = els.voice.value;
     addRecent(state.selectedVoice);
     renderVoices();
     if (state.currentWs || state.currentAbort) {
       await stopCurrent();
     }
+    const speed = currentModelSpeedValue();
     if (els.streamToggle.checked) {
-      await synthesizeStream(text, state.selectedVoice, els.speed.value);
+      await synthesizeStream(text, state.selectedVoice, speed);
     } else {
-      synthesizeHttp(text, state.selectedVoice, els.speed.value, true);
+      synthesizeHttp(text, state.selectedVoice, speed, true);
     }
   });
 
@@ -853,9 +907,13 @@ function bindEvents() {
     if (!ensureAuthToken()) {
       return;
     }
+    if (currentModelNeedsWake()) {
+      wakeCurrentModel();
+      return;
+    }
     state.selectedVoice = els.voice.value;
     addRecent(state.selectedVoice);
-    synthesizeHttp('你好，我是 AngeVoice 当前选中的音色预览。', state.selectedVoice, els.speed.value, true);
+    synthesizeHttp('你好，我是 AngeVoice 当前选中的音色预览。', state.selectedVoice, currentModelSpeedValue(), true);
   });
   els.stopBtn.addEventListener('click', stopCurrent);
   els.clearBtn.addEventListener('click', () => {

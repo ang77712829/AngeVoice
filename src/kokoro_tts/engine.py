@@ -16,6 +16,7 @@ from typing import Optional
 from .audio import encode_audio_segment, normalize_audio_array, write_wav_bytes
 from .config import TTSConfig, load_config
 from .zh_rules import normalize_chinese_rules
+from .model_sources import ensure_kokoro_model_dir, resolve_model_source
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,64 @@ def _read_clock_time(hour: int, minute: int) -> str:
     return spoken + _read_small_int(minute) + "分"
 
 
+
+
+def _read_month_day(month: int, day: int) -> str:
+    return f"{_read_small_int(month)}月{_read_small_int(day)}日"
+
+
+_DATE_CONTEXT_BEFORE = (
+    "日期", "日子", "生日", "活动", "会议", "考试", "开会", "发布", "上线", "更新",
+    "维护", "开服", "截止", "截至", "预约", "计划", "预计", "定在", "改到",
+    "推迟到", "提前到", "报名", "放假", "假期", "档期", "排期", "工期", "节日",
+)
+_DATE_CONTEXT_AFTER = (
+    "号", "日", "当天", "那天", "这天", "之前", "之后", "以前", "以后", "前", "后",
+    "开始", "结束", "上线", "发布", "更新", "开服", "维护", "截止", "截至", "报名",
+    "活动", "会议", "考试", "开会", "放假", "假期", "见", "再说",
+)
+_DATE_CONTEXT_WORDS = ("今天", "明天", "昨天", "后天", "前天", "今年", "明年", "去年", "本月", "下月", "上月")
+
+
+def _looks_like_short_date_context(text: str, start: int, end: int) -> bool:
+    """Heuristically decide whether M.D / M-D should be read as month-day.
+
+    This intentionally avoids converting naked decimals and common software
+    versions. A shorthand date needs an explicit date marker around it, e.g.
+    ``4.20号``、``4.20更新``、``活动在4.20``.
+    """
+
+    before = text[max(0, start - 8):start]
+    after = text[end:end + 8]
+    if any(after.startswith(item) for item in _DATE_CONTEXT_AFTER):
+        return True
+    if any(item in before for item in _DATE_CONTEXT_BEFORE):
+        return True
+    if any(item in before or item in after for item in _DATE_CONTEXT_WORDS):
+        return True
+    if before.endswith(("在", "于", "到", "从", "至", "距", "等到")) and not after.startswith(("版", "版本", "元", "%")):
+        return True
+    return False
+
+
+def _normalize_short_month_day(text: str) -> str:
+    """Normalize context-backed M.D shorthand dates before decimal handling."""
+
+    def repl(match: re.Match[str]) -> str:
+        month = int(match.group("month"))
+        day = int(match.group("day"))
+        if not (1 <= month <= 12 and 1 <= day <= 31):
+            return match.group(0)
+        if not _looks_like_short_date_context(text, match.start(), match.end()):
+            return match.group(0)
+        return _read_month_day(month, day)
+
+    return re.sub(
+        r"(?<![\dA-Za-z])(?P<month>1[0-2]|0?[1-9])[./-](?P<day>3[01]|[12]\d|0?[1-9])(?![\dA-Za-z])",
+        repl,
+        text,
+    )
+
 def normalize_text_for_tts(text: str, model: str = "kokoro") -> str:
     """Normalize common Chinese TTS patterns before synthesis.
 
@@ -125,6 +184,7 @@ def normalize_text_for_tts(text: str, model: str = "kokoro") -> str:
     # Avoid \b for Chinese context. In Python regex, many Chinese characters are
     # word characters, so \b does not reliably match between Chinese and digits.
     text = re.sub(r"(?<!\d)(20\d{2}|19\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)", repl_date, text)
+    text = _normalize_short_month_day(text)
 
     def repl_time(match):
         hour = int(match.group(1))
@@ -254,14 +314,18 @@ class TTSEngine:
         local_model = self.config.model_file
         local_config = self.config.model_dir / "config.json"
         use_local = local_model.exists() and local_config.exists() and local_model.stat().st_size > 1000
+        if not use_local:
+            ensure_kokoro_model_dir(self.config, logger=logger)
+            use_local = local_model.exists() and local_config.exists() and local_model.stat().st_size > 1000
 
         if use_local:
             repo_id = str(self.config.model_dir)
             logger.info(f"从本地加载模型: {repo_id} -> {self._device}")
             KModel.MODEL_NAMES[repo_id] = local_model.name
         else:
-            repo_id = self.HF_REPO
-            logger.info(f"本地未找到模型，从 HuggingFace 下载: {repo_id}")
+            repo_id = getattr(self.config, "kokoro_hf_repo", self.HF_REPO) or self.HF_REPO
+            source = resolve_model_source(self.config)
+            logger.info("本地未找到模型，从 %s 下载: %s", "Hugging Face" if source == "huggingface" else source, repo_id)
 
         if self._device == "cpu":
             try:

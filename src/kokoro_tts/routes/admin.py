@@ -2,184 +2,32 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
-import os
-import secrets
-
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from ..admin_auth import (
+    candidate_encodings as _candidate_encodings,
+    make_verify_admin,
+    parse_basic_header as _parse_basic_header,
+    safe_compare as _safe_compare,
+)
 from ..service_state import ServiceState
-
-class AdminModelAction(BaseModel):
-    include_current: bool = True
-
-
-def _admin_username() -> str:
-    return os.environ.get("ANGEVOICE_ADMIN_USERNAME", "admin") or "admin"
-
-
-def _admin_password() -> str:
-    return os.environ.get("ANGEVOICE_ADMIN_PASSWORD", "") or ""
-
-
-def _safe_compare_bytes(left: bytes, right: bytes) -> bool:
-    return secrets.compare_digest(left, right)
-
-
-
-def _safe_compare(left: str, right: str) -> bool:
-    """Constant-time compare for Unicode credentials (supports CJK etc.)."""
-    return any(
-        _safe_compare_bytes(candidate, expected)
-        for candidate in _candidate_encodings(left)
-        for expected in _candidate_encodings(right)
-    )
-
-
-def _candidate_encodings(value: str) -> list[bytes]:
-    candidates: list[bytes] = []
-    for encoding in ("utf-8", "latin-1"):
-        try:
-            item = value.encode(encoding)
-        except UnicodeEncodeError:
-            continue
-        if item not in candidates:
-            candidates.append(item)
-    return candidates
-
-
-def _parse_basic_header(auth: str) -> tuple[bytes, bytes] | None:
-    """Parse Basic auth without relying on a fixed browser charset.
-
-    Some browsers/proxies still send Basic credentials as latin-1, while users
-    often paste Chinese usernames/passwords encoded as UTF-8. We compare raw
-    bytes against both UTF-8 and latin-1 encodings of the configured values so
-    the admin panel is not locked out by charset differences.
-    """
-
-    if not auth.lower().startswith("basic "):
-        return None
-    token = auth.split(" ", 1)[1].strip()
-    try:
-        raw = base64.b64decode(token, validate=True)
-    except (binascii.Error, ValueError):
-        return None
-    if b":" not in raw:
-        return None
-    username, password = raw.split(b":", 1)
-    return username, password
-
-
-def _parse_bearer_header(auth: str) -> str:
-    if auth.lower().startswith("bearer "):
-        return auth[7:].strip()
-    return ""
-
-
-def _auth_headers() -> dict[str, str]:
-    return {"WWW-Authenticate": 'Basic realm="AngeVoice Admin", charset="UTF-8"'}
+from .admin_models import AdminApiKeyAction, AdminConfigPatch, AdminModelAction, AdminSingleModelAction, AdminSwitchModelAction
+from .admin_runtime import apply_config_patch, config_snapshot, rotate_api_key, security_snapshot
 
 
 def create_admin_router(state: ServiceState) -> APIRouter:
     router = APIRouter()
     cfg = state.cfg
-
-    def verify_admin(request: Request) -> None:
-        if not cfg.admin_enabled:
-            raise HTTPException(status_code=404, detail="管理后台未启用")
-        expected_password = _admin_password()
-        if not expected_password:
-            raise HTTPException(status_code=503, detail="未配置管理后台密码")
-
-        auth = request.headers.get("Authorization", "")
-        bearer = _parse_bearer_header(auth)
-        if cfg.api_key and bearer and secrets.compare_digest(bearer, cfg.api_key):
-            return
-
-        parsed = _parse_basic_header(auth)
-        if parsed is None:
-            raise HTTPException(status_code=401, detail="需要登录", headers=_auth_headers())
-
-        supplied_username, supplied_password = parsed
-        username_ok = any(_safe_compare_bytes(supplied_username, item) for item in _candidate_encodings(_admin_username()))
-        password_ok = any(_safe_compare_bytes(supplied_password, item) for item in _candidate_encodings(expected_password))
-        if not (username_ok and password_ok):
-            raise HTTPException(status_code=401, detail="账号或密码错误", headers=_auth_headers())
+    verify_admin = make_verify_admin(cfg)
 
     @router.get("/admin", response_class=HTMLResponse)
-    async def admin_panel(_=Depends(verify_admin)):
-        return HTMLResponse(
-            """
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AngeVoice Admin</title>
-  <script>
-    const savedTheme = localStorage.getItem('angevoice.theme.v1');
-    document.documentElement.dataset.theme = savedTheme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  </script>
-  <link rel="stylesheet" href="/static/app.css" />
-</head>
-<body>
-  <main class="app-shell">
-    <header class="topbar">
-      <div class="brand-mark brand-wordmark" aria-hidden="true"><span class="name-ange">Ange</span><span class="name-voice">Voice</span></div>
-      <div class="brand-copy"><p class="eyebrow">Admin</p><h1>管理后台</h1></div>
-      <div class="topbar-actions"><a class="ghost-button small" href="/">返回 Studio</a><a class="ghost-button small" href="/api-docs">API 文档</a></div>
-    </header>
-    <section class="workspace" style="grid-template-columns:1fr;">
-      <article class="panel spotlight composer">
-        <div class="section-head"><div><p class="eyebrow">Runtime</p><h2>运行状态与参数</h2></div></div>
-        <div class="metrics-grid" id="admin-metrics"></div>
-        <pre id="admin-json" class="progress-track show" style="white-space:pre-wrap;color:var(--text);"></pre>
-        <div class="button-row" style="margin-top:14px;">
-          <button class="primary-button" id="refresh-btn">刷新状态</button>
-          <button class="secondary-button" id="clear-cache-btn">清空缓存</button>
-          <button class="danger-button" id="unload-btn">释放所有模型</button>
-        </div>
-      </article>
-    </section>
-  </main>
-  <script>
-    async function api(path, options = {}) {
-      const res = await fetch(path, options);
-      if (!res.ok) throw new Error(await res.text());
-      return await res.json();
-    }
-    function card(title, value) {
-      return `<article class="metric-card spotlight"><span>${title}</span><strong>${value}</strong></article>`;
-    }
-    async function refresh() {
-      const data = await api('/admin/api/status');
-      const loaded = (data.models || []).filter(m => m.loaded).length;
-      document.getElementById('admin-metrics').innerHTML = [
-        card('当前模型', data.current_model || '-'),
-        card('已加载', loaded),
-        card('缓存', data.cache_items ?? 0),
-        card('空闲释放', (data.config?.idle_timeout_seconds ?? 0) + 's')
-      ].join('');
-      document.getElementById('admin-json').textContent = JSON.stringify(data, null, 2);
-    }
-    document.getElementById('refresh-btn').onclick = refresh;
-    document.getElementById('clear-cache-btn').onclick = async () => { await api('/admin/api/cache', {method:'DELETE'}); await refresh(); };
-    document.getElementById('unload-btn').onclick = async () => {
-      if (confirm('确认释放所有已加载模型？下次请求会自动重载。')) {
-        await api('/admin/api/models/unload', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({include_current:true})});
-        await refresh();
-      }
-    };
-    refresh().catch(err => { document.getElementById('admin-json').textContent = String(err); });
-  </script>
-</body>
-</html>
-            """
-        )
+    async def admin_panel(request: Request, _=Depends(verify_admin)):
+        templates = getattr(state, "templates", None)
+        if templates is not None:
+            return templates.TemplateResponse(request, "admin.html", {})
+        return HTMLResponse("<h1>AngeVoice Admin</h1><p>Template support is unavailable.</p>")
 
     def _active_requests_snapshot() -> list[dict]:
         with state.request_lock:
@@ -193,20 +41,37 @@ def create_admin_router(state: ServiceState) -> APIRouter:
             "cache_items": state.cache_size(),
             "active_requests": _active_requests_snapshot(),
             "stats": state.snapshot_stats(),
-            "config": {
-                "enabled_models": cfg.enabled_models,
-                "default_model": cfg.default_model,
-                "max_concurrent_requests": cfg.max_concurrent_requests,
-                "request_timeout_seconds": cfg.request_timeout_seconds,
-                "idle_timeout_seconds": cfg.model_idle_timeout_seconds,
-                "idle_check_interval": cfg.model_idle_check_interval,
-                "idle_unload_current": getattr(cfg, "model_idle_unload_current", True),
-                "moss_execution_provider": cfg.moss_execution_provider,
-                "moss_stream_chunk_seconds": cfg.moss_stream_chunk_seconds,
-                "moss_quality_gate_enabled": cfg.moss_quality_gate_enabled,
-                "rate_limit_qps": cfg.rate_limit_qps,
-                "max_queue_length": cfg.max_queue_length,
-            },
+            "security": security_snapshot(cfg),
+            "config": config_snapshot(cfg),
+        }
+
+    @router.get("/admin/api/security")
+    async def admin_security(reveal: bool = False, _=Depends(verify_admin)):
+        return security_snapshot(cfg, reveal=reveal)
+
+    @router.post("/admin/api/security/key")
+    async def admin_rotate_key(req: AdminApiKeyAction, _=Depends(verify_admin)):
+        if req.rotate:
+            rotate_api_key(cfg)
+        return security_snapshot(cfg, reveal=True)
+
+    @router.patch("/admin/api/config")
+    async def admin_patch_config(req: AdminConfigPatch, _=Depends(verify_admin)):
+        changed, restart_required, rebuild_moss = apply_config_patch(cfg, req)
+        unloaded: list[str] = []
+        if rebuild_moss:
+            for model_id in ("moss-nano-cpu", "moss-nano-cuda"):
+                if state.model_manager.unload_model(model_id, force=False, raise_if_busy=False):
+                    unloaded.append(model_id)
+            if unloaded:
+                state.cache_clear()
+        return {
+            "ok": True,
+            "changed": changed,
+            "restart_required": restart_required,
+            "model_rebuild_required": rebuild_moss,
+            "unloaded_models": unloaded,
+            "config": config_snapshot(cfg),
         }
 
     @router.delete("/admin/api/cache")
@@ -214,15 +79,40 @@ def create_admin_router(state: ServiceState) -> APIRouter:
         cleared = state.cache_clear()
         return {"ok": True, "cleared": cleared}
 
+    @router.post("/admin/api/models/switch")
+    async def admin_switch_model(req: AdminSwitchModelAction, _=Depends(verify_admin)):
+        result = await run_in_threadpool(
+            state.model_manager.switch_model,
+            req.model,
+            unload_previous=req.unload_previous,
+            load=req.load,
+        )
+        state.cache_clear()
+        return result
+
     @router.post("/admin/api/models/unload")
     async def admin_unload_models(req: AdminModelAction, _=Depends(verify_admin)):
         unloaded = await run_in_threadpool(
             state.model_manager.unload_inactive,
-            force=False,
+            force=req.force,
             include_current=req.include_current,
         )
         if unloaded:
             state.cache_clear()
-        return {"ok": True, "unloaded": unloaded}
+        return {"ok": True, "unloaded": unloaded, "force": req.force}
+
+    @router.post("/admin/api/models/{model_id}/load")
+    async def admin_load_model(model_id: str, _=Depends(verify_admin)):
+        engine = await run_in_threadpool(state.model_manager.get_engine, model_id, load=True)
+        metadata = engine.metadata() if hasattr(engine, "metadata") and callable(engine.metadata) else {}
+        return {"ok": True, "model": metadata}
+
+    @router.post("/admin/api/models/{model_id}/unload")
+    async def admin_unload_model(model_id: str, req: AdminSingleModelAction | None = None, _=Depends(verify_admin)):
+        force = bool(req.force) if req is not None else False
+        removed = await run_in_threadpool(state.model_manager.unload_model, model_id, force=force, raise_if_busy=False)
+        if removed:
+            state.cache_clear()
+        return {"ok": True, "model": state.model_manager.normalize_model_id(model_id), "unloaded": removed, "force": force}
 
     return router

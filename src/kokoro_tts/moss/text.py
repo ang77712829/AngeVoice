@@ -7,13 +7,13 @@ import re
 from ..engine import normalize_text_for_tts
 
 
-def clean_text(text: str, *, apply_angevoice_rules: bool) -> str:
+def clean_text(text: str, *, apply_angevoice_rules: bool, model: str = "moss") -> str:
     """清理输入文本，并按配置应用 AngeVoice 中文规则。"""
 
     cleaned = re.sub(r"[\x00-\x1f\x7f]", " ", str(text or ""))
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if apply_angevoice_rules:
-        cleaned = normalize_text_for_tts(cleaned)
+        cleaned = normalize_text_for_tts(cleaned, model=model)
     return cleaned
 
 

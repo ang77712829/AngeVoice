@@ -18,6 +18,7 @@ DOCKERHUB_OK="unknown"
 GITHUB_OK="unknown"
 REGISTRY_MIRRORS=""
 
+ORIGINAL_ARGS=("$@")
 SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
 if [[ "$SCRIPT_SOURCE" == */* ]]; then
   SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" 2>/dev/null && pwd -P || pwd -P)"
@@ -26,6 +27,39 @@ else
 fi
 PWD_DIR="$(pwd -P)"
 
+_bootstrap_is_project_root() {
+  [[ -f "$1/docker/angevoice.env" && -d "$1/docker" && -d "$1/scripts/install/lib" ]]
+}
+
+_bootstrap_exec_full_repo() {
+  local target="${INSTALL_DIR:-$FALLBACK_INSTALL_DIR}"
+  printf '[0;36m[AngeVoice][0m 检测到远程单文件执行模式，正在准备完整安装脚本：%s
+' "$target"
+  command -v git >/dev/null 2>&1 || {
+    printf '[0;31m[ERROR][0m 当前执行方式需要 git 自动拉取完整仓库，请先安装 git，或改用 git clone 后运行 scripts/install.sh。
+' >&2
+    exit 1
+  }
+  if [[ -d "$target/.git" ]]; then
+    git -C "$target" fetch --all --prune || true
+    git -C "$target" pull --ff-only || true
+  elif [[ -e "$target" && -n "$(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+    printf '[0;31m[ERROR][0m 安装目录已存在但不是 AngeVoice git 仓库：%s
+' "$target" >&2
+    printf '请使用 --dir 指定空目录/已有 AngeVoice 仓库，或手动清理该目录。
+' >&2
+    exit 1
+  else
+    mkdir -p "$(dirname "$target")"
+    git clone "$REPO_URL" "$target"
+  fi
+  if [[ ! -f "$target/scripts/install.sh" ]]; then
+    printf '[0;31m[ERROR][0m 完整仓库中仍找不到 scripts/install.sh：%s
+' "$target" >&2
+    exit 1
+  fi
+  exec bash "$target/scripts/install.sh" "${ORIGINAL_ARGS[@]}"
+}
 usage() {
   cat <<'USAGE'
 用法：
@@ -64,38 +98,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-log() { printf '\033[0;36m[AngeVoice]\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[WARN]\033[0m %s\n' "$*"; }
-fail() { printf '\033[0;31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
-
-need_cmd() { command -v "$1" >/dev/null 2>&1 || return 1; }
-
-escape_sed_replacement() {
-  printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
-}
-
-set_env_value() {
-  local file="$1" key="$2" value="$3" escaped
-  escaped="$(escape_sed_replacement "$value")"
-  if grep -q "^#\?${key}=" "$file"; then
-    sed -i "s|^#\?${key}=.*|${key}=${escaped}|" "$file"
+INSTALL_LIB_DIR="${SCRIPT_DIR}/install/lib"
+if [[ ! -f "${INSTALL_LIB_DIR}/common.sh" ]]; then
+  if _bootstrap_is_project_root "$PWD_DIR"; then
+    # 支持 bash <(curl ...install.sh) 在已克隆源码目录内执行。
+    INSTALL_LIB_DIR="${PWD_DIR}/scripts/install/lib"
+  elif [[ -n "$INSTALL_DIR" && -f "${INSTALL_DIR}/scripts/install/lib/common.sh" ]]; then
+    INSTALL_LIB_DIR="${INSTALL_DIR}/scripts/install/lib"
   else
-    printf '\n%s=%s\n' "$key" "$value" >> "$file"
+    # 远程 raw 一键脚本没有旁边的 lib 模块，自动拉取完整仓库后交给本地脚本继续执行。
+    _bootstrap_exec_full_repo
   fi
-}
-
-is_project_root() {
-  [[ -f "$1/docker/angevoice.env" && -d "$1/docker" && -d "$1/scripts" ]]
-}
-
-project_root_from_script() {
-  local candidate
-  candidate="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd -P || true)"
-  if [[ -n "$candidate" && -d "$candidate" ]]; then
-    printf '%s\n' "$candidate"
+fi
+for module in common.sh docker.sh network.sh; do
+  if [[ -f "${INSTALL_LIB_DIR}/${module}" ]]; then
+    # shellcheck source=/dev/null
+    source "${INSTALL_LIB_DIR}/${module}"
+  else
+    printf '[0;31m[ERROR][0m 缺少安装脚本模块：%s
+' "${INSTALL_LIB_DIR}/${module}" >&2
+    exit 1
   fi
-}
-
+done
 detect_install_dir() {
   if [[ -n "$INSTALL_DIR" ]]; then
     printf '%s\n' "$INSTALL_DIR"
@@ -112,116 +136,6 @@ detect_install_dir() {
     return
   fi
   printf '%s\n' "$FALLBACK_INSTALL_DIR"
-}
-
-check_docker() {
-  need_cmd docker || fail "未检测到 docker，请先安装 Docker Engine。"
-  docker compose version >/dev/null 2>&1 || fail "未检测到 docker compose v2，请安装 Docker Compose 插件。"
-}
-
-_check_url() {
-  local url="$1"
-  curl -fsSL --connect-timeout 5 --max-time 8 "$url" >/dev/null 2>&1
-}
-
-_check_url_allow_http_error() {
-  local url="$1" code
-  code="$(curl -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 8 "$url" 2>/dev/null || true)"
-  [[ "$code" =~ ^(200|301|302|401)$ ]]
-}
-
-_detect_registry_mirrors() {
-  local file="/etc/docker/daemon.json"
-  REGISTRY_MIRRORS=""
-  if [[ -f "$file" ]]; then
-    REGISTRY_MIRRORS="$(grep -o 'https\?://[^" ,]\+' "$file" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-  fi
-}
-
-check_network() {
-  GITHUB_OK="no"
-  GHCR_OK="no"
-  DOCKERHUB_OK="no"
-  _check_url https://github.com && GITHUB_OK="yes"
-  _check_url_allow_http_error https://ghcr.io/v2/ && GHCR_OK="yes"
-  _check_url_allow_http_error https://registry-1.docker.io/v2/ && DOCKERHUB_OK="yes"
-  _detect_registry_mirrors
-  log "网络检测：GitHub=${GITHUB_OK} GHCR=${GHCR_OK} DockerHub=${DOCKERHUB_OK}"
-  if [[ -n "$REGISTRY_MIRRORS" ]]; then
-    log "检测到 Docker registry mirror：$REGISTRY_MIRRORS"
-  fi
-  if [[ "$GITHUB_OK" != "yes" ]]; then
-    warn "访问 GitHub 较差：建议使用代理、镜像源或手动上传源码包。"
-  fi
-  if [[ "$GHCR_OK" != "yes" ]]; then
-    warn "访问 ghcr.io 较差：将跳过预构建镜像 pull，优先本地构建。"
-  fi
-  if [[ "$DOCKERHUB_OK" != "yes" && -z "$REGISTRY_MIRRORS" ]]; then
-    warn "访问 Docker Hub 较差且未检测到 registry mirror；本地构建可能在拉基础镜像时较慢。"
-  fi
-}
-
-has_nvidia_gpu() {
-  command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1
-}
-
-detect_gpu_name() {
-  if has_nvidia_gpu; then
-    nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1 || true
-  fi
-}
-
-recommend_profile() {
-  if [[ "$PROFILE" != "auto" ]]; then
-    echo "$PROFILE"; return
-  fi
-  if ! has_nvidia_gpu; then
-    echo "cpu"; return
-  fi
-  local name
-  name="$(detect_gpu_name | tr '[:upper:]' '[:lower:]')"
-  case "$name" in
-    *p4*|*p40*|*v100*|*1080*|*1070*|*1060*) echo "legacy-gpu" ;;
-    *) echo "gpu" ;;
-  esac
-}
-
-compose_dir_for_profile() {
-  case "$1" in
-    cpu) echo "docker/cpu" ;;
-    gpu) echo "docker/gpu" ;;
-    legacy-gpu) echo "docker/legacy-gpu" ;;
-    *) fail "未知画像：$1" ;;
-  esac
-}
-
-profile_for_container_name() {
-  case "$1" in
-    angevoice-cpu) echo "cpu" ;;
-    angevoice-gpu) echo "gpu" ;;
-    angevoice-legacy-gpu) echo "legacy-gpu" ;;
-    *) echo "" ;;
-  esac
-}
-
-port_for_profile() {
-  case "$1" in
-    cpu) echo "8100" ;;
-    gpu) echo "8101" ;;
-    legacy-gpu) echo "8102" ;;
-    *) echo "8000" ;;
-  esac
-}
-
-detect_host_ip() {
-  local ip=""
-  if command -v ip >/dev/null 2>&1; then
-    ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')"
-  fi
-  if [[ -z "$ip" ]] && command -v hostname >/dev/null 2>&1; then
-    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  fi
-  printf '%s\n' "${ip:-127.0.0.1}"
 }
 
 running_angevoice_containers() {
@@ -400,6 +314,17 @@ restart_profile() {
   docker compose restart || docker compose up -d
 }
 
+print_api_key_hint() {
+  local key_file="$INSTALL_DIR/outputs/.angevoice-api-key"
+  if [[ -f "$key_file" ]]; then
+    log "API Key 已自动生成：$key_file"
+  else
+    log "API Key 将在服务首次启动后自动生成：$key_file"
+  fi
+  log "查看 API Key：cat '$key_file'"
+  log "复制该 token 到 Studio 设置里的 Bearer Token；如需网页查看/轮换，请开启 KOKORO_ADMIN_ENABLED=true 并设置 ANGEVOICE_ADMIN_PASSWORD。"
+}
+
 print_access_info() {
   local profile="$1" port ip
   port="$(port_for_profile "$profile")"
@@ -408,9 +333,9 @@ print_access_info() {
   log "管理后台：http://${ip}:${port}/admin"
   log "API 文档：http://${ip}:${port}/api-docs"
   log "配置文件：$INSTALL_DIR/docker/angevoice.env"
+  print_api_key_hint
   log "管理命令：${SHORTCUT_NAME}"
 }
-
 print_status() {
   local profile
   profile="$(detect_active_profile)"

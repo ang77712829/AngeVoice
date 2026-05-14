@@ -20,6 +20,7 @@ from .audio import encode_audio_segment
 from .config import TTSConfig
 from .engine import TTSEngine
 from .engine_manager import EngineManager
+from .validation import validate_model_speed, validate_tts_text
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +247,8 @@ class ServiceState:
     ) -> tuple[bytes, str]:
         fmt = self.normalize_response_format(fmt)
         resolved_model = self.model_manager.normalize_model_id(model_id)
+        text = validate_tts_text(text, self.cfg)
+        speed = validate_model_speed(resolved_model, speed)
         prompt_key = self.prompt_audio_cache_id(resolved_model, prompt_audio_id)
         key = self.cache_key(resolved_model, text, voice, speed, fmt, prompt_key)
         cached = self.cache_get(key)
@@ -284,6 +287,8 @@ class ServiceState:
     ):
         start = time.perf_counter()
         resolved_model = self.model_manager.normalize_model_id(model_id)
+        text = validate_tts_text(text, self.cfg)
+        speed = validate_model_speed(resolved_model, speed)
         self.inc_stat("requests_total")
         self.inc_stat("characters_total", len(text or ""))
         self.mark_request(

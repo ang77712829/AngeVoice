@@ -48,25 +48,71 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         if not cfg.metrics_enabled:
             raise HTTPException(status_code=404, detail="Metrics disabled")
 
+    async def _verify_status_endpoint_access(request: Request):
+        if getattr(cfg, "public_status_endpoints", True):
+            return
+        await verify_api_key(request)
+
+    def _public_catalog_allowed() -> bool:
+        return bool(getattr(cfg, "public_status_endpoints", True)) or not bool(cfg.api_key)
+
+    def _minimal_bootstrap(current_model: dict | None = None) -> dict:
+        current_model = current_model or state.model_manager.current_snapshot()
+        return {
+            "voices": [],
+            "models": [],
+            "currentModel": "",
+            "defaultVoice": cfg.default_voice,
+            "defaultSpeed": cfg.default_speed,
+            "maxTextLength": cfg.max_text_length,
+            "sampleRate": current_model.get("sample_rate") or cfg.sample_rate,
+            "authRequired": bool(cfg.api_key),
+            "catalogProtected": True,
+            "streamEnabled": cfg.stream_enabled,
+            "streamBinaryEnabled": cfg.stream_binary_enabled,
+            "mp3Enabled": getattr(cfg, "mp3_enabled", False),
+            "modelSwitchEnabled": getattr(cfg, "model_switch_enabled", True),
+            "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
+            "apiKeyFile": str(getattr(cfg, "api_key_file", "") or ""),
+        }
+
+    def _minimal_health(status: str, is_healthy: bool, unhealthy_models: list[str]) -> dict:
+        return {
+            "status": status,
+            "healthy": is_healthy,
+            "unhealthy_models": unhealthy_models,
+            "name": "AngeVoice",
+            "auth_required": bool(cfg.api_key),
+            "catalog_protected": not _public_catalog_allowed(),
+            "stream_enabled": cfg.stream_enabled,
+        }
+
     @router.get("/", response_class=HTMLResponse)
     async def index(request: Request):
         if templates:
             current_model = state.model_manager.current_snapshot()
             voices = current_model.get("voices") or []
-            bootstrap = {
-                "voices": voices,
-                "models": state.model_manager.list_models(),
-                "currentModel": state.model_manager.current_model_id,
-                "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
-                "defaultSpeed": cfg.default_speed,
-                "maxTextLength": cfg.max_text_length,
-                "sampleRate": current_model.get("sample_rate") or cfg.sample_rate,
-                "authRequired": bool(cfg.api_key),
-                "streamEnabled": cfg.stream_enabled,
-                "streamBinaryEnabled": cfg.stream_binary_enabled,
-                "mp3Enabled": getattr(cfg, "mp3_enabled", False),
-                "modelSwitchEnabled": getattr(cfg, "model_switch_enabled", True),
-            }
+            if _public_catalog_allowed():
+                bootstrap = {
+                    "voices": voices,
+                    "models": state.model_manager.list_models(),
+                    "currentModel": state.model_manager.current_model_id,
+                    "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
+                    "defaultSpeed": cfg.default_speed,
+                    "maxTextLength": cfg.max_text_length,
+                    "sampleRate": current_model.get("sample_rate") or cfg.sample_rate,
+                    "authRequired": bool(cfg.api_key),
+                    "catalogProtected": False,
+                    "streamEnabled": cfg.stream_enabled,
+                    "streamBinaryEnabled": cfg.stream_binary_enabled,
+                    "mp3Enabled": getattr(cfg, "mp3_enabled", False),
+                    "modelSwitchEnabled": getattr(cfg, "model_switch_enabled", True),
+                    "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
+                    "apiKeyFile": str(getattr(cfg, "api_key_file", "") or ""),
+                }
+            else:
+                bootstrap = _minimal_bootstrap(current_model)
+                voices = []
             return templates.TemplateResponse(
                 request,
                 "index.html",
@@ -82,17 +128,27 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         """返回带有可复制 MOSS 克隆示例的 API 文档页。"""
         if templates:
             current_model = state.model_manager.current_snapshot()
-            bootstrap = {
-                "models": state.model_manager.list_models(),
-                "currentModel": state.model_manager.current_model_id,
-                "authRequired": bool(cfg.api_key),
-                "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
-                "streamEnabled": cfg.stream_enabled,
-                "streamBinaryEnabled": cfg.stream_binary_enabled,
-                "mp3Enabled": getattr(cfg, "mp3_enabled", False),
-                "mossPromptUploadMaxBytes": getattr(cfg, "moss_prompt_upload_max_bytes", 0),
-                "mossPromptAudioMaxSeconds": getattr(cfg, "moss_prompt_audio_max_seconds", 0),
-            }
+            if _public_catalog_allowed():
+                bootstrap = {
+                    "models": state.model_manager.list_models(),
+                    "currentModel": state.model_manager.current_model_id,
+                    "authRequired": bool(cfg.api_key),
+                    "catalogProtected": False,
+                    "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
+                    "streamEnabled": cfg.stream_enabled,
+                    "streamBinaryEnabled": cfg.stream_binary_enabled,
+                    "mp3Enabled": getattr(cfg, "mp3_enabled", False),
+                    "mossPromptUploadMaxBytes": getattr(cfg, "moss_prompt_upload_max_bytes", 0),
+                    "mossPromptAudioMaxSeconds": getattr(cfg, "moss_prompt_audio_max_seconds", 0),
+                    "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
+                    "apiKeyFile": str(getattr(cfg, "api_key_file", "") or ""),
+                }
+            else:
+                bootstrap = _minimal_bootstrap(current_model)
+                bootstrap.update({
+                    "mossPromptUploadMaxBytes": getattr(cfg, "moss_prompt_upload_max_bytes", 0),
+                    "mossPromptAudioMaxSeconds": getattr(cfg, "moss_prompt_audio_max_seconds", 0),
+                })
             return templates.TemplateResponse(
                 request,
                 "api_docs.html",
@@ -122,6 +178,8 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             status = "idle"
         else:
             status = "loading"
+        if not _public_catalog_allowed():
+            return _minimal_health(status, is_healthy, unhealthy_models)
         return {
             "status": status,
             "healthy": is_healthy,
@@ -145,7 +203,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         }
 
     @router.get("/v1/audio/voices")
-    async def list_voices(model: str | None = None):
+    async def list_voices(model: str | None = None, _=Depends(_verify_status_endpoint_access)):
         target_model = state.model_manager.normalize_model_id(model)
         snapshot = state.model_manager.current_snapshot()
         if target_model != state.model_manager.current_model_id:
@@ -156,14 +214,14 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         return {"model": target_model, "voices": voices}
 
     @router.get("/v1/models")
-    async def list_models():
+    async def list_models(_=Depends(_verify_status_endpoint_access)):
         return {
             "current_model": state.model_manager.current_model_id,
             "models": state.model_manager.list_models(),
         }
 
     @router.get("/v1/models/current")
-    async def current_model():
+    async def current_model(_=Depends(_verify_status_endpoint_access)):
         return state.model_manager.current_snapshot()
 
     @router.post("/v1/models/switch")

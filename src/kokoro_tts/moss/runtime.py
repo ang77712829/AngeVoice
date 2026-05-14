@@ -10,6 +10,7 @@ from threading import Lock
 import numpy as np
 
 from ..audio import normalize_audio_array
+from ..model_sources import ensure_moss_model_dir
 
 
 def ensure_import_path(repo_path) -> None:
@@ -39,8 +40,9 @@ def create_runtime(*, config, provider: str, provider_patch_lock: Lock, logger):
             "or set MOSS_TTS_NANO_PATH to a local clone."
         ) from exc
 
+    model_dir = ensure_moss_model_dir(config, logger=logger)
     runtime_kwargs = {
-        "model_dir": str(config.moss_model_dir) if config.moss_model_dir else None,
+        "model_dir": str(model_dir) if model_dir else None,
         "thread_count": config.moss_cpu_threads,
         "max_new_frames": config.moss_max_new_frames,
         "do_sample": config.moss_sample_mode != "greedy",
