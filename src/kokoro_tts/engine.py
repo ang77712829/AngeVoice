@@ -16,6 +16,7 @@ from typing import Optional
 from .audio import encode_audio_segment, normalize_audio_array, write_wav_bytes
 from .config import TTSConfig, load_config
 from .zh_rules import normalize_chinese_rules
+from .text_segmenter import segment_text_natural
 from .model_sources import ensure_kokoro_model_dir, resolve_model_source
 
 logger = logging.getLogger(__name__)
@@ -418,34 +419,12 @@ class TTSEngine:
         return "en" if english / total > 0.6 else "zh"
 
     def _segment_text(self, text: str) -> list[str]:
-        max_len = max(20, int(self.config.segment_length))
-        punctuation = "。！？!?；;，,、.：:\n"
-        segments: list[str] = []
-        current = ""
-
-        for char in text:
-            current += char
-            if len(current) >= max_len and char in punctuation:
-                if current.strip():
-                    segments.append(current.strip())
-                current = ""
-                continue
-            if len(current) >= int(max_len * 1.5):
-                cut_pos = max(current.rfind(p) for p in punctuation)
-                if cut_pos >= max_len // 2:
-                    head = current[: cut_pos + 1].strip()
-                    tail = current[cut_pos + 1 :].strip()
-                    if head:
-                        segments.append(head)
-                    current = tail
-                else:
-                    if current.strip():
-                        segments.append(current.strip())
-                    current = ""
-
-        if current.strip():
-            segments.append(current.strip())
-        return segments or [text]
+        return segment_text_natural(
+            text,
+            max_text_length=int(self.config.max_text_length),
+            segment_length=max(20, int(self.config.segment_length)),
+            single_newline_policy=str(getattr(self.config, "text_single_newline_policy", "auto")),
+        )
 
     def _make_speed_fn(self, speed: float):
         speed = float(speed)
@@ -535,6 +514,7 @@ class TTSEngine:
             "channels": 1,
             "format": fmt,
             "dtype": "s16le" if fmt == "pcm_s16le" else "wav",
+            "recommended_prebuffer_seconds": float(getattr(self.config, "stream_prebuffer_seconds", 0.25)),
         }
 
         speed_fn = self._make_speed_fn(speed)

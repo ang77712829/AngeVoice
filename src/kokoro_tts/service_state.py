@@ -34,6 +34,7 @@ class ServiceState:
         self.eng = eng or self.model_manager.get_engine(self.model_manager.current_model_id, load=False)
         self.tts_semaphore = asyncio.Semaphore(max(1, int(cfg.max_concurrent_requests)))
         self.tts_cache: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
+        self._cache_bytes = 0
         self.cache_lock = threading.Lock()
         self.active_requests: dict[str, dict] = {}
         self.cancelled_requests: set[str] = set()
@@ -47,6 +48,7 @@ class ServiceState:
             "requests_error": 0,
             "cache_hits": 0,
             "cache_misses": 0,
+            "cache_skips": 0,
             "characters_total": 0,
             "audio_bytes_total": 0,
             "synthesis_seconds_total": 0.0,
@@ -107,23 +109,57 @@ class ServiceState:
         self.inc_stat("cache_hits")
         return item
 
-    def cache_set(self, key: str, value: tuple[bytes, str]) -> None:
+    def _cache_item_size(self, value: tuple[bytes, str]) -> int:
+        try:
+            return len(value[0])
+        except Exception:
+            return 0
+
+    def _should_cache_result(self, *, text: str, value: tuple[bytes, str]) -> bool:
         if not self.cfg.cache_enabled or self.cfg.cache_max_items <= 0:
+            return False
+        text_limit = int(getattr(self.cfg, "cache_skip_text_over_chars", 0) or 0)
+        if text_limit > 0 and len(text or "") > text_limit:
+            self.inc_stat("cache_skips")
+            return False
+        audio_limit = int(getattr(self.cfg, "cache_skip_audio_over_bytes", 0) or 0)
+        if audio_limit > 0 and self._cache_item_size(value) > audio_limit:
+            self.inc_stat("cache_skips")
+            return False
+        return True
+
+    def cache_set(self, key: str, value: tuple[bytes, str], *, text: str = "") -> None:
+        if not self._should_cache_result(text=text, value=value):
             return
+        item_size = self._cache_item_size(value)
+        max_bytes = int(getattr(self.cfg, "cache_max_bytes", 0) or 0)
         with self.cache_lock:
+            old = self.tts_cache.pop(key, None)
+            if old is not None:
+                self._cache_bytes = max(0, self._cache_bytes - self._cache_item_size(old))
             self.tts_cache[key] = value
+            self._cache_bytes += item_size
             self.tts_cache.move_to_end(key)
             while len(self.tts_cache) > self.cfg.cache_max_items:
-                self.tts_cache.popitem(last=False)
+                _, removed = self.tts_cache.popitem(last=False)
+                self._cache_bytes = max(0, self._cache_bytes - self._cache_item_size(removed))
+            while max_bytes > 0 and self._cache_bytes > max_bytes and self.tts_cache:
+                _, removed = self.tts_cache.popitem(last=False)
+                self._cache_bytes = max(0, self._cache_bytes - self._cache_item_size(removed))
 
     def cache_size(self) -> int:
         with self.cache_lock:
             return len(self.tts_cache)
 
+    def cache_bytes(self) -> int:
+        with self.cache_lock:
+            return int(self._cache_bytes)
+
     def cache_clear(self) -> int:
         with self.cache_lock:
             size = len(self.tts_cache)
             self.tts_cache.clear()
+            self._cache_bytes = 0
             return size
 
     def mark_request(self, request_id: str, status: str, **extra) -> None:
@@ -271,7 +307,7 @@ class ServiceState:
                 result = (_wav_to_mp3(wav_bytes, getattr(self.cfg, "mp3_bitrate", "192k")), "audio/mpeg")
             else:
                 result = (eng.synthesize(text=text, voice=voice, speed=speed, **prompt_kwargs), "audio/wav")
-        self.cache_set(key, result)
+        self.cache_set(key, result, text=text)
         return result
 
     async def synthesize_response_threaded(

@@ -45,6 +45,7 @@ class EngineManager:
         self._current_model_id = self.normalize_model_id(cfg.default_model)
         self._last_used: dict[str, float] = {}
         self._active_counts: dict[str, int] = {}
+        self._pending_rebuild: set[str] = set()
         if initial_engine is not None:
             self._engines["kokoro"] = initial_engine
             self._current_model_id = "kokoro"
@@ -222,6 +223,13 @@ class EngineManager:
                 current = self._active_count(target_id)
                 self._active_counts[target_id] = max(0, current - 1)
                 self._touch_model(target_id)
+                if self._active_counts[target_id] == 0 and target_id in self._pending_rebuild:
+                    logger.info("模型 %s 请求结束，执行待重建", target_id)
+                    self._pending_rebuild.discard(target_id)
+                    try:
+                        self.drop_model(target_id, force=True, raise_if_busy=False)
+                    except Exception:
+                        logger.debug("执行待重建失败：%s", target_id, exc_info=True)
 
     def get_engine(self, model_id: str | None = None, *, load: bool = True):
         target_id = self.normalize_model_id(model_id)
@@ -282,8 +290,10 @@ class EngineManager:
                 message = f"Model {target_id} is busy: active_count={active}"
                 if raise_if_busy:
                     raise HTTPException(status_code=409, detail=message)
-                logger.info("跳过忙碌模型重建：%s active_count=%d", target_id, active)
+                logger.info("跳过忙碌模型重建：%s active_count=%d，已标记为待重建", target_id, active)
+                self._pending_rebuild.add(target_id)
                 return False
+            self._pending_rebuild.discard(target_id)
             engine = self._engines.pop(target_id, None)
             if engine is None:
                 return False
@@ -343,7 +353,7 @@ class EngineManager:
         active_count = self._active_count(spec.id)
         idle_timeout = float(getattr(self.cfg, "model_idle_timeout_seconds", 0) or 0)
         idle_unloaded = bool(engine is not None and not loaded and idle_timeout > 0 and spec.id in self._last_used)
-        return {"id": spec.id, "name": spec.name, "backend": spec.backend, "provider": spec.provider, "experimental": spec.experimental, "enabled": True, "current": spec.id == self._current_model_id, "loaded": loaded, "healthy": healthy, "available": self._runtime_available(spec), "active_count": active_count, "idle_timeout_seconds": idle_timeout, "idle_unload_current": bool(getattr(self.cfg, "model_idle_unload_current", True)), "idle_unloaded": idle_unloaded, **self._static_capabilities(spec), **runtime}
+        return {"id": spec.id, "name": spec.name, "backend": spec.backend, "provider": spec.provider, "experimental": spec.experimental, "enabled": True, "current": spec.id == self._current_model_id, "loaded": loaded, "healthy": healthy, "available": self._runtime_available(spec), "active_count": active_count, "pending_rebuild": spec.id in self._pending_rebuild, "idle_timeout_seconds": idle_timeout, "idle_unload_current": bool(getattr(self.cfg, "model_idle_unload_current", True)), "idle_unloaded": idle_unloaded, **self._static_capabilities(spec), **runtime}
 
     def _static_capabilities(self, spec: EngineSpec) -> dict:
         if spec.backend != "moss-tts-nano-onnx":

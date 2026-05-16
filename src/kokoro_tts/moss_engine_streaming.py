@@ -18,12 +18,6 @@ from .moss import StreamBudgetThresholds, merge_codec_audio, resolve_stream_deco
 
 logger = logging.getLogger(__name__)
 
-# 拼接多个 MOSS 文本段时插入的静音时长（秒）。
-# 这个常量原本在 moss_engine.py，拆分流式逻辑后必须保留在本模块，
-# 否则长文本多段流式会在第一段后报 NameError。
-SEGMENT_SILENCE_SECONDS = 0.08
-
-
 class _MossStreamCancelled(Exception):
     """客户端取消 MOSS 流式请求时使用的内部异常。"""
 
@@ -73,6 +67,7 @@ class MossStreamingMixin:
             "dtype": "s16le" if fmt == "pcm_s16le" else "wav",
             "model": self.engine_id,
             "voice_clone": bool(prompt_audio),
+            "recommended_prebuffer_seconds": float(getattr(self.config, "moss_stream_prebuffer_seconds", 0.45)),
         }
 
         item_queue: queue.Queue = queue.Queue(maxsize=max(1, int(self.config.moss_stream_queue_max_items)))
@@ -250,7 +245,7 @@ class MossStreamingMixin:
                 chunks,
             )
             if emitted < total_segments:
-                silence = self._silence_array(SEGMENT_SILENCE_SECONDS)
+                silence = self._silence_array(self._segment_pause_seconds())
                 if silence.size:
                     self._emit_stream_waveform(
                         silence,
@@ -350,7 +345,7 @@ class MossStreamingMixin:
                 chunk_emitted,
             )
             if chunk_index < len(text_chunks) - 1:
-                pause_seconds = float(self._runtime.estimate_voice_clone_inter_chunk_pause_seconds(chunk_text))
+                pause_seconds = self._runtime_pause_seconds(chunk_text)
                 silence = self._silence_array(pause_seconds)
                 if silence.size:
                     emitted += self._emit_stream_waveform(

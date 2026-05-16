@@ -106,11 +106,11 @@ request:
 | `MOSS_DEFAULT_VOICE` | `Junhao` | Built-in MOSS voice preset |
 | `MOSS_SAMPLE_MODE` | `fixed` | MOSS sampling mode; `greedy` is more stable but flatter |
 | `MOSS_SEED` | `1234` | Reset RNG per request to reduce long-text voice drift; `-1` disables |
-| `MOSS_STREAM_CHUNK_SECONDS` | `0.42` | MOSS WebSocket chunk duration; balances first audio and smoothness |
-| `MOSS_STREAM_QUEUE_MAX_ITEMS` | `8` | Streaming queue backpressure limit |
+| `MOSS_STREAM_CHUNK_SECONDS` | `0.40` | MOSS WebSocket chunk duration; NAS/P4 default favors stable lower-memory streaming |
+| `MOSS_STREAM_QUEUE_MAX_ITEMS` | `4` | Streaming queue backpressure limit; keep small for NAS/P4 to avoid memory spikes |
 | `MOSS_PROMPT_AUDIO_PATH` | - | Optional reference audio for voice cloning |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | `/api/tts` reference-audio upload limit |
-| `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `10` | Trim uploaded/reference audio before codec encoding |
+| `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `8` | Trim uploaded/reference audio before codec encoding |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | LRU cache size for encoded prompt audio codes |
 | `MOSS_APPLY_ANGEVOICE_RULES` | `true` | Apply AngeVoice Chinese rules before MOSS inference |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | Fall back to CPU if CUDA load/self-test fails |
@@ -118,15 +118,15 @@ request:
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | Reject silent/clipped/invalid test output |
 | `MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED` | `true` | Scale MOSS output down when it exceeds the target peak |
 | `MOSS_OUTPUT_TARGET_PEAK` | `0.78` | Softer MOSS output peak target to reduce clipping and small-speaker bursts |
-| `MOSS_OUTPUT_GAIN` | `0.90` | Slight pre-normalization attenuation to preserve dynamics and reduce distortion |
+| `MOSS_OUTPUT_GAIN` | `0.88` | Slight pre-normalization attenuation to preserve dynamics and reduce distortion |
 | `MOSS_OUTPUT_DECLICK_ENABLED` | `true` | Repair isolated impulse spikes before encoding |
-| `MOSS_OUTPUT_EDGE_FADE_MS` | `2` | Short fade-in/out for MOSS segment boundaries |
+| `MOSS_OUTPUT_EDGE_FADE_MS` | `3` | Short fade-in/out for MOSS segment boundaries |
 | `MOSS_REALTIME_STREAMING_DECODE` | `true` | Low-latency default: use OpenMOSS frame streaming for earlier first audio. Set false for quality-first chunk generation if artifacts appear |
 
 
 ## MOSS 进程级隔离
 
-MOSS 进程级隔离默认关闭，默认路径为同进程推理；MOSS 逐帧实时解码默认关闭，优先保证 Web/小智播放质量。
+MOSS 进程级隔离默认关闭，默认路径为同进程推理；MOSS 逐帧实时解码默认开启以降低首包等待。如出现电流音、卡顿或边界噪声，可改为 `MOSS_REALTIME_STREAMING_DECODE=false` 走质量优先分包。
 需要排查 CUDA/ONNX Runtime 底层卡死时，可以手动开启隔离；开启后主服务进程会把匹配 provider 的请求发给独立 worker 子进程，worker 长时间无事件或超时时会被 terminate/kill，并在下次请求重建 runtime。
 
 默认配置：
@@ -155,13 +155,13 @@ KOKORO_MAX_CONCURRENT_REQUESTS=1
 MOSS_CPU_THREADS=2
 MOSS_PROMPT_AUDIO_MAX_SECONDS=8
 MOSS_PROMPT_CACHE_MAX_ITEMS=6
-MOSS_STREAM_CHUNK_SECONDS=0.42
+MOSS_STREAM_CHUNK_SECONDS=0.40
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
 MOSS_REALTIME_STREAMING_DECODE=true
 MOSS_OUTPUT_TARGET_PEAK=0.78
-MOSS_OUTPUT_GAIN=0.90
+MOSS_OUTPUT_GAIN=0.88
 MOSS_OUTPUT_DECLICK_ENABLED=true
-MOSS_OUTPUT_EDGE_FADE_MS=2
+MOSS_OUTPUT_EDGE_FADE_MS=3
 ```
 
 For modern GPUs with 8 GB VRAM, keep reference audio short. Long clone samples
@@ -242,4 +242,4 @@ selected `onnxruntime-gpu` wheel.
 
 ## MOSS long-text segmentation
 
-`MOSS_SEGMENT_LENGTH=140` controls MOSS-only text segmentation. It is separate from `KOKORO_SEGMENT_LENGTH` so Kokoro can keep shorter segments while MOSS uses longer chunks to reduce long-text stitching artifacts, stutter and pops.
+`MOSS_SEGMENT_LENGTH=180` controls MOSS-only text segmentation. It is separate from `KOKORO_SEGMENT_LENGTH` so Kokoro can keep shorter segments while MOSS uses longer chunks to reduce long-text stitching artifacts, stutter and pops.

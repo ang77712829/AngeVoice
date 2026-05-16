@@ -1,41 +1,47 @@
 """Pydantic models for AngeVoice admin APIs."""
 
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, create_model
+
+from ..admin_config_schema import ADMIN_CONFIG_FIELDS
 
 
-class AdminModelAction(BaseModel):
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdminModelAction(StrictModel):
     include_current: bool = True
     force: bool = False
 
 
-class AdminSingleModelAction(BaseModel):
+class AdminSingleModelAction(StrictModel):
     force: bool = False
 
 
-class AdminSwitchModelAction(BaseModel):
+class AdminSwitchModelAction(StrictModel):
     model: str
     unload_previous: bool | None = None
     load: bool = True
 
 
-class AdminApiKeyAction(BaseModel):
+class AdminApiKeyAction(StrictModel):
     rotate: bool = True
 
 
-class AdminConfigPatch(BaseModel):
-    default_speed: float | None = Field(default=None, ge=0.5, le=2.0)
-    max_concurrent_requests: int | None = Field(default=None, ge=1, le=64)
-    request_timeout_seconds: float | None = Field(default=None, ge=1, le=3600)
-    model_idle_timeout_seconds: float | None = Field(default=None, ge=0, le=86400)
-    model_idle_check_interval: float | None = Field(default=None, ge=5, le=3600)
-    moss_stream_chunk_seconds: float | None = Field(default=None, ge=0.05, le=2.0)
-    moss_realtime_streaming_decode: bool | None = None
-    moss_quality_gate_enabled: bool | None = None
-    moss_process_isolation_enabled: bool | None = None
-    rate_limit_qps: float | None = Field(default=None, ge=0, le=1000)
-    rate_limit_burst: int | None = Field(default=None, ge=0, le=10000)
-    max_queue_length: int | None = Field(default=None, ge=0, le=10000)
-    trust_proxy_headers: bool | None = None
-    public_status_endpoints: bool | None = None
-    model_source: str | None = Field(default=None, pattern="^(auto|huggingface|modelscope)$")
+class AdminProfileAction(StrictModel):
+    profile: str
 
+
+# Keep the admin editable field list single-sourced in admin_config_schema.
+# Pydantic still rejects unknown fields here; value ranges/types are enforced by
+# validate_admin_config_values() so adding a new editable field only touches one
+# schema table.
+AdminConfigPatch = create_model(
+    "AdminConfigPatch",
+    __base__=StrictModel,
+    **{key: (Any | None, None) for key in ADMIN_CONFIG_FIELDS.keys()},
+)

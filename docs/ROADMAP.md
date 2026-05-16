@@ -65,6 +65,7 @@ This roadmap tracks the long-term direction of AngeVoice. Completed items are ma
 - √ Writable voices mount documentation / 可写 voices 挂载说明
 - √ Voice preview and favorite voices in Studio UI / Studio UI 音色试听与收藏
 - √ MOSS reference-audio clone upload in Studio UI / Studio UI 中的 MOSS 参考音频克隆上传
+- √ Lightweight Admin dashboard and tuning panel / 轻量管理仪表盘与调参面板
 - □ Web UI voice upload page / Web UI 音色上传页面
 - □ Voice metadata database / 音色元数据数据库
 - □ Role-based admin permissions / 分角色管理权限
@@ -79,8 +80,8 @@ This roadmap tracks the long-term direction of AngeVoice. Completed items are ma
 - √ Voice gallery filters, favorites, and recent voices / 音色库筛选、收藏与最近使用
 - □ Batch synthesis page / 批量合成页面
 - □ Long text/audiobook workflow / 长文本与有声书工作流
-- □ Admin settings panel / 管理设置面板
-- □ Realtime service dashboard / 实时服务仪表盘
+- √ Admin settings panel / 管理设置面板
+- √ Realtime service dashboard / 实时服务仪表盘
 
 ## Deployment / 部署
 

@@ -1,71 +1,120 @@
-# MOSS 音频听感与小智播放排障
+# MOSS 音频质量与长文本自然度调优
 
-本页记录 AngeVoice v2.6.4.6 之后对 MOSS 听感的默认策略。
+本项目只参考 MOSS-TTS-Nano 的官方推理思路，不复制官方 runtime。AngeVoice 在适配层重点解决中文用户常遇到的长文本问题：切片过碎、英文/中英混排硬切、3-5 秒异常静音、流式播放断流感、片段拼接电流感、局部重复读和音色漂移。
 
-## 默认策略：低延迟保守流式
+## 默认策略
 
-MOSS 的 WebSocket 默认启用官方逐帧实时解码，以降低 Web/小智首包等待：
-
-```bash
-MOSS_REALTIME_STREAMING_DECODE=true
-```
-
-逐帧实时解码可以降低首包延迟，但在部分 CUDA/ONNX 组合、参考音频和小喇叭播放链路上，可能放大 chunk 边界不连续，表现为：
-
-- 电流音；
-- “噗”“刺”的爆音；
-- 片段之间卡顿或断裂；
-- 小智播放时比 Web 端更明显的失真。
-
-如遇上述问题，可把 `MOSS_REALTIME_STREAMING_DECODE=false`，让 AngeVoice 先生成更完整的高质量 chunk，再按固定时长切成小包推送。这样延迟更高，但听感可能更稳。
-
-## 推荐参数
-
-```bash
-MOSS_REALTIME_STREAMING_DECODE=true
-MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
-MOSS_OUTPUT_TARGET_PEAK=0.78
-MOSS_OUTPUT_GAIN=0.90
-MOSS_OUTPUT_DECLICK_ENABLED=true
-MOSS_OUTPUT_EDGE_FADE_MS=2
-```
-
-这些参数会做温和后处理：
-
-- 去除极小 DC offset；
-- 降低峰值，避免小喇叭/Opus 链路爆音；
-- 修复孤立瞬态尖峰；
-- 在片段头尾做短淡入淡出，减少拼接噪声。
-
-## 如果仍有卡顿或爆音
-
-优先使用更保守的分段和分包：
-
-```bash
-MOSS_SEGMENT_LENGTH=140
-MOSS_STREAM_CHUNK_SECONDS=0.42
-MOSS_STREAM_QUEUE_MAX_ITEMS=8
-MOSS_OUTPUT_TARGET_PEAK=0.78
-```
-
-`MOSS_SEGMENT_LENGTH` 只影响 MOSS，不影响 Kokoro。长文本段数过多时，段间拼接会增加卡顿、爆音和语气断裂概率，可在 140~180 之间尝试。
-
-## MOSS 文本规则路由和日期上下文
-
-MOSS 文本清洗现在显式以 `model=moss-*` 调用 AngeVoice 中文规则，避免误套 Kokoro 专用的替换字典。也就是说，Kokoro 仍可用较激进的同音字提示修正多音字，而 MOSS 只应用确认有效的保底规则和通用文本规范化，减少把“重庆、银行、调整”等词误改成 Kokoro 提示字的风险。
-
-短日期会按上下文判断：`4.20号`、`活动在4.20开始`、`4.20更新` 会读作“四月二十日”；裸小数、版本号和金额不会无脑改日期，例如 `版本4.20` 保持版本/小数语义，`4.20元` 仍按金额读。
-
-不建议把 `MOSS-Audio-Tokenizer` 直接替换进 MOSS-TTS-Nano。本项目当前只接入与 MOSS-TTS-Nano ONNX runtime 配套的 tokenizer/codec，避免 token 空间或 codec codebook 不匹配导致音质下降或不可用。
-
-## 低延迟实时模式修正
-
-`MOSS_REALTIME_STREAMING_DECODE=true` 是推荐默认值，适合小智、WebSocket 和 NAS 低延迟播放；如果出现边界噪声或卡顿，可回退为 `false`。
-
-需要注意的是，实时模式会产生很多很小的音频块。如果对每个小块都做 1~3ms 的 edge fade，会在播放端形成连续的微小音量缺口，听起来像卡顿、抖动或爆音。因此当前实现只在整段/整块输出上使用边缘淡入淡出，实时逐帧小块只保留去 DC、去孤立脉冲和峰值保护，不再逐小块 fade。
-
-如需最大听感稳定性、可以接受更慢首包，可手动设置：
+默认值以“稳定、自然、NAS 可承受”为目标：
 
 ```env
-MOSS_REALTIME_STREAMING_DECODE=false
+KOKORO_SEGMENT_LENGTH=160
+KOKORO_STREAM_CHUNK_SECONDS=0.55
+KOKORO_STREAM_PREBUFFER_SECONDS=0.25
+
+MOSS_SEGMENT_LENGTH=180
+MOSS_VOICE_CLONE_MAX_TEXT_TOKENS=64
+MOSS_MAX_NEW_FRAMES=320
+MOSS_SAMPLE_MODE=fixed
+MOSS_SEED=1234
+MOSS_STREAM_CHUNK_SECONDS=0.40
+MOSS_STREAM_QUEUE_MAX_ITEMS=4
+MOSS_STREAM_PREBUFFER_SECONDS=0.45
+
+MOSS_AUDIO_POLISH_ENABLED=true
+MOSS_TRIM_SILENCE_ENABLED=true
+MOSS_TRIM_SILENCE_DB=-45
+MOSS_MAX_SILENCE_MS=850
+MOSS_CROSSFADE_MS=25
+MOSS_SEGMENT_PAUSE_MS=100
+MOSS_RUNTIME_PAUSE_MAX_MS=500
+MOSS_OUTPUT_TARGET_PEAK=0.78
+MOSS_OUTPUT_GAIN=0.88
+MOSS_OUTPUT_EDGE_FADE_MS=3
 ```
+
+## 这些参数分别解决什么
+
+- `MOSS_SEGMENT_LENGTH`：AngeVoice 外层自然切片长度。默认 180 是 NAS/P4 安全值；均衡档可用 220；中文长文本旁白可手动提高到 260-300；英文旁白可尝试 260-320。太小会碎，太大可能增加显存峰值、模型重复和尾部变调风险。
+- `MOSS_VOICE_CLONE_MAX_TEXT_TOKENS`：MOSS runtime 内部切片 token 上限。太小会让一句话被拆成多段，太大则可能增加显存和生成不稳。
+- `MOSS_MAX_NEW_FRAMES`：生成帧预算。长句过低可能吞尾、突然断；过高可能拖慢或尾部重复。
+- `MOSS_AUDIO_POLISH_ENABLED`：开启最终音频自然化后处理。
+- `MOSS_TRIM_SILENCE_ENABLED`：裁掉每个 chunk 首尾异常静音，减少段间“卡住”。
+- `MOSS_MAX_SILENCE_MS`：最终音频中超过该上限的连续静音会被压缩。推荐 700-1000。
+- `MOSS_CROSSFADE_MS`：HTTP 非流式拼接时的短 crossfade，减少硬切电流感。推荐 25-45。
+- `MOSS_SEGMENT_PAUSE_MS`：AngeVoice 外层文本段之间补的短停顿。推荐 80-180。
+- `MOSS_RUNTIME_PAUSE_MAX_MS`：MOSS runtime 估算出的内部 chunk pause 上限，避免出现 2-5 秒异常空白。
+- `MOSS_STREAM_PREBUFFER_SECONDS`：浏览器开始播放前的初始缓冲。NAS/P4 默认 0.45；如果流式播放仍有断流感，可提高到 0.6-0.8。
+
+## 推荐预设
+
+### NAS 稳定
+
+```env
+MOSS_SEGMENT_LENGTH=180
+MOSS_VOICE_CLONE_MAX_TEXT_TOKENS=64
+MOSS_MAX_NEW_FRAMES=320
+MOSS_STREAM_CHUNK_SECONDS=0.40
+MOSS_STREAM_QUEUE_MAX_ITEMS=4
+MOSS_MAX_SILENCE_MS=850
+MOSS_CROSSFADE_MS=25
+MOSS_RUNTIME_PAUSE_MAX_MS=500
+```
+
+### 中文长文本旁白（推荐 12GB+ 或确认显存充足后开启）
+
+```env
+MOSS_SEGMENT_LENGTH=280
+MOSS_VOICE_CLONE_MAX_TEXT_TOKENS=64
+MOSS_MAX_NEW_FRAMES=460
+MOSS_STREAM_CHUNK_SECONDS=0.40
+MOSS_MAX_SILENCE_MS=850
+MOSS_CROSSFADE_MS=25
+MOSS_SEGMENT_PAUSE_MS=100
+MOSS_RUNTIME_PAUSE_MAX_MS=500
+```
+
+### 英文/中英混排旁白（推荐 12GB+）
+
+```env
+MOSS_SEGMENT_LENGTH=300
+MOSS_VOICE_CLONE_MAX_TEXT_TOKENS=96
+MOSS_MAX_NEW_FRAMES=480
+MOSS_STREAM_CHUNK_SECONDS=0.60
+MOSS_MAX_SILENCE_MS=850
+MOSS_CROSSFADE_MS=25
+MOSS_RUNTIME_PAUSE_MAX_MS=500
+```
+
+### 低延迟流式
+
+```env
+MOSS_SEGMENT_LENGTH=220
+MOSS_STREAM_CHUNK_SECONDS=0.35
+MOSS_STREAM_QUEUE_MAX_ITEMS=16
+MOSS_STREAM_PREBUFFER_SECONDS=0.35
+MOSS_MAX_SILENCE_MS=850
+MOSS_CROSSFADE_MS=20
+```
+
+## 质量诊断
+
+合成后可以用脚本定位长静音、削波和响度问题：
+
+```bash
+python scripts/analyze_audio_quality.py output.wav
+```
+
+重点看：
+
+- `clip_ratio`：应接近 0；
+- `long_silence_count`：正式旁白最好为 0；
+- `max_silence_ms`：默认应被压到 900ms 附近；
+- `silence_ratio`：长文本旁白可有自然停顿，但过高会显得卡顿。
+
+## 排查建议
+
+1. 出现 2-5 秒卡顿：先确认 `MOSS_MAX_SILENCE_MS` 和 `MOSS_RUNTIME_PAUSE_MAX_MS` 是否生效。
+2. 出现重复读：降低 `MOSS_MAX_NEW_FRAMES` 到 400-450，保持 `MOSS_SAMPLE_MODE=fixed`。
+3. 出现尾部吞字：提高 `MOSS_MAX_NEW_FRAMES` 到 460-500，或略降低 `MOSS_SEGMENT_LENGTH`。
+4. 流式播放卡顿但保存 WAV 正常：提高 `MOSS_STREAM_PREBUFFER_SECONDS` 到 0.8，或增大 `MOSS_STREAM_CHUNK_SECONDS`。
+5. 中文听起来碎：先尝试均衡档 `MOSS_SEGMENT_LENGTH=220`；显存充足时再提高到 260-300，并保持 `MOSS_SEGMENT_PAUSE_MS=100-150`。

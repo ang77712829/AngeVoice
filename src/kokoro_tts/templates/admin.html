@@ -12,56 +12,109 @@
   <link rel="stylesheet" href="/static/admin.css" />
 </head>
 <body>
-  <main class="app-shell">
-    <header class="topbar">
-      <div class="brand-mark brand-wordmark" aria-hidden="true"><span class="name-ange">Ange</span><span class="name-voice">Voice</span></div>
-      <div class="brand-copy"><p class="eyebrow">Admin</p><h1>管理后台</h1></div>
-      <div class="topbar-actions"><a class="ghost-button small" href="/">返回 Studio</a><a class="ghost-button small" href="/api-docs">API 文档</a></div>
+  <main class="app-shell admin-shell">
+    <header class="topbar admin-topbar">
+      <a class="brand-mark brand-wordmark admin-brand" href="/" aria-label="AngeVoice Studio">
+        <span class="name-ange">Ange</span><span class="name-voice">Voice</span>
+      </a>
+      <div class="brand-copy">
+        <p class="eyebrow">Admin</p>
+        <h1>管理控制台</h1>
+      </div>
+      <div class="topbar-actions">
+        <a class="ghost-button small" href="/">Studio</a>
+        <a class="ghost-button small" href="/api-docs">API</a>
+        <button class="ghost-button small" id="refresh-btn" type="button">刷新</button>
+      </div>
     </header>
-    <section class="admin-grid">
-      <article class="panel spotlight composer">
-        <div class="section-head"><div><p class="eyebrow">Runtime</p><h2>运行状态</h2></div><button class="ghost-button small" id="refresh-btn">刷新</button></div>
-        <div class="metrics-grid" id="admin-metrics"></div>
-        <h3>模型缓存状态</h3>
-        <table class="admin-table"><thead><tr><th>模型</th><th>状态</th><th>设备</th><th>缓存/隔离</th><th>操作</th></tr></thead><tbody id="models-body"></tbody></table>
-        <p class="hint">“加载”只预热模型；“切换”会设为当前模型；“强制”用于 MOSS CUDA 卡死、active_count 异常或显存无法释放时，会中断正在运行的请求。</p>
-        <div class="button-row" style="margin-top:14px;">
-          <button class="secondary-button" id="clear-cache-btn">清空音频缓存</button>
-          <button class="danger-button" id="unload-btn">释放所有模型</button>
-          <button class="danger-button" id="force-unload-btn">强制释放/重置</button>
+
+    <section class="admin-layout">
+      <article class="panel admin-panel overview-panel">
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">Dashboard</p>
+            <h2>概览</h2>
+          </div>
+          <span class="status-pill" id="admin-health-pill"><span></span><b>检查中</b></span>
+        </div>
+        <div class="metrics-grid admin-metrics" id="admin-metrics"></div>
+      </article>
+
+      <article class="panel admin-panel models-panel">
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">Models</p>
+            <h2>模型</h2>
+          </div>
+          <div class="button-row">
+            <button class="secondary-button small-action" id="clear-cache-btn" type="button">清缓存</button>
+            <button class="danger-button small-action" id="unload-btn" type="button">释放</button>
+            <button class="danger-button small-action" id="force-unload-btn" type="button">强制</button>
+          </div>
+        </div>
+        <div class="model-list" id="models-body"></div>
+      </article>
+
+      <article class="panel admin-panel tuning-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Tuning</p>
+            <h2>语音调参</h2>
+          </div>
+          <div class="button-row">
+            <button class="secondary-button" id="reset-runtime-config-btn" type="button">清除持久化</button>
+            <button class="primary-button" id="save-config-btn" type="button">保存配置</button>
+          </div>
+        </div>
+        <div class="runtime-config-note" id="runtime-config-note">配置来源检查中...</div>
+        <div class="profile-grid" id="profile-grid"></div>
+        <nav class="config-tabs" id="config-tabs" aria-label="配置分组"></nav>
+        <form class="config-form" id="config-form"></form>
+        <details class="admin-details" id="advanced-config-details">
+          <summary>高级配置</summary>
+          <div class="config-form advanced-form" id="advanced-config-form"></div>
+        </details>
+      </article>
+
+      <article class="panel admin-panel security-panel">
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">Security</p>
+            <h2>安全</h2>
+          </div>
+        </div>
+        <div class="security-stack">
+          <div class="secret-box" id="api-key-status">加载中...</div>
+          <div class="button-row">
+            <button class="secondary-button" id="reveal-key-btn" type="button">显示 Key</button>
+            <button class="danger-button" id="rotate-key-btn" type="button">轮换 Key</button>
+          </div>
+          <div class="mini-list" id="security-summary"></div>
         </div>
       </article>
-      <article class="panel spotlight composer">
-        <div class="section-head"><div><p class="eyebrow">Security</p><h2>API Key</h2></div></div>
-        <p class="hint">生产环境建议开启 Bearer API Key。若配置为 <code>KOKORO_API_KEY=auto</code>，首次启动会自动生成并持久化。</p>
-        <div class="secret-box" id="api-key-status">加载中...</div>
-        <div class="button-row" style="margin-top:14px;">
-          <button class="secondary-button" id="reveal-key-btn">显示当前 Key</button>
-          <button class="danger-button" id="rotate-key-btn">生成/轮换 API Key</button>
+
+      <article class="panel admin-panel diagnostics-panel">
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">Diagnostics</p>
+            <h2>诊断</h2>
+          </div>
+          <button class="ghost-button small" id="export-env-btn" type="button">导出 ENV</button>
         </div>
-        <p class="hint">轮换后客户端需要在 Studio 设置里重新粘贴 token；如果环境变量写死了 KOKORO_API_KEY，重启后仍以环境变量为准。</p>
-      </article>
-      <article class="panel spotlight composer">
-        <div class="section-head"><div><p class="eyebrow">Tuning</p><h2>运行参数</h2></div></div>
-        <div class="admin-form" id="config-form">
-          <label class="field"><span>最大并发 <b class="badge">重启生效</b></span><input id="cfg-max-concurrent" type="number" min="1" max="64"><small class="hint">已有 semaphore 不热替换，避免运行中破坏排队。</small></label>
-          <label class="field"><span>请求超时秒 <b class="badge">立即</b></span><input id="cfg-timeout" type="number" min="1" step="1"></label>
-          <label class="field"><span>空闲释放秒 <b class="badge">立即</b></span><input id="cfg-idle" type="number" min="0" step="1"></label>
-          <label class="field"><span>MOSS 分包秒 <b class="badge">立即</b></span><input id="cfg-moss-chunk" type="number" min="0.05" step="0.01"></label>
-          <label class="toggle-row"><input id="cfg-moss-realtime" type="checkbox"><span>MOSS 逐帧流式/低首包 <b class="badge">立即</b></span></label>
-          <label class="toggle-row"><input id="cfg-moss-isolation" type="checkbox"><span>MOSS 进程隔离 <b class="badge">卸载/重建模型</b></span></label>
-          <label class="field"><span>限流 QPS <b class="badge">重启生效</b></span><input id="cfg-qps" type="number" min="0" step="0.1"></label>
-          <label class="field"><span>限流突发 <b class="badge">重启生效</b></span><input id="cfg-burst" type="number" min="0" step="1"></label>
-          <label class="field"><span>队列上限 <b class="badge">重启生效</b></span><input id="cfg-queue" type="number" min="0" step="1"></label>
-          <label class="toggle-row"><input id="cfg-trust-proxy" type="checkbox"><span>信任反代 IP 头 <b class="badge">重启生效</b></span></label>
-          <label class="toggle-row"><input id="cfg-public-status" type="checkbox"><span>公开模型/音色列表 <b class="badge">立即</b></span><small class="hint">关闭后 /v1/models、/v1/models/current、/v1/audio/voices 需要 Bearer Token；/health 仍公开。</small></label>
-          <label class="field"><span>模型下载源 <b class="badge">下次下载</b></span><select id="cfg-source"><option value="auto">auto 自动</option><option value="modelscope">ModelScope 国内</option><option value="huggingface">Hugging Face 海外</option></select><small class="hint">auto 会先探测 HF/ModelScope 可达性，再用国家判断。</small></label>
-          <p class="hint">MOSS-TTS-Nano 暂不支持语速调节，前端会锁定 speed=1.0，API 传入非 1.0 会返回 400。</p>
-        </div>
-        <div class="button-row" style="margin-top:14px;"><button class="primary-button" id="save-config-btn">保存配置（按生效说明）</button></div>
-        <pre id="admin-json" class="progress-track show" style="white-space:pre-wrap;color:var(--text);"></pre>
+        <div class="quality-grid" id="quality-grid"></div>
+        <div class="request-list" id="request-list"></div>
+        <details class="admin-details">
+          <summary>ENV Patch</summary>
+          <textarea id="env-patch" class="admin-textarea" spellcheck="false" readonly></textarea>
+        </details>
+        <details class="admin-details">
+          <summary>原始状态 JSON</summary>
+          <pre id="admin-json" class="admin-json"></pre>
+        </details>
       </article>
     </section>
+
+    <div class="toast" id="admin-toast" role="status" aria-live="polite"></div>
   </main>
   <script src="/static/admin.js" defer></script>
 </body>

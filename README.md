@@ -243,6 +243,7 @@ Docker 健康检查把 `ok` 和 `idle` 都视为 healthy。
 | 入口 | 地址 | 用途 |
 |---|---|---|
 | Studio | `/` | 图形化合成、试听、模型切换 |
+| 管理后台 | `/admin` | 查看状态、切换/释放模型、调整语音质量参数、查看/轮换 API Key |
 | API 文档页 | `/api-docs` | 普通用户复制 HTTP/WebSocket/MOSS 克隆示例 |
 | Swagger | `/docs` | FastAPI 自动交互式调试文档 |
 | ReDoc | `/redoc` | FastAPI 自动阅读型文档 |
@@ -372,7 +373,8 @@ environment:
 | `KOKORO_MAX_CONCURRENT_REQUESTS` | `1` | 单进程最大合成并发；NAS/老显卡默认保守，高显存 GPU 可调到 2~4 |
 | `KOKORO_API_KEY` | - | 设置后启用 Bearer 鉴权；`auto` 会首次启动生成强随机 key 并写入 `ANGEVOICE_API_KEY_FILE`；占位值会被拒绝 |
 | `ANGEVOICE_API_KEY_FILE` | `/app/outputs/.angevoice-api-key` | `KOKORO_API_KEY=auto` 时的持久化 key 文件，管理后台可查看/轮换 |
-| `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | WebSocket 输出小包时长 |
+| `ANGEVOICE_RUNTIME_CONFIG_FILE` | `/app/outputs/runtime-config.json` | 管理后台保存的运行时配置；优先级高于环境变量，可导出 ENV patch |
+| `KOKORO_STREAM_CHUNK_SECONDS` | `0.55` | WebSocket 输出小包时长 |
 | `KOKORO_CACHE_ENABLED` | `true` | 是否启用内存 LRU 缓存 |
 | `KOKORO_BATCH_ENABLED` | `true` | 是否启用批量合成 |
 | `KOKORO_ADMIN_ENABLED` | Docker 默认 `true` | 是否启用管理后台和管理接口；开启后必须设置 `ANGEVOICE_ADMIN_PASSWORD`（默认 `admin123`） |
@@ -388,7 +390,7 @@ environment:
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider：`cpu` / `cuda` |
 | `MOSS_CUDA_ENABLED` | `false` | 是否允许注册/切换 `moss-nano-cuda`；CPU/legacy-gpu 默认关闭，通用 GPU 画像开启 |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | MOSS 克隆参考音频上传大小上限 |
-| `MOSS_SEGMENT_LENGTH` | `140` | MOSS 专用长文本分段长度，减少长文本段间拼接、卡顿和爆音；不影响 Kokoro 的 `KOKORO_SEGMENT_LENGTH` |
+| `MOSS_SEGMENT_LENGTH` | `180` | MOSS 专用长文本分段长度，减少长文本硬切、段间拼接和卡顿；不影响 Kokoro 的 `KOKORO_SEGMENT_LENGTH` |
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `8` | 克隆参考音频裁剪时长 |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | 参考音频编码缓存条目数 |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | CUDA 自检失败时回退 CPU |
@@ -398,9 +400,9 @@ environment:
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | 超时后终止 worker 的宽限秒数 |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | 拒绝静音、NaN/Inf 或明显 clipping 的 MOSS 自检输出 |
 | `MOSS_OUTPUT_TARGET_PEAK` | `0.78` | MOSS 输出峰值目标，降低小喇叭/Opus链路爆音风险 |
-| `MOSS_OUTPUT_GAIN` | `0.90` | MOSS 后处理预衰减，保留动态同时降低失真 |
+| `MOSS_OUTPUT_GAIN` | `0.88` | MOSS 后处理预衰减，保留动态同时降低失真 |
 | `MOSS_OUTPUT_DECLICK_ENABLED` | `true` | 修复孤立瞬态尖峰，降低“噗”“刺”“电流音” |
-| `MOSS_OUTPUT_EDGE_FADE_MS` | `2` | MOSS 片段头尾短淡入淡出毫秒数，减少拼接爆音 |
+| `MOSS_OUTPUT_EDGE_FADE_MS` | `3` | MOSS 片段头尾短淡入淡出毫秒数，减少拼接爆音 |
 | `ANGEVOICE_IDLE_TIMEOUT_SECONDS` | `600` | 空闲超时自动卸载所有已加载模型（秒），0=禁用 |
 | `ANGEVOICE_IDLE_CHECK_INTERVAL` | `30` | 空闲检查间隔（秒） |
 | `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.25` | 音频播放余量低阈值（秒），低于此值每次解码 1 帧以尽快出声 |

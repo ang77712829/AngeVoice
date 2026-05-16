@@ -69,11 +69,13 @@ STR_ENV: dict[str, str] = {
     "KOKORO_MP3_BITRATE": "mp3_bitrate",
     "ANGEVOICE_DEFAULT_MODEL": "default_model",
     "ANGEVOICE_OUTPUT_DIR": "output_dir",
+    "ANGEVOICE_RUNTIME_CONFIG_FILE": "runtime_config_file",
     "ANGEVOICE_MODEL_SOURCE": "model_source",
     "ANGEVOICE_MODEL_SOURCE_DETECT_URL": "model_source_detect_url",
     "ANGEVOICE_MODEL_SOURCE_PROBE_HF_URL": "model_source_probe_hf_url",
     "ANGEVOICE_MODEL_SOURCE_PROBE_MODELSCOPE_URL": "model_source_probe_modelscope_url",
     "ANGEVOICE_API_KEY_FILE": "api_key_file",
+    "ANGEVOICE_SINGLE_NEWLINE_POLICY": "text_single_newline_policy",
     "KOKORO_HF_REPO": "kokoro_hf_repo",
     "KOKORO_MODELSCOPE_REPO": "kokoro_modelscope_repo",
     "MOSS_MODELSCOPE_REPO": "moss_modelscope_repo",
@@ -91,6 +93,9 @@ INT_ENV: dict[str, IntEnvSpec] = {
     "KOKORO_SEGMENT_LENGTH": IntEnvSpec("segment_length", 20),
     "MOSS_SEGMENT_LENGTH": IntEnvSpec("moss_segment_length", 20),
     "KOKORO_CACHE_MAX_ITEMS": IntEnvSpec("cache_max_items", 0),
+    "KOKORO_CACHE_MAX_BYTES": IntEnvSpec("cache_max_bytes", 0),
+    "KOKORO_CACHE_SKIP_TEXT_OVER_CHARS": IntEnvSpec("cache_skip_text_over_chars", 0),
+    "KOKORO_CACHE_SKIP_AUDIO_OVER_BYTES": IntEnvSpec("cache_skip_audio_over_bytes", 0),
     "KOKORO_BATCH_MAX_ITEMS": IntEnvSpec("batch_max_items", 1),
     "KOKORO_BATCH_CONCURRENCY": IntEnvSpec("batch_concurrency", 1),
     "KOKORO_VOICE_UPLOAD_MAX_BYTES": IntEnvSpec("voice_upload_max_bytes", 1),
@@ -103,6 +108,11 @@ INT_ENV: dict[str, IntEnvSpec] = {
     "MOSS_SEED": IntEnvSpec("moss_seed", -1),
     "MOSS_CUDA_MEMORY_LIMIT_MB": IntEnvSpec("moss_cuda_memory_limit_mb", 0),
     "MOSS_STREAM_QUEUE_MAX_ITEMS": IntEnvSpec("moss_stream_queue_max_items", 1, 64),
+    "MOSS_VRAM_SAFE_FREE_MB": IntEnvSpec("moss_vram_safe_free_mb", 0),
+    "MOSS_VRAM_CRITICAL_FREE_MB": IntEnvSpec("moss_vram_critical_free_mb", 0),
+    "MOSS_LOW_VRAM_SEGMENT_LENGTH": IntEnvSpec("moss_low_vram_segment_length", 20),
+    "MOSS_LOW_VRAM_MAX_NEW_FRAMES": IntEnvSpec("moss_low_vram_max_new_frames", 1),
+    "MOSS_LOW_VRAM_TEXT_TOKENS": IntEnvSpec("moss_low_vram_text_tokens", 1),
     "KOKORO_RATE_LIMIT_BURST": IntEnvSpec("rate_limit_burst", 0),
     "KOKORO_MAX_QUEUE_LENGTH": IntEnvSpec("max_queue_length", 0),
 }
@@ -111,9 +121,11 @@ FLOAT_ENV: dict[str, FloatEnvSpec] = {
     "KOKORO_DEFAULT_SPEED": FloatEnvSpec("default_speed"),
     "KOKORO_REQUEST_TIMEOUT_SECONDS": FloatEnvSpec("request_timeout_seconds", 1.0),
     "KOKORO_STREAM_CHUNK_SECONDS": FloatEnvSpec("stream_chunk_seconds", 0.05, 2.0),
+    "KOKORO_STREAM_PREBUFFER_SECONDS": FloatEnvSpec("stream_prebuffer_seconds", 0.0, 3.0),
     "ANGEVOICE_MODEL_SWITCH_TIMEOUT_SECONDS": FloatEnvSpec("model_switch_timeout_seconds", 1.0),
     "MOSS_PROMPT_AUDIO_MAX_SECONDS": FloatEnvSpec("moss_prompt_audio_max_seconds", 0.0),
     "MOSS_STREAM_CHUNK_SECONDS": FloatEnvSpec("moss_stream_chunk_seconds", 0.05, 2.0),
+    "MOSS_STREAM_PREBUFFER_SECONDS": FloatEnvSpec("moss_stream_prebuffer_seconds", 0.0, 3.0),
     "MOSS_MAX_CLIP_RATIO": FloatEnvSpec("moss_max_clip_ratio", 0.0, 1.0),
     "MOSS_OUTPUT_TARGET_PEAK": FloatEnvSpec("moss_output_target_peak", 0.1, 1.0),
     "MOSS_OUTPUT_GAIN": FloatEnvSpec("moss_output_gain", 0.1, 2.0),
@@ -124,6 +136,12 @@ FLOAT_ENV: dict[str, FloatEnvSpec] = {
     "MOSS_STREAM_CHUNK_MIN_FLOOR": FloatEnvSpec("moss_stream_chunk_min_floor", 0.01),
     "MOSS_PROCESS_KILL_GRACE_SECONDS": FloatEnvSpec("moss_process_kill_grace_seconds", 0.1, 30.0),
     "MOSS_OUTPUT_EDGE_FADE_MS": FloatEnvSpec("moss_output_edge_fade_ms", 0.0, 20.0),
+    "MOSS_TRIM_SILENCE_DB": FloatEnvSpec("moss_trim_silence_db", -90.0, -10.0),
+    "MOSS_MAX_SILENCE_MS": FloatEnvSpec("moss_max_silence_ms", 0.0, 5000.0),
+    "MOSS_CROSSFADE_MS": FloatEnvSpec("moss_crossfade_ms", 0.0, 120.0),
+    "MOSS_SEGMENT_PAUSE_MS": FloatEnvSpec("moss_segment_pause_ms", 0.0, 2000.0),
+    "MOSS_RUNTIME_PAUSE_MAX_MS": FloatEnvSpec("moss_runtime_pause_max_ms", 0.0, 3000.0),
+    "MOSS_FULL_CODEC_OOM_COOLDOWN_SECONDS": FloatEnvSpec("moss_full_codec_oom_cooldown_seconds", 0.0, 86400.0),
     "ANGEVOICE_MODEL_SOURCE_DETECT_TIMEOUT_SECONDS": FloatEnvSpec("model_source_detect_timeout_seconds", 0.1, 10.0),
     "ANGEVOICE_MODEL_SOURCE_PROBE_TIMEOUT_SECONDS": FloatEnvSpec("model_source_probe_timeout_seconds", 0.1, 10.0),
     "ANGEVOICE_IDLE_TIMEOUT_SECONDS": FloatEnvSpec("model_idle_timeout_seconds", 0.0),
@@ -155,6 +173,10 @@ BOOL_ENV: dict[str, str] = {
     "MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED": "moss_output_peak_normalize_enabled",
     "MOSS_PROCESS_ISOLATION_ENABLED": "moss_process_isolation_enabled",
     "MOSS_OUTPUT_DECLICK_ENABLED": "moss_output_declick_enabled",
+    "MOSS_AUDIO_POLISH_ENABLED": "moss_audio_polish_enabled",
+    "MOSS_TRIM_SILENCE_ENABLED": "moss_trim_silence_enabled",
+    "MOSS_VRAM_GUARD_ENABLED": "moss_vram_guard_enabled",
+    "MOSS_DISABLE_FULL_CODEC_AFTER_OOM": "moss_disable_full_codec_after_oom",
     "KOKORO_TRUST_PROXY_HEADERS": "trust_proxy_headers",
     "KOKORO_PUBLIC_STATUS_ENDPOINTS": "public_status_endpoints",
 }
@@ -169,6 +191,8 @@ def apply_env(config) -> None:
         config.output_dir = Path(config.output_dir).expanduser()
     if isinstance(config.api_key_file, str):
         config.api_key_file = Path(config.api_key_file).expanduser()
+    if isinstance(getattr(config, "runtime_config_file", None), str):
+        config.runtime_config_file = Path(config.runtime_config_file).expanduser()
 
     for env_name, spec in INT_ENV.items():
         if os.environ.get(env_name) is not None:

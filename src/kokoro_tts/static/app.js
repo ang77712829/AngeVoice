@@ -30,7 +30,8 @@ const state = {
   currentPlayer: null,
   lastBlob: null,
   promptAudioFile: null,
-  totalSegments: 0
+  totalSegments: 0,
+  totalAudioChunks: 0
 };
 
 const els = {
@@ -93,6 +94,19 @@ class StreamPlayer {
     this.pcmChunks = [];
     this.sampleRate = Number(bootstrap.sampleRate) || 24000;
     this.channels = 1;
+    this.prebufferSeconds = 0.25;
+    this.audioChunks = 0;
+    this.underrunCount = 0;
+  }
+
+  setPrebuffer(seconds) {
+    const value = Number(seconds);
+    if (Number.isFinite(value)) {
+      this.prebufferSeconds = Math.max(0, Math.min(3, value));
+    }
+    if (this.ctx && this.audioChunks === 0) {
+      this.nextStartTime = Math.max(this.nextStartTime, this.ctx.currentTime + this.prebufferSeconds);
+    }
   }
 
   init(sampleRate = this.sampleRate, channels = this.channels) {
@@ -100,8 +114,10 @@ class StreamPlayer {
     this.ctx = new AudioContextCtor({ sampleRate });
     this.sampleRate = this.ctx.sampleRate;
     this.channels = Math.max(1, Number(channels) || 1);
-    this.nextStartTime = 0;
+    this.nextStartTime = this.ctx.currentTime + this.prebufferSeconds;
     this.pcmChunks = [];
+    this.audioChunks = 0;
+    this.underrunCount = 0;
   }
 
   resume() {
@@ -120,6 +136,12 @@ class StreamPlayer {
     });
     this.sources = [];
     this.nextStartTime = this.ctx ? this.ctx.currentTime : 0;
+    this.audioChunks = 0;
+  }
+
+  bufferedSeconds() {
+    if (!this.ctx) return 0;
+    return Math.max(0, this.nextStartTime - this.ctx.currentTime);
   }
 
   enqueuePCM(base64Data, sampleRate = this.sampleRate, channels = this.channels) {
@@ -143,9 +165,14 @@ class StreamPlayer {
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.ctx.destination);
-    const start = Math.max(this.ctx.currentTime, this.nextStartTime);
+    const underrun = this.audioChunks > 0 && this.nextStartTime <= this.ctx.currentTime + 0.02;
+    if (underrun) {
+      this.underrunCount += 1;
+    }
+    const start = Math.max(this.ctx.currentTime + (this.audioChunks === 0 ? this.prebufferSeconds : 0), this.nextStartTime);
     source.start(start);
     this.nextStartTime = start + buffer.duration;
+    this.audioChunks += 1;
     this.sources.push(source);
     state.playing = true;
     source.onended = () => {
@@ -747,6 +774,7 @@ async function synthesizeStream(text, voice, speed) {
   state.currentRequestId = '';
   state.lastBlob = null;
   state.totalSegments = 0;
+  state.totalAudioChunks = 0;
 
   state.currentWs.onopen = () => {
     const payload = {
@@ -772,18 +800,22 @@ async function synthesizeStream(text, voice, speed) {
     }
     if (msg.type === 'started') {
       state.totalSegments = msg.segments || 0;
-      setProgress(`流式合成开始，共 ${state.totalSegments} 段`);
+      state.totalAudioChunks = 0;
+      state.currentPlayer.setPrebuffer(msg.recommended_prebuffer_seconds || (state.selectedModel.startsWith('moss') ? 0.45 : 0.25));
+      setProgress(`流式合成开始：文本 ${state.totalSegments} 段，预缓冲 ${state.currentPlayer.prebufferSeconds.toFixed(2)}s`);
     } else if (msg.type === 'audio') {
       const doneCount = msg.index + 1;
-      const totalText = state.totalSegments && doneCount <= state.totalSegments ? ` / ${state.totalSegments}` : '';
-      setProgress(`已接收 ${doneCount}${totalText} 段`);
+      state.totalAudioChunks = doneCount;
       state.currentPlayer.enqueuePCM(msg.data, msg.sample_rate, msg.channels);
+      const buffered = state.currentPlayer.bufferedSeconds().toFixed(2);
+      const underruns = state.currentPlayer.underrunCount ? `，补帧 ${state.currentPlayer.underrunCount} 次` : '';
+      setProgress(`已接收音频块 ${doneCount}，文本 ${state.totalSegments || '-'} 段，缓冲 ${buffered}s${underruns}`);
     } else if (msg.type === 'done') {
       state.lastBlob = state.currentPlayer.buildWavBlob();
       if (state.lastBlob) {
         els.audio.src = URL.createObjectURL(state.lastBlob);
       }
-      setProgress(`合成完成，共 ${msg.total_segments || state.totalSegments} 段`);
+      setProgress(`合成完成：文本 ${msg.total_segments || state.totalSegments} 段，音频块 ${msg.total_audio_chunks || state.totalAudioChunks}`);
       cleanupWs(false);
     } else if (msg.type === 'cancelled') {
       setProgress('已停止', true);

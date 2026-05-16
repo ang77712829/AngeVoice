@@ -31,6 +31,7 @@ services:
       - ../../hf_cache:/root/.cache/huggingface
       # 前端资源：本地修改后重启容器即可生效。
       - ../../src/kokoro_tts/templates/index.html:/app/src/kokoro_tts/templates/index.html:ro
+      - ../../src/kokoro_tts/templates/admin.html:/app/src/kokoro_tts/templates/admin.html:ro
       - ../../src/kokoro_tts/static:/app/src/kokoro_tts/static:ro
       # MOSS ONNX 模型缓存。
       - ../../moss_models:/opt/MOSS-TTS-Nano/models
@@ -64,11 +65,17 @@ services:
       MOSS_PROCESS_ISOLATION_PROVIDERS: cuda
 
       MOSS_REALTIME_STREAMING_DECODE: "true"
-      MOSS_SEGMENT_LENGTH: "140"
-      MOSS_STREAM_CHUNK_SECONDS: "0.42"
-      MOSS_STREAM_QUEUE_MAX_ITEMS: "8"
+      MOSS_SEGMENT_LENGTH: "180"
+      MOSS_MAX_NEW_FRAMES: "320"
+      MOSS_VOICE_CLONE_MAX_TEXT_TOKENS: "64"
+      MOSS_STREAM_CHUNK_SECONDS: "0.40"
+      MOSS_STREAM_QUEUE_MAX_ITEMS: "4"
+      MOSS_STREAM_PREBUFFER_SECONDS: "0.45"
       MOSS_OUTPUT_TARGET_PEAK: "0.78"
-      MOSS_OUTPUT_GAIN: "0.90"
+      MOSS_OUTPUT_GAIN: "0.88"
+      MOSS_MAX_SILENCE_MS: "850"
+      MOSS_CROSSFADE_MS: "25"
+      MOSS_RUNTIME_PAUSE_MAX_MS: "500"
 
       KOKORO_STREAM_BINARY_ENABLED: "true"
       KOKORO_CACHE_MAX_ITEMS: "64"

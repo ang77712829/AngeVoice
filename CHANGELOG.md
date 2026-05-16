@@ -6,28 +6,55 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Se
 
 ---
 
-## [2.6.4.6] - 2026-05-14
+## [2.6.5.0] - 2026-05-16
 
-### 🚦 模型源站与国内体验
-- `ANGEVOICE_MODEL_SOURCE=auto` 改为先短超时探测 Hugging Face / ModelScope 可达性，再做国家/地区判断，并缓存进程内有效源站，避免国内用户因 `ipapi.co` 超时误落到 Hugging Face 或重复探测拖慢冷启动。
-- 管理后台展示模型源站的 mode/effective/country/reachability 信息，支持手动切换 `auto` / `modelscope` / `huggingface`。
+### 🎙️ 长文本自然合成
+- MOSS 文本分句升级为中英文自然切片：支持中文标点、英文句号/问号/感叹号、段落边界和标题，同时避免切断英文单词、小数、版本号、IP 地址。
+- 新增 MOSS 音频自然化后处理：chunk 首尾静音裁剪、异常长静音压缩、非流式拼接 crossfade、runtime pause 上限，降低长文本中的 2-5 秒卡顿、重复读、变调和硬切电流感。
+- 默认 `MOSS_SEGMENT_LENGTH=180`、`MOSS_MAX_NEW_FRAMES=320`、`MOSS_VOICE_CLONE_MAX_TEXT_TOKENS=64`，按 NAS/P4/8GB 显存安全档发布；`260+` 的长文本旁白质量档保留为 Admin 预设，不再作为生产默认。
+- WebSocket 流式播放器增加首包预缓冲和 buffer underrun 观测；MOSS 默认预缓冲 0.45s，Kokoro 默认 0.25s。
+- 新增中文单换行策略 `ANGEVOICE_SINGLE_NEWLINE_POLICY=auto`，自动合并网页/小说复制文本的段内硬换行，保留空行、标题和列表结构。
 
-### 🔐 生产安全与管理后台
-- 生产模板改为 `KOKORO_API_KEY=auto`：首次启动自动生成强随机 API Key 并写入 `ANGEVOICE_API_KEY_FILE`，避免占位符导致服务不可用；安装脚本会打印 key 文件查看命令。
-- 管理后台新增 API Key 状态、显示当前 key、生成/轮换 key。
+### 🛡️ 显存与生产稳定性
+- 新增轻量 VRAM Guard：合成前检测 CUDA 剩余显存，低于安全阈值时自动使用更保守的分句长度、token 上限和帧预算。
+- full codec decode 遇到 ONNXRuntime/CUDA 显存分配失败后进入冷却，并在后续片段优先走增量解码，避免每段都先 OOM 再 fallback。
+- HTTP 音频缓存新增总字节上限、长文本跳过缓存和大音频跳过缓存，避免长文本 WAV 堆积占用 NAS 内存。
+- MOSS 配置变更后会丢弃或标记待重建已加载 engine；忙碌模型请求结束后自动重建，避免 Admin 显示已保存但旧引擎继续运行。
+- 默认空闲 10 分钟释放已加载模型，降低 NAS/家用服务器待机显存和功耗。
+
+### 🧭 Admin 后台重构
+- Admin 后台重构为 Dashboard / Models / Tuning / Security / Diagnostics 五个轻量区块，不引入前端构建系统，继续保持 vanilla JS。
+- 配置项由统一 schema 生成，支持分组编辑、数值范围校验、预设套用、运行时持久化到 `ANGEVOICE_RUNTIME_CONFIG_FILE` 和 ENV patch 导出。
+- 增加 NAS 稳定、均衡推荐、长文本旁白、低延迟流式、克隆质量优先等预设，并在 UI 中区分立即生效、需重启和需重建模型的配置。
+- Admin 显示 runtime-config 是否覆盖环境变量，并提供清除持久化配置入口，便于排查 Docker env 修改后不生效的问题。
+- Admin 增加显存状态、low-vram/degraded 状态、full decode OOM 次数、缓存字节数、最近请求/失败、模型 active_count 和 pending rebuild 状态。
+- 继续保留 Docker/NAS 默认 `admin` / `admin123` 的首次登录体验；公网部署文档明确要求改强密码。
+
+### 🚦 国内部署与模型源站
+- `ANGEVOICE_MODEL_SOURCE=auto` 改为先短超时探测 Hugging Face / ModelScope 可达性，再做国家/地区判断，并缓存进程内有效源站，减少国内网络冷启动误判和重复探测。
+- 管理后台展示模型源站 mode/effective/country/reachability 信息，可手动切换 `auto` / `modelscope` / `huggingface`。
+- `KOKORO_API_KEY=auto` 会首次启动自动生成强随机 API Key 并写入 `ANGEVOICE_API_KEY_FILE`，安装脚本和文档会提示查看路径。
+
+### 🔐 安全与运维
 - 新增 `KOKORO_TRUST_PROXY_HEADERS=false`，默认不信任 `X-Forwarded-For` / `X-Real-IP`，避免裸露公网时被伪造绕过限流。
 - 新增 `KOKORO_PUBLIC_STATUS_ENDPOINTS`，公网敏感部署可让 `/v1/models`、`/v1/models/current`、`/v1/audio/voices` 也要求 Bearer Token。
-- Admin 参数页明确标注“立即生效 / 重启生效 / 卸载模型重建生效”；MOSS 进程隔离变更会尝试卸载已缓存 MOSS engine，下次加载按新配置重建。
+- Admin 支持查看/轮换 `KOKORO_API_KEY=auto` 生成的 key；默认普通 Bearer API Key 不能登录后台，除非显式开启 `KOKORO_ADMIN_ALLOW_API_KEY=true`。
+- MOSS 克隆参考音频默认裁剪到 `MOSS_PROMPT_AUDIO_MAX_SECONDS=8`，与 Docker、代码默认值和文档口径保持一致。
 
-### 🔊 MOSS 与前端提示
-- 前端和文档明确提示 MOSS-TTS-Nano 暂不支持语速调节，使用 MOSS 时 speed 必须为 `1.0`。
-- WebSocket session 增加显式状态机（created/accepted/authenticated/queued/running/cancelling/done/error），为后续更强取消和真实 MOSS E2E 观测打基础。
-- README、API Reference、Security、Troubleshooting 补齐 MOSS 进程隔离、WebSocket 取消语义、Git LFS pointer、自动 API Key 和反代安全说明。
+### 🧪 测试、文档与发布
+- 新增 `scripts/analyze_audio_quality.py`，可分析 wav 时长、采样率、声道、峰值、RMS、削波比例、长静音段、最大静音和静音占比。
+- 新增/补强分句、音频后处理、Admin schema、VRAM Guard、缓存限制、runtime-config、中文换行策略等单元测试。
+- README、README_EN、API Reference、Architecture、Roadmap、Troubleshooting、Docker env/compose 对齐 2.6.5.0 的最终默认值：默认 180，均衡 220，旁白 260+。
+- Docker CPU/GPU/legacy-gpu compose 默认全部切回 NAS/P4 安全档；legacy CUDA 单独更保守。
+- 版本统一为 `2.6.5.0`。
 
-### 🧪 CI / 发布
-- 版本对齐为 `2.6.4.6`。
-- Docker smoke 拆成手动/定时重型 workflow；PR/Push CI 保留轻量测试、compose config 和 CPU Dockerfile build check，降低模型下载源网络波动导致的误红。
-- `scripts/install.sh` 继续拆分共享 helper 到 `scripts/install/lib/common.sh`、`docker.sh`、`network.sh`，并修复 `bash <(curl ...install.sh)` 远程执行时找不到模块的回归：缺少本地模块时自动 bootstrap 完整仓库。
+---
+
+## [2.6.4.6] - 2026-05-12
+
+### 维护
+- 作为 2.6.5.0 之前的升级基线版本，保留 2.6.4.x 系列的管理后台、小智适配、MOSS 质量优先流式、空闲释放和 Docker/NAS 部署能力。
+- 后续 2.6.5.0 在此基础上集中修复长文本自然合成、MOSS 显存保护、Admin 调参持久化、缓存限制和文档默认值对齐问题。
 
 ---
 

@@ -135,4 +135,4 @@ MOSS CUDA 依赖目标环境的 ONNX Runtime/CUDA/cuDNN 组合。Tesla P4 在通
 项目品牌名、发行包名和 CLI 名称不参与模型权重解析。
 
 
-MOSS 使用独立分段长度 `MOSS_SEGMENT_LENGTH`（默认 140），不再强制复用 Kokoro 的 `KOKORO_SEGMENT_LENGTH`。这样 Kokoro 可以保持较短分段，而 MOSS 长文本能减少段间拼接、卡顿和爆音。
+MOSS 使用独立分段长度 `MOSS_SEGMENT_LENGTH`（默认 180），不再强制复用 Kokoro 的 `KOKORO_SEGMENT_LENGTH`。这样 Kokoro 可以保持较短分段，而 MOSS 长文本能减少硬切、段间拼接、卡顿和爆音。Admin 后台保存的运行时配置会写入 `ANGEVOICE_RUNTIME_CONFIG_FILE`，默认 `/app/outputs/runtime-config.json`，在环境变量之后加载。

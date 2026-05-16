@@ -21,8 +21,11 @@ from .config import TTSConfig
 from .moss_engine_streaming import MossStreamingMixin
 from .moss import (
     StreamBudgetThresholds,
+    analyze_silence,
     analyze_waveform,
     clean_text as moss_clean_text,
+    clamp_pause_seconds,
+    compress_long_silence,
     concat_waveforms,
     create_runtime as create_moss_runtime,
     ensure_import_path,
@@ -32,20 +35,19 @@ from .moss import (
     prepare_prompt_audio,
     MossProcessClient,
     MossProcessTimeoutError,
+    get_cuda_vram_snapshot,
+    is_memory_allocation_error,
     resolve_prompt_audio_codes_cached,
     resolve_stream_decode_frame_budget,
     runtime_supports_frame_streaming,
     segment_text as moss_segment_text,
     silence_array,
     split_waveform_for_stream,
+    trim_silence_edges,
     temp_output_path,
 )
 
 logger = logging.getLogger(__name__)
-
-# 拼接多个文本段时插入的静音时长（秒）
-_SEGMENT_SILENCE_SECONDS = 0.08
-
 
 class MossNanoEngine(MossStreamingMixin):
     """OpenMOSS 官方 ONNX runtime 的 AngeVoice 适配器。"""
@@ -82,6 +84,10 @@ class MossNanoEngine(MossStreamingMixin):
         self._unhealthy = False
         self._executor_lock = threading.Lock()
         self._consecutive_timeouts = 0
+        self._last_vram_snapshot = None
+        self._low_vram_mode = False
+        self._full_decode_disabled_until = 0.0
+        self._full_decode_oom_count = 0
 
 
     def _resolve_process_isolation(self, explicit: bool | None) -> bool:
@@ -179,6 +185,12 @@ class MossNanoEngine(MossStreamingMixin):
             "consecutive_timeouts": self._consecutive_timeouts,
             "process_isolated": self._process_isolated,
             "process_alive": bool(self._process_client and self._process_client.alive),
+            "vram_guard_enabled": bool(getattr(self.config, "moss_vram_guard_enabled", True)),
+            "vram": self._vram_status(),
+            "low_vram_mode": self._low_vram_mode,
+            "full_decode_disabled": self._full_decode_disabled_until > time.monotonic(),
+            "full_decode_disabled_until": round(self._full_decode_disabled_until, 3) if self._full_decode_disabled_until else 0,
+            "full_decode_oom_count": self._full_decode_oom_count,
         }
 
     def load(self) -> "MossNanoEngine":
@@ -264,6 +276,8 @@ class MossNanoEngine(MossStreamingMixin):
             self._loaded = False
             self._unhealthy = False
             self._consecutive_timeouts = 0
+            self._low_vram_mode = False
+            self._last_vram_snapshot = None
             with self._prompt_cache_lock:
                 self._prompt_audio_code_cache.clear()
         self._rebuild_executor()
@@ -368,7 +382,7 @@ class MossNanoEngine(MossStreamingMixin):
             emitted += 1
             t0 = time.monotonic()
             for waveform in self._iter_runtime_chunks(seg, voice=voice, prompt_audio_codes=prompt_audio_codes):
-                processed = self._postprocess_waveform(waveform)
+                processed = self._postprocess_waveform(waveform, trim_silence=bool(getattr(self.config, "moss_audio_polish_enabled", True)))
                 logger.info(
                     "MOSS segment %d/%d chunk done (%.1fs, %d samples)",
                     emitted,
@@ -378,7 +392,7 @@ class MossNanoEngine(MossStreamingMixin):
                 )
                 yield processed
             if emitted < total_segments:
-                silence = self._silence_array(_SEGMENT_SILENCE_SECONDS)
+                silence = self._silence_array(self._segment_pause_seconds())
                 if silence.size:
                     yield silence
 
@@ -389,14 +403,24 @@ class MossNanoEngine(MossStreamingMixin):
         if not text_chunks:
             return
         for chunk_index, chunk_text in enumerate(text_chunks):
-            chunk_result = self._runtime.synthesize_single_chunk(
-                text=chunk_text,
-                prompt_audio_codes=prompt_audio_codes,
-                streaming=bool(self.config.moss_realtime_streaming_decode),
-            )
-            yield np.asarray(chunk_result["waveform"], dtype=np.float32)
+            try:
+                if self._should_use_incremental_codec() and self._runtime_supports_frame_streaming():
+                    waveform = self._synthesize_single_chunk_incremental(chunk_text, prompt_audio_codes)
+                else:
+                    chunk_result = self._runtime.synthesize_single_chunk(
+                        text=chunk_text,
+                        prompt_audio_codes=prompt_audio_codes,
+                        streaming=bool(self.config.moss_realtime_streaming_decode),
+                    )
+                    waveform = np.asarray(chunk_result["waveform"], dtype=np.float32)
+            except Exception as exc:  # noqa: BLE001 - retry only for memory allocation failures
+                if not is_memory_allocation_error(exc) or not self._runtime_supports_frame_streaming():
+                    raise
+                self._record_full_decode_oom(exc)
+                waveform = self._synthesize_single_chunk_incremental(chunk_text, prompt_audio_codes)
+            yield np.asarray(waveform, dtype=np.float32)
             if chunk_index < len(text_chunks) - 1:
-                pause_seconds = float(self._runtime.estimate_voice_clone_inter_chunk_pause_seconds(chunk_text))
+                pause_seconds = self._runtime_pause_seconds(chunk_text)
                 silence = self._silence_array(pause_seconds)
                 if silence.size:
                     yield silence
@@ -412,13 +436,13 @@ class MossNanoEngine(MossStreamingMixin):
         return list(
             self._runtime.split_voice_clone_text(
                 prepared_text,
-                max_tokens=int(self.config.moss_voice_clone_max_text_tokens),
+                max_tokens=int(self._effective_text_tokens()),
             )
         )
 
     def _configure_runtime_generation(self) -> None:
         generation = self._runtime.manifest["generation_defaults"]
-        generation["max_new_frames"] = int(self.config.moss_max_new_frames)
+        generation["max_new_frames"] = int(self._effective_max_new_frames())
         generation["sample_mode"] = self.config.moss_sample_mode
         generation["do_sample"] = self.config.moss_sample_mode != "greedy"
         seed = int(self.config.moss_seed)
@@ -431,7 +455,50 @@ class MossNanoEngine(MossStreamingMixin):
                 logger.debug("Failed to reset MOSS RNG seed", exc_info=True)
 
     def _concat_waveforms(self, waveforms: list):
+        if bool(getattr(self.config, "moss_audio_polish_enabled", True)):
+            audio = concat_waveforms(
+                waveforms,
+                crossfade_ms=float(getattr(self.config, "moss_crossfade_ms", 35.0)),
+                sample_rate=self.sample_rate,
+                channels=self.channels,
+            )
+            audio, silence_metrics = compress_long_silence(
+                audio,
+                sample_rate=self.sample_rate,
+                channels=self.channels,
+                threshold_db=float(getattr(self.config, "moss_trim_silence_db", -45.0)),
+                max_silence_ms=float(getattr(self.config, "moss_max_silence_ms", 900.0)),
+            )
+            quality = analyze_silence(
+                audio,
+                sample_rate=self.sample_rate,
+                channels=self.channels,
+                threshold_db=float(getattr(self.config, "moss_trim_silence_db", -45.0)),
+            )
+            quality.update(
+                {
+                    "long_silence_count_before": silence_metrics.get("long_silence_count", 0),
+                    "max_silence_ms_before": silence_metrics.get("max_silence_ms", 0.0),
+                    "silence_ratio_before": silence_metrics.get("silence_ratio", 0.0),
+                }
+            )
+            self._last_output_quality = {**(self._last_output_quality or {}), **quality}
+            return audio
         return concat_waveforms(waveforms)
+
+    def _runtime_pause_seconds(self, chunk_text: str) -> float:
+        try:
+            estimated = float(self._runtime.estimate_voice_clone_inter_chunk_pause_seconds(chunk_text))
+        except Exception:
+            logger.debug("MOSS runtime pause estimate failed", exc_info=True)
+            estimated = 0.0
+        return clamp_pause_seconds(
+            estimated,
+            max_ms=float(getattr(self.config, "moss_runtime_pause_max_ms", 650.0)),
+        )
+
+    def _segment_pause_seconds(self) -> float:
+        return max(0.0, float(getattr(self.config, "moss_segment_pause_ms", 120.0)) / 1000.0)
 
     def _silence_array(self, seconds: float):
         return silence_array(seconds, sample_rate=self.sample_rate, channels=self.channels)
@@ -470,7 +537,7 @@ class MossNanoEngine(MossStreamingMixin):
             logger=logger,
         )
 
-    def _postprocess_waveform(self, waveform, *, update_quality: bool = True, edge_fade: bool = True):
+    def _postprocess_waveform(self, waveform, *, update_quality: bool = True, edge_fade: bool = True, trim_silence: bool = False):
         processed, quality = normalize_waveform(
             waveform,
             channels=self.channels,
@@ -484,8 +551,28 @@ class MossNanoEngine(MossStreamingMixin):
                 else 0
             ),
         )
+        quality_dict = quality.as_dict()
+        if trim_silence and bool(getattr(self.config, "moss_trim_silence_enabled", True)):
+            processed, trimmed_start_ms, trimmed_end_ms = trim_silence_edges(
+                processed,
+                sample_rate=self.sample_rate,
+                channels=self.channels,
+                threshold_db=float(getattr(self.config, "moss_trim_silence_db", -45.0)),
+            )
+            quality_dict.update({
+                "trimmed_start_ms": round(float(trimmed_start_ms), 3),
+                "trimmed_end_ms": round(float(trimmed_end_ms), 3),
+            })
         if update_quality:
-            self._last_output_quality = quality.as_dict()
+            quality_dict.update(
+                analyze_silence(
+                    processed,
+                    sample_rate=self.sample_rate,
+                    channels=self.channels,
+                    threshold_db=float(getattr(self.config, "moss_trim_silence_db", -45.0)),
+                )
+            )
+            self._last_output_quality = quality_dict
         return processed
 
     def _ensure_import_path(self) -> None:
@@ -577,9 +664,124 @@ class MossNanoEngine(MossStreamingMixin):
         return moss_segment_text(
             text,
             max_text_length=int(self.config.max_text_length),
-            segment_length=int(getattr(self.config, "moss_segment_length", self.config.segment_length)),
+            segment_length=int(self._effective_segment_length()),
+            single_newline_policy=str(getattr(self.config, "text_single_newline_policy", "auto")),
         )
+
+    def _vram_status(self) -> dict:
+        snapshot = self._last_vram_snapshot
+        if snapshot is None and self.execution_provider == "cuda" and bool(getattr(self.config, "moss_vram_guard_enabled", True)):
+            snapshot = get_cuda_vram_snapshot()
+            self._last_vram_snapshot = snapshot
+        data = snapshot.as_dict() if snapshot is not None else {"available": False, "source": "not-checked"}
+        data.update({
+            "low_vram_mode": self._low_vram_mode,
+            "safe_free_mb": int(getattr(self.config, "moss_vram_safe_free_mb", 1200)),
+            "critical_free_mb": int(getattr(self.config, "moss_vram_critical_free_mb", 600)),
+        })
+        return data
+
+    def _refresh_vram_guard(self) -> None:
+        if self.execution_provider != "cuda" or not bool(getattr(self.config, "moss_vram_guard_enabled", True)):
+            self._low_vram_mode = False
+            return
+        snapshot = get_cuda_vram_snapshot()
+        self._last_vram_snapshot = snapshot
+        if not snapshot.available or snapshot.free_mb is None:
+            return
+        safe = int(getattr(self.config, "moss_vram_safe_free_mb", 1200) or 0)
+        critical = int(getattr(self.config, "moss_vram_critical_free_mb", 600) or 0)
+        self._low_vram_mode = snapshot.free_mb < safe if safe > 0 else False
+        if snapshot.free_mb < critical and critical > 0:
+            self._disable_full_codec_decode(reason=f"critical free VRAM {snapshot.free_mb}MB < {critical}MB")
+        if self._low_vram_mode:
+            logger.warning(
+                "MOSS VRAM guard: low free VRAM %s/%s MB, using conservative limits",
+                snapshot.free_mb,
+                snapshot.total_mb,
+            )
+
+    def _effective_segment_length(self) -> int:
+        self._refresh_vram_guard()
+        configured = int(getattr(self.config, "moss_segment_length", self.config.segment_length))
+        if self._low_vram_mode:
+            return min(configured, int(getattr(self.config, "moss_low_vram_segment_length", 160)))
+        return configured
+
+    def _effective_max_new_frames(self) -> int:
+        self._refresh_vram_guard()
+        configured = int(getattr(self.config, "moss_max_new_frames", 320))
+        if self._low_vram_mode:
+            return min(configured, int(getattr(self.config, "moss_low_vram_max_new_frames", 300)))
+        return configured
+
+    def _effective_text_tokens(self) -> int:
+        self._refresh_vram_guard()
+        configured = int(getattr(self.config, "moss_voice_clone_max_text_tokens", 64))
+        if self._low_vram_mode:
+            return min(configured, int(getattr(self.config, "moss_low_vram_text_tokens", 56)))
+        return configured
+
+    def _should_use_incremental_codec(self) -> bool:
+        if self._full_decode_disabled_until > time.monotonic():
+            return True
+        self._refresh_vram_guard()
+        return bool(self._low_vram_mode)
+
+    def _disable_full_codec_decode(self, *, reason: str) -> None:
+        if not bool(getattr(self.config, "moss_disable_full_codec_after_oom", True)):
+            return
+        cooldown = float(getattr(self.config, "moss_full_codec_oom_cooldown_seconds", 600.0) or 0.0)
+        self._full_decode_disabled_until = max(self._full_decode_disabled_until, time.monotonic() + cooldown)
+        logger.warning("MOSS full codec decode disabled for %.0fs: %s", cooldown, reason)
+
+    def _record_full_decode_oom(self, exc: BaseException) -> None:
+        self._full_decode_oom_count += 1
+        self._low_vram_mode = True
+        self._disable_full_codec_decode(reason=f"decode OOM: {exc}")
+
+    def _synthesize_single_chunk_incremental(self, chunk_text: str, prompt_audio_codes: list[list[int]]):
+        import numpy as np
+
+        if not self._runtime_supports_frame_streaming():
+            raise RuntimeError("MOSS runtime does not support incremental codec streaming")
+        pending_decode_frames: list[list[int]] = []
+        waveforms: list = []
+        self._runtime.codec_streaming_session.reset()
+
+        def decode_pending(force: bool) -> None:
+            pending_count = len(pending_decode_frames)
+            if pending_count <= 0:
+                return
+            # Keep frame batches small enough to avoid the full-codec memory spike.
+            budget = 12 if self._low_vram_mode else 24
+            if not force and pending_count < budget:
+                return
+            frame_budget = pending_count if force else min(pending_count, budget)
+            frame_chunk = pending_decode_frames[:frame_budget]
+            del pending_decode_frames[:frame_budget]
+            decoded = self._runtime.codec_streaming_session.run_frames(frame_chunk)
+            if decoded is None:
+                return
+            audio, audio_length = decoded
+            if int(audio_length) <= 0:
+                return
+            waveforms.append(self._merge_codec_audio(audio, int(audio_length)))
+
+        def on_frame(_generated_frames: list[list[int]], _step_index: int, frame: list[int]) -> None:
+            pending_decode_frames.append(list(frame))
+            decode_pending(False)
+
+        try:
+            text_token_ids = self._runtime.encode_text(chunk_text)
+            request_rows = self._runtime.build_voice_clone_request_rows(prompt_audio_codes, text_token_ids)
+            self._runtime.generate_audio_frames(request_rows, on_frame=on_frame)
+            decode_pending(True)
+        finally:
+            self._runtime.codec_streaming_session.reset()
+        if not waveforms:
+            return np.zeros((0, self.channels), dtype=np.float32)
+        return concat_waveforms(waveforms, channels=self.channels)
 
     def _temp_output_path(self) -> str:
         return temp_output_path()
-

@@ -248,13 +248,12 @@ class TtsWebSocketSession:
                 with suppress(Exception):
                     self._thread_put({"type": "error", "message": "流式合成失败", "request_id": self.request_id})
         finally:
-            if self.loop is None:
-                return
-            if self.cancel_flag["cancelled"] or self.state.is_cancelled(self.request_id):
-                self.loop.call_soon_threadsafe(asyncio.create_task, self._notify_cancelled())
-            else:
-                with suppress(Exception):
-                    self._thread_put(self.done_marker)
+            if self.loop is not None:
+                if self.cancel_flag["cancelled"] or self.state.is_cancelled(self.request_id):
+                    self.loop.call_soon_threadsafe(asyncio.create_task, self._notify_cancelled())
+                else:
+                    with suppress(Exception):
+                        self._thread_put(self.done_marker)
 
     async def _send_loop(self, *, binary: bool) -> None:
         while True:

@@ -303,7 +303,7 @@ volumes:
 
 environment:
   - MOSS_PROMPT_AUDIO_PATH=/app/prompts/reference.wav
-  - MOSS_PROMPT_AUDIO_MAX_SECONDS=10
+  - MOSS_PROMPT_AUDIO_MAX_SECONDS=8
   - MOSS_PROMPT_CACHE_MAX_ITEMS=8
 ```
 
@@ -553,11 +553,12 @@ WebSocket 客户端也可发送：
 
 ## 可选管理接口
 
-管理接口默认关闭，仅在可信环境中启用：
+管理接口在 Docker 模板中默认开启，便于 NAS 用户首次进入后台查看/生成 API Key；默认凭据为 `admin` / `admin123`。公网部署必须改强密码，仅在可信环境中启用：
 
 ```bash
 KOKORO_ADMIN_ENABLED=true
-ANGEVOICE_ADMIN_PASSWORD=<paste-generated-token-here>
+ANGEVOICE_ADMIN_USERNAME=admin
+ANGEVOICE_ADMIN_PASSWORD=admin123
 ```
 
 清空缓存：
@@ -616,8 +617,9 @@ If upload must be enabled, restrict to internal network admin endpoints with rev
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
+| `ANGEVOICE_RUNTIME_CONFIG_FILE` | `/app/outputs/runtime-config.json` | Admin 后台保存配置的位置；在环境变量之后加载，可导出 ENV patch |
 | `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启以降低首包等待；如出现电流音/卡顿可改为 `false` 走质量优先整块生成后分包 |
-| `MOSS_SEGMENT_LENGTH` | `140` | MOSS 专用分段长度，减少长文本段间拼接、爆音和卡顿；不影响 Kokoro 的 `KOKORO_SEGMENT_LENGTH` |
+| `MOSS_SEGMENT_LENGTH` | `180` | MOSS 专用分段长度，减少长文本段间拼接、爆音和卡顿；不影响 Kokoro 的 `KOKORO_SEGMENT_LENGTH` |
 | `KOKORO_TRUST_PROXY_HEADERS` | `false` | 是否信任 `X-Forwarded-For`/`X-Real-IP`；裸露公网保持 false，反代后确认可信再开启 |
 | `KOKORO_ADMIN_ALLOW_API_KEY` | `false` | 是否允许普通 Bearer API Key 登录管理后台；共享 API Key 给客户端时保持 false |
 | `KOKORO_PUBLIC_STATUS_ENDPOINTS` | `true` | 是否公开 `/v1/models`、`/v1/models/current`、`/v1/audio/voices` 和页面模型目录 bootstrap；设为 false 后目录接口需要 Bearer Token，`/health` 仅返回最小健康信息 |
@@ -626,7 +628,7 @@ If upload must be enabled, restrict to internal network admin endpoints with rev
 | `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.20` | 音频播放余量高阈值（秒）：低于此值每次解码 4 帧，高于此值每次解码 8 帧以减少块间抖动 |
 | `MOSS_STREAM_CHUNK_MIN_FLOOR` | `0.10` | 最小流式分包时长下限（秒）：防止过短碎片导致听感卡顿 |
 | `MOSS_OUTPUT_DECLICK_ENABLED` | `true` | 是否启用 MOSS 孤立脉冲修复 |
-| `MOSS_OUTPUT_EDGE_FADE_MS` | `2` | MOSS 片段边缘淡入淡出毫秒数 |
+| `MOSS_OUTPUT_EDGE_FADE_MS` | `3` | MOSS 片段边缘淡入淡出毫秒数 |
 
 这三个阈值（`LOW` < `MID` < `HIGH`）不是显存占用比例，而是“已生成音频领先实时播放的秒数”。余量越少，解码越小块，优先降低首包延迟；余量越充足，解码块越大，减少块间抖动。
 
@@ -683,9 +685,28 @@ GET /admin
 ```bash
 KOKORO_ADMIN_ENABLED=true
 ANGEVOICE_ADMIN_USERNAME=admin
-ANGEVOICE_ADMIN_PASSWORD=<strong-password>
+ANGEVOICE_ADMIN_PASSWORD=admin123
 ```
 
 `/admin` 使用 HTTP Basic 登录。账号和密码支持中文；服务端会兼容 UTF-8 与 latin-1 Basic Auth 编码，避免不同浏览器编码差异导致无法进入后台。
 
-管理页面当前提供：运行状态、模型列表、活跃请求、缓存数量、清空缓存、释放模型等基础运维功能。
+管理页面提供五个区块：
+
+- Dashboard：当前模型、缓存、请求、音频质量概览。
+- Models：加载、切换、释放、强制释放模型。
+- Tuning：MOSS 长文本、流式、静音压缩、crossfade、峰值保护等参数；内置 NAS 稳定、长文本旁白、低延迟流式、克隆质量优先四个预设。
+- Security：API Key 状态、查看和轮换。
+- Diagnostics：最近请求、last_output_quality、ENV patch 和折叠的原始 JSON。
+
+后台保存配置会写入 `ANGEVOICE_RUNTIME_CONFIG_FILE`，默认 `/app/outputs/runtime-config.json`。启动加载顺序是代码默认值、环境变量、runtime-config，所以上次在后台保存的值会在重启后继续生效。页面也可以导出 ENV patch，方便把最终参数固化到 `.env`。
+
+常用 Admin API：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| `GET` | `/admin/api/status` | 后台总状态 |
+| `GET` | `/admin/api/config` | 当前可编辑配置、schema、ENV patch |
+| `GET` | `/admin/api/config/schema` | 配置 schema 和预设 |
+| `PATCH` | `/admin/api/config` | 保存运行时配置 |
+| `POST` | `/admin/api/config/profile` | 应用预设 |
+| `GET` | `/admin/api/config/env` | 导出 ENV patch |

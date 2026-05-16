@@ -60,11 +60,7 @@ WebSocket 支持两种方式：
 
 ## 管理接口
 
-管理接口默认关闭：
-
-```bash
-KOKORO_ADMIN_ENABLED=false
-```
+管理接口在 Docker 模板中默认开启，方便 NAS 用户首次进入后台查看/生成 API Key；默认凭据为 `admin` / `admin123`。源码默认仍可通过 `KOKORO_ADMIN_ENABLED=false` 关闭后台。
 
 开启后包含：
 
@@ -72,7 +68,7 @@ KOKORO_ADMIN_ENABLED=false
 - `GET /admin/voices`
 - `POST /admin/voices/upload`
 
-建议只在本地或可信内网使用。公网部署时，必须设置 `ANGEVOICE_ADMIN_PASSWORD`，并建议同时设置强 API Key、在反向代理层限制来源。没有 `ANGEVOICE_ADMIN_PASSWORD` 时开启管理后台会直接启动失败。
+建议只在本地或可信内网使用。公网部署时，必须把默认 `admin123` 改为强密码，并建议同时设置强 API Key、在反向代理层限制来源。没有 `ANGEVOICE_ADMIN_PASSWORD` 时开启管理后台会直接启动失败。
 
 默认情况下，普通 Bearer TTS API Key 不能登录 `/admin` 或调用管理接口，避免把客户端调用权限等同于管理权限。如需兼容旧用法或单人自用，可以显式设置 `KOKORO_ADMIN_ALLOW_API_KEY=true`。管理后台的 API Key 区域可查看/轮换 `KOKORO_API_KEY=auto` 生成的 key；如果环境变量写死了固定 key，重启后仍以环境变量为准。
 
@@ -100,7 +96,7 @@ MOSS 参考音频克隆使用 `/api/tts` multipart 字段 `prompt_audio`，或 W
 
 ```bash
 MOSS_PROMPT_UPLOAD_MAX_BYTES=20971520
-MOSS_PROMPT_AUDIO_MAX_SECONDS=10
+MOSS_PROMPT_AUDIO_MAX_SECONDS=8
 MOSS_PROMPT_CACHE_MAX_ITEMS=8
 ```
 
@@ -108,7 +104,7 @@ MOSS_PROMPT_CACHE_MAX_ITEMS=8
 
 ## MOSS 进程级隔离
 
-MOSS 进程级隔离已实现，但默认关闭；默认路径仍是线程内 MOSS runtime，且 MOSS 逐帧实时解码默认关闭以优先保证 Web/小智播放质量。需要排查 CUDA/ONNX Runtime 底层卡死时，可手动启用隔离：
+MOSS 进程级隔离已实现，但默认关闭；默认路径仍是线程内 MOSS runtime。MOSS 逐帧实时解码默认开启以降低首包等待，如出现电流音、卡顿或边界噪声，可改为 `MOSS_REALTIME_STREAMING_DECODE=false` 走质量优先分包。需要排查 CUDA/ONNX Runtime 底层卡死时，可手动启用隔离：
 
 ```bash
 MOSS_PROCESS_ISOLATION_ENABLED=true
@@ -188,7 +184,7 @@ WebSocket `cancel` / `stop` 会阻止后续段落继续推送。Kokoro 与默认
 
 ### 管理后台登录说明
 
-`/admin` 使用 HTTP Basic Auth。开启后台必须设置 `ANGEVOICE_ADMIN_PASSWORD`，否则服务会拒绝启动，避免误开空密码后台。
+`/admin` 使用 HTTP Basic Auth。Docker 模板默认使用 `admin` / `admin123` 方便首次登录；公网部署必须修改 `ANGEVOICE_ADMIN_PASSWORD`。开启后台但未设置密码时，服务会拒绝启动，避免误开空密码后台。
 
 账号和密码支持中文；服务端按原始 Basic Auth 字节解析，并兼容 UTF-8 / latin-1 两种常见编码。但公网部署仍建议使用英文数字符号组成的强密码，减少浏览器、代理和日志系统的兼容问题。
 

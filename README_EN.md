@@ -189,6 +189,7 @@ Docker health checks treat both `ok` and `idle` as healthy.
 | Entry | Path | Purpose |
 |---|---|---|
 | Studio | `/` | Web synthesis, preview, model switching |
+| Admin UI | `/admin` | Status, model controls, voice-quality tuning, API Key reveal/rotation |
 | API docs page | `/api-docs` | User-friendly copyable HTTP/WebSocket/MOSS clone examples |
 | Swagger | `/docs` | FastAPI interactive API docs |
 | ReDoc | `/redoc` | FastAPI readable docs |
@@ -318,15 +319,16 @@ environment:
 | `KOKORO_MAX_CONCURRENT_REQUESTS` | `1` | Max in-process synthesis concurrency; conservative for NAS/old GPUs, raise to 2-4 only on larger GPUs |
 | `KOKORO_API_KEY` | - | Enables Bearer auth; `auto` generates and persists a strong random key on first start; placeholder values are rejected |
 | `ANGEVOICE_API_KEY_FILE` | `/app/outputs/.angevoice-api-key` | Persistent key file used by `KOKORO_API_KEY=auto`; admin UI can reveal/rotate it |
-| `KOKORO_STREAM_CHUNK_SECONDS` | `0.50` | WebSocket chunk duration |
+| `ANGEVOICE_RUNTIME_CONFIG_FILE` | `/app/outputs/runtime-config.json` | Runtime settings saved by the admin UI; overrides environment variables and can be exported as an ENV patch |
+| `KOKORO_STREAM_CHUNK_SECONDS` | `0.55` | WebSocket chunk duration |
 | `KOKORO_CACHE_ENABLED` | `true` | Enable LRU audio cache |
 | `KOKORO_BATCH_ENABLED` | `true` | Enable batch synthesis |
-| `KOKORO_ADMIN_ENABLED` | Docker default `true` | Enable admin UI/API. Requires a real `ANGEVOICE_ADMIN_PASSWORD`; placeholders are rejected. |
+| `KOKORO_ADMIN_ENABLED` | Docker default `true` | Enable admin UI/API. Docker compose defaults to `admin` / `admin123`; change it for public deployments. |
 | `KOKORO_MP3_ENABLED` | `false` | Enable MP3 output, requires ffmpeg |
 | `ANGEVOICE_ENABLED_MODELS` | `kokoro,moss-nano-cpu` | Comma-separated enabled model IDs. GPU profiles override this and also expose `moss-nano-cuda`. |
 | `ANGEVOICE_DEFAULT_MODEL` | `kokoro` | Startup model |
 | `ANGEVOICE_MODEL_UNLOAD_ON_SWITCH` | `true` | Unload old engine when switching |
-| `ANGEVOICE_SAVE_OUTPUTS` | `false` | Save HTTP synthesis outputs |
+| `ANGEVOICE_SAVE_OUTPUTS` | `true` | Save HTTP synthesis outputs in Docker profiles; code default is `false` outside Docker |
 | `ANGEVOICE_MODEL_SOURCE` | `auto` | Model download source: `auto` probes Hugging Face/ModelScope reachability first, then falls back to country detection; can be forced to `modelscope` / `huggingface` |
 | `KOKORO_MODELSCOPE_REPO` | `AI-ModelScope/Kokoro-82M-v1.1-zh` | ModelScope Kokoro repository for China-friendly auto downloads |
 | `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | ModelScope MOSS ONNX repository for China-friendly auto downloads |
@@ -334,7 +336,7 @@ environment:
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider: `cpu` / `cuda` |
 | `MOSS_CUDA_ENABLED` | `false` | Allow/register `moss-nano-cuda`; CPU/legacy-gpu keep it off, standard GPU enables it. |
 | `MOSS_PROMPT_UPLOAD_MAX_BYTES` | `20971520` | MOSS clone reference-audio upload limit |
-| `MOSS_SEGMENT_LENGTH` | `140` | MOSS-only long-text segment length. Reduces long-text stitching, stutter and artifacts without changing Kokoro segmentation. |
+| `MOSS_SEGMENT_LENGTH` | `180` | MOSS-only long-text segment length. Reduces hard cuts, stitching, stutter and artifacts without changing Kokoro segmentation. |
 | `MOSS_PROMPT_AUDIO_MAX_SECONDS` | `8` | Reference-audio trim duration |
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | Encoded prompt-audio cache size |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | Fall back to CPU when CUDA self-test fails |
@@ -354,7 +356,7 @@ environment:
 ## Security notes
 
 - Set `KOKORO_API_KEY` for public or semi-public deployments; `KOKORO_API_KEY=auto` can generate a persistent random key on first start. The default Docker path is `outputs/.angevoice-api-key`.
-- Admin UI/APIs are disabled by default. If enabled, `ANGEVOICE_ADMIN_PASSWORD` is required; non-ASCII usernames/passwords are supported; public deployments should also set `KOKORO_API_KEY` and restrict access at the reverse proxy.
+- Docker compose enables the admin UI by default with `admin` / `admin123` for NAS first-run convenience. Public deployments must change `ANGEVOICE_ADMIN_PASSWORD`, set a strong API key, and restrict access at the reverse proxy.
 - `.pt` voice upload is disabled by default. Only upload trusted files.
 
 ⚠️ **Security Warning**: Enabling `KOKORO_VOICE_UPLOAD_ENABLED` on public-facing servers is **strongly discouraged**.
@@ -407,6 +409,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [Security Notes](docs/SECURITY.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Service Profiles](docs/SERVICE_PROFILES.md)
+- [MOSS Audio Quality](docs/MOSS_AUDIO_QUALITY.md)
 - [Multi-Model Runtime](docs/MODEL_RUNTIME.md)
 - [v2.6 Features](docs/V2_5_FEATURES.md)
 - [Roadmap](docs/ROADMAP.md)

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-EXPECTED_VERSION = "2.6.4.6"
+EXPECTED_VERSION = "2.6.5.0"
 
 
 def _has_module(name: str) -> bool:
@@ -48,7 +48,14 @@ class TestConfig:
         assert config.moss_process_isolation_enabled is False
         assert config.moss_process_isolation_providers == "cuda"
         assert config.moss_realtime_streaming_decode is True
-        assert config.moss_segment_length == 140
+        assert config.moss_segment_length == 180
+        assert config.moss_max_new_frames == 320
+        assert config.moss_voice_clone_max_text_tokens == 64
+        assert config.moss_max_silence_ms == 850
+        assert config.moss_vram_guard_enabled is True
+        assert config.cache_max_items == 64
+        assert config.cache_max_bytes == 512 * 1024 * 1024
+        assert config.text_single_newline_policy == "auto"
         assert config.model_source == "auto"
 
     def test_env_override(self, monkeypatch):
@@ -312,13 +319,20 @@ class TestServerAndCLI:
         app = create_app(config=TTSConfig(model_dir=Path("/nonexistent"), rate_limit_qps=1.0, max_queue_length=2))
         assert app.title == "AngeVoice"
 
-    def test_run_server_uses_import_string_for_workers(self):
+    def test_run_server_uses_import_string_for_workers(self, monkeypatch):
+        from types import SimpleNamespace
         from kokoro_tts.config import TTSConfig
         from kokoro_tts.server import run_server
+
+        calls = []
+
+        def fake_run(*args, **kwargs):
+            calls.append((args, kwargs))
+
+        monkeypatch.setitem(sys.modules, "uvicorn", SimpleNamespace(run=fake_run))
         config = TTSConfig(model_dir=Path("/nonexistent"), workers=2)
-        with patch("uvicorn.run") as run:
-            run_server(config)
-        args, kwargs = run.call_args
+        run_server(config)
+        args, kwargs = calls[-1]
         assert args[0] == "kokoro_tts.server:create_app"
         assert kwargs["factory"] is True
         assert kwargs["workers"] == 2
@@ -474,3 +488,18 @@ class TestXiaozhiAdapterKit:
         username, password = parsed
         assert username in _candidate_encodings("管理员")
         assert password in _candidate_encodings("密钥")
+
+
+def test_cache_skips_long_text_and_large_audio(tmp_path):
+    from kokoro_tts.config import TTSConfig
+    from kokoro_tts.service_state import ServiceState
+
+    cfg = TTSConfig(model_dir=tmp_path, cache_max_items=10, cache_skip_text_over_chars=5, cache_skip_audio_over_bytes=10)
+    state = ServiceState(cfg, eng=None)
+    state.cache_set("long", (b"abc", "audio/wav"), text="123456")
+    assert state.cache_size() == 0
+    state.cache_set("big", (b"a" * 11, "audio/wav"), text="ok")
+    assert state.cache_size() == 0
+    state.cache_set("ok", (b"a" * 5, "audio/wav"), text="ok")
+    assert state.cache_size() == 1
+    assert state.cache_bytes() == 5

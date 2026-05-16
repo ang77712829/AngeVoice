@@ -22,6 +22,11 @@ class MossAudioQuality:
     clip_ratio: float
     repaired_impulses: int = 0
     dc_offset_before: float = 0.0
+    long_silence_count: int = 0
+    max_silence_ms: float = 0.0
+    silence_ratio: float = 0.0
+    trimmed_start_ms: float = 0.0
+    trimmed_end_ms: float = 0.0
 
     def as_dict(self) -> dict[str, float]:
         return {
@@ -31,6 +36,11 @@ class MossAudioQuality:
             "clip_ratio": round(self.clip_ratio, 6),
             "repaired_impulses": float(self.repaired_impulses),
             "dc_offset_before": round(self.dc_offset_before, 6),
+            "long_silence_count": float(self.long_silence_count),
+            "max_silence_ms": round(self.max_silence_ms, 3),
+            "silence_ratio": round(self.silence_ratio, 6),
+            "trimmed_start_ms": round(self.trimmed_start_ms, 3),
+            "trimmed_end_ms": round(self.trimmed_end_ms, 3),
         }
 
 
@@ -52,25 +62,10 @@ def normalize_waveform(
 
     1. 去除极小 DC offset；
     2. 只修复明显孤立的单点/双点脉冲，不改变正常声波主体；
-    3. 对片段头尾做 1~3ms 的短淡入淡出，减少拼接爆音。
+    3. 对片段头尾做短淡入淡出，减少拼接爆音。
     """
 
-    audio = np.asarray(waveform, dtype=np.float32)
-    if audio.ndim == 0:
-        audio = audio.reshape(1)
-    elif audio.ndim > 2:
-        audio = audio.reshape(-1, audio.shape[-1])
-    if audio.ndim == 1:
-        audio = audio.reshape(-1, 1)
-
-    expected_channels = max(1, int(channels))
-    if int(audio.shape[1]) != expected_channels:
-        if int(audio.shape[1]) > expected_channels:
-            audio = audio.mean(axis=1, keepdims=True)
-        if expected_channels > int(audio.shape[1]):
-            audio = np.repeat(audio[:, :1], expected_channels, axis=1)
-
-    audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
+    audio = ensure_audio_shape(waveform, channels=channels)
     dc_offset_before = float(np.mean(audio)) if audio.size else 0.0
     if audio.size:
         audio = audio - np.mean(audio, axis=0, keepdims=True).astype(np.float32)
@@ -114,6 +109,27 @@ def normalize_waveform(
         dc_offset_before=dc_offset_before,
     )
     return clipped, quality
+
+
+def ensure_audio_shape(waveform, *, channels: int) -> np.ndarray:
+    """把任意 waveform 整理成 ``(samples, channels)`` float32。"""
+
+    audio = np.asarray(waveform, dtype=np.float32)
+    if audio.ndim == 0:
+        audio = audio.reshape(1)
+    elif audio.ndim > 2:
+        audio = audio.reshape(-1, audio.shape[-1])
+    if audio.ndim == 1:
+        audio = audio.reshape(-1, 1)
+
+    expected_channels = max(1, int(channels))
+    if int(audio.shape[1]) != expected_channels:
+        if int(audio.shape[1]) > expected_channels:
+            audio = audio.mean(axis=1, keepdims=True)
+        if expected_channels > int(audio.shape[1]):
+            audio = np.repeat(audio[:, :1], expected_channels, axis=1)
+
+    return np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
 
 
 def _repair_impulses(audio: np.ndarray) -> tuple[np.ndarray, int]:
@@ -164,13 +180,46 @@ def split_waveform_for_stream(waveform, *, sample_rate: int, chunk_seconds: floa
         yield np.ascontiguousarray(audio[start : start + max_samples])
 
 
-def concat_waveforms(waveforms: Iterable[np.ndarray]) -> np.ndarray:
-    """合并非空波形。"""
+def concat_waveforms(
+    waveforms: Iterable[np.ndarray],
+    *,
+    crossfade_ms: float = 0.0,
+    sample_rate: int | None = None,
+    channels: int | None = None,
+) -> np.ndarray:
+    """合并非空波形，可选短 crossfade。"""
 
     parts = [item for item in waveforms if getattr(item, "size", 0)]
     if not parts:
         raise RuntimeError("MOSS: all segments produced empty audio")
-    return np.concatenate(parts)
+    if channels is None:
+        channels = int(parts[0].shape[1]) if np.asarray(parts[0]).ndim == 2 else 1
+    prepared = [ensure_audio_shape(item, channels=channels) for item in parts]
+    fade_samples = 0
+    if sample_rate is not None:
+        fade_samples = max(0, int(int(sample_rate) * max(0.0, float(crossfade_ms)) / 1000.0))
+    if fade_samples <= 1 or len(prepared) == 1:
+        return np.concatenate(prepared).astype(np.float32, copy=False)
+    return crossfade_concat(prepared, fade_samples=fade_samples)
+
+
+def crossfade_concat(waveforms: Iterable[np.ndarray], *, fade_samples: int) -> np.ndarray:
+    """用线性短 crossfade 拼接多段音频，减少硬切导致的电流感/顿挫。"""
+
+    parts = [np.asarray(item, dtype=np.float32) for item in waveforms if getattr(item, "size", 0)]
+    if not parts:
+        raise RuntimeError("MOSS: all segments produced empty audio")
+    result = parts[0]
+    for part in parts[1:]:
+        n = min(max(0, int(fade_samples)), result.shape[0], part.shape[0])
+        if n <= 1:
+            result = np.concatenate([result, part], axis=0)
+            continue
+        fade_out = np.linspace(1.0, 0.0, n, dtype=np.float32).reshape(-1, 1)
+        fade_in = np.linspace(0.0, 1.0, n, dtype=np.float32).reshape(-1, 1)
+        overlap = result[-n:] * fade_out + part[:n] * fade_in
+        result = np.concatenate([result[:-n], overlap, part[n:]], axis=0)
+    return result.astype(np.float32, copy=False)
 
 
 def silence_array(seconds: float, *, sample_rate: int, channels: int) -> np.ndarray:
@@ -181,3 +230,131 @@ def silence_array(seconds: float, *, sample_rate: int, channels: int) -> np.ndar
     if samples <= 0:
         return np.zeros((0, expected_channels), dtype=np.float32)
     return np.zeros((samples, expected_channels), dtype=np.float32)
+
+
+def amplitude_threshold(db: float) -> float:
+    """把 dBFS 阈值转换为线性振幅。"""
+
+    return float(10.0 ** (float(db) / 20.0))
+
+
+def trim_silence_edges(
+    waveform,
+    *,
+    sample_rate: int,
+    channels: int,
+    threshold_db: float = -45.0,
+    keep_ms: float = 20.0,
+) -> tuple[np.ndarray, float, float]:
+    """裁掉片段首尾低能量静音，但保留极短气口，避免过度生硬。"""
+
+    audio = ensure_audio_shape(waveform, channels=channels)
+    if audio.size == 0:
+        return audio, 0.0, 0.0
+    threshold = amplitude_threshold(threshold_db)
+    envelope = np.max(np.abs(audio), axis=1)
+    active = envelope > threshold
+    if not np.any(active):
+        return audio[:0], audio.shape[0] * 1000.0 / sample_rate, 0.0
+    indices = np.flatnonzero(active)
+    keep = max(0, int(int(sample_rate) * max(0.0, float(keep_ms)) / 1000.0))
+    start = max(0, int(indices[0]) - keep)
+    end = min(audio.shape[0], int(indices[-1]) + keep + 1)
+    trimmed_start = start * 1000.0 / sample_rate
+    trimmed_end = (audio.shape[0] - end) * 1000.0 / sample_rate
+    return np.ascontiguousarray(audio[start:end]), trimmed_start, trimmed_end
+
+
+def compress_long_silence(
+    waveform,
+    *,
+    sample_rate: int,
+    channels: int,
+    threshold_db: float = -45.0,
+    max_silence_ms: float = 900.0,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """把异常长静音压缩到上限，保留正常句读停顿。"""
+
+    audio = ensure_audio_shape(waveform, channels=channels)
+    if audio.size == 0:
+        return audio, {"long_silence_count": 0, "max_silence_ms": 0.0, "silence_ratio": 0.0}
+    max_samples = max(0, int(int(sample_rate) * max(0.0, float(max_silence_ms)) / 1000.0))
+    threshold = amplitude_threshold(threshold_db)
+    silence = np.max(np.abs(audio), axis=1) <= threshold
+    total_silence = int(np.count_nonzero(silence))
+    if max_samples <= 0:
+        # 0 表示完全删除被判定为静音的连续片段。
+        max_samples = 0
+    parts: list[np.ndarray] = []
+    long_count = 0
+    max_run = 0
+    cursor = 0
+    n = audio.shape[0]
+    i = 0
+    while i < n:
+        if not silence[i]:
+            i += 1
+            continue
+        start = i
+        while i < n and silence[i]:
+            i += 1
+        end = i
+        run = end - start
+        max_run = max(max_run, run)
+        if run > max_samples:
+            long_count += 1
+            if start > cursor:
+                parts.append(audio[cursor:start])
+            if max_samples > 0:
+                parts.append(audio[start : start + max_samples])
+            cursor = end
+    if cursor < n:
+        parts.append(audio[cursor:])
+    result = np.concatenate(parts, axis=0) if parts else audio[:0]
+    return np.ascontiguousarray(result), {
+        "long_silence_count": int(long_count),
+        "max_silence_ms": float(max_run * 1000.0 / sample_rate),
+        "silence_ratio": float(total_silence / max(1, n)),
+    }
+
+
+def analyze_silence(waveform, *, sample_rate: int, channels: int, threshold_db: float = -45.0) -> dict[str, float]:
+    """只分析不改动，供 Admin/脚本展示音频质量。"""
+
+    audio = ensure_audio_shape(waveform, channels=channels)
+    if audio.size == 0:
+        return {"long_silence_count": 0, "max_silence_ms": 0.0, "silence_ratio": 0.0}
+    # 这里把 1 秒以上当作“长静音”统计，真正压缩上限由 config 控制。
+    threshold = amplitude_threshold(threshold_db)
+    silence = np.max(np.abs(audio), axis=1) <= threshold
+    max_run = 0
+    long_count = 0
+    i = 0
+    n = audio.shape[0]
+    long_samples = int(sample_rate)
+    while i < n:
+        if not silence[i]:
+            i += 1
+            continue
+        start = i
+        while i < n and silence[i]:
+            i += 1
+        run = i - start
+        max_run = max(max_run, run)
+        if run >= long_samples:
+            long_count += 1
+    return {
+        "long_silence_count": int(long_count),
+        "max_silence_ms": float(max_run * 1000.0 / sample_rate),
+        "silence_ratio": float(np.count_nonzero(silence) / max(1, n)),
+    }
+
+
+def clamp_pause_seconds(seconds: float, *, max_ms: float) -> float:
+    """限制 runtime 估计出的 chunk pause，避免长文本出现 2-5 秒空白。"""
+
+    try:
+        value = float(seconds)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(value, max(0.0, float(max_ms)) / 1000.0))

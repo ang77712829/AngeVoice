@@ -207,7 +207,7 @@ volumes:
 
 environment:
   - MOSS_PROMPT_AUDIO_PATH=/app/prompts/reference.wav
-  - MOSS_PROMPT_AUDIO_MAX_SECONDS=10
+  - MOSS_PROMPT_AUDIO_MAX_SECONDS=8
   - MOSS_PROMPT_CACHE_MAX_ITEMS=8
 ```
 
@@ -234,14 +234,14 @@ MOSS_PROMPT_AUDIO_MAX_SECONDS=8
 MOSS_PROMPT_CACHE_MAX_ITEMS=6
 MOSS_SAMPLE_MODE=fixed
 MOSS_SEED=1234
-MOSS_STREAM_CHUNK_SECONDS=0.42
+MOSS_STREAM_CHUNK_SECONDS=0.40
 MOSS_STREAM_CHUNK_MIN_FLOOR=0.10
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
 MOSS_REALTIME_STREAMING_DECODE=true
 MOSS_OUTPUT_TARGET_PEAK=0.78
-MOSS_OUTPUT_GAIN=0.90
+MOSS_OUTPUT_GAIN=0.88
 MOSS_OUTPUT_DECLICK_ENABLED=true
-MOSS_OUTPUT_EDGE_FADE_MS=2
+MOSS_OUTPUT_EDGE_FADE_MS=3
 ```
 
 排查：
@@ -260,9 +260,9 @@ curl http://127.0.0.1:8101/v1/models/current
 ```bash
 MOSS_REALTIME_STREAMING_DECODE=true
 MOSS_OUTPUT_TARGET_PEAK=0.78
-MOSS_OUTPUT_GAIN=0.90
+MOSS_OUTPUT_GAIN=0.88
 MOSS_OUTPUT_DECLICK_ENABLED=true
-MOSS_OUTPUT_EDGE_FADE_MS=2
+MOSS_OUTPUT_EDGE_FADE_MS=3
 ```
 
 `MOSS_REALTIME_STREAMING_DECODE=true` 会更早推送小音频块，但在部分参考音频、CUDA/ONNX 组合和小喇叭播放链路上容易放大 chunk 边界不连续，表现为“刺”“噗”“电流音”。默认开启逐帧实时解码以降低首包等待、改善 Web/小智体感；若个别设备出现噪声、卡顿或边界不连续，可改为 false 走质量优先整块生成。
@@ -535,7 +535,7 @@ def tts_with_retry(url, payload, max_retries=3):
 
 ## WebSocket 一直卡在“建立流式连接”
 
-如果长文本或 MOSS CUDA 合成中途刷新页面、点击停止后再次生成一直卡住，优先确认已经使用 2.6.4.4 之后的修复版。修复版做了三件事：
+如果长文本或 MOSS CUDA 合成中途刷新页面、点击停止后再次生成一直卡住，优先确认已经使用 2.6.5.0。当前版本做了三件事：
 
 1. WebSocket 发送失败会立即标记请求取消，不再把断开的连接当作服务端错误反复发送。
 2. MOSS 隔离 worker 的流式超时按“无任何事件的空闲时间”计算，而不是整段长文本的总时长。
@@ -592,4 +592,4 @@ KOKORO_TRUST_PROXY_HEADERS=true
 
 ## MOSS 长文本仍有卡顿/爆音
 
-优先确认 `MOSS_SEGMENT_LENGTH=140` 已生效。它只影响 MOSS 分段，不影响 Kokoro。长文本段数过多时，段间拼接会增加卡顿和爆音概率；可尝试 140~180。
+优先确认 `MOSS_SEGMENT_LENGTH=180` 已生效。它只影响 MOSS 分段，不影响 Kokoro。长文本段数过多时，段间拼接会增加卡顿和爆音概率；可尝试 220~320。
