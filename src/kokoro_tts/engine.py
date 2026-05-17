@@ -304,6 +304,43 @@ class TTSEngine:
         except Exception:
             logger.debug("Kokoro CUDA cache cleanup skipped", exc_info=True)
 
+
+    def _safe_kokoro_repo_id(self) -> str:
+        """Return a valid repository id for Kokoro internals.
+
+        Local model directories such as /app/models are passed separately via
+        explicit config/model paths. They must not be used as repo_id because
+        huggingface_hub validates repo_id even when files are local.
+        """
+        repo_id = str(getattr(self.config, "kokoro_hf_repo", self.HF_REPO) or self.HF_REPO).strip()
+        if not repo_id or repo_id.startswith(('/', './', '../')):
+            return self.HF_REPO
+        return repo_id
+
+    def _resolve_voice_for_pipeline(self, voice: str) -> str:
+        """Resolve a voice name to a local .pt file when available.
+
+        This keeps offline Docker/NAS deployments from asking Kokoro to fetch
+        voices from Hugging Face when /app/models/voices already contains them.
+        """
+        raw = str(voice or "").strip()
+        if not raw:
+            return raw
+        # Do not allow arbitrary path traversal, but support files stored in
+        # the configured voices directory.
+        name = Path(raw).name
+        if name.endswith(".pt"):
+            candidates = [self.config.voices_dir / name]
+        else:
+            candidates = [self.config.voices_dir / f"{name}.pt"]
+        for candidate in candidates:
+            try:
+                if candidate.exists() and candidate.is_file() and candidate.stat().st_size > 100:
+                    return str(candidate)
+            except OSError:
+                continue
+        return raw
+
     def load(self) -> "TTSEngine":
         if self._loaded:
             return self
@@ -319,12 +356,17 @@ class TTSEngine:
             ensure_kokoro_model_dir(self.config, logger=logger)
             use_local = local_model.exists() and local_config.exists() and local_model.stat().st_size > 1000
 
+        # Kokoro 的 repo_id 必须始终是合法的 Hugging Face 仓库名。
+        # 即使使用 /app/models 这样的本地模型目录，也不能把绝对路径传给 repo_id，
+        # 否则 huggingface_hub 会报：
+        #   Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/app/models'
+        # 本地模型通过 config/model 显式路径加载；repo_id 只保留为合法标识，
+        # 供 Kokoro 内部默认映射和 Pipeline 初始化使用。
+        repo_id = self._safe_kokoro_repo_id()
         if use_local:
-            repo_id = str(self.config.model_dir)
-            logger.info(f"从本地加载模型: {repo_id} -> {self._device}")
+            logger.info("从本地加载模型: %s (repo_id=%s) -> %s", self.config.model_dir, repo_id, self._device)
             KModel.MODEL_NAMES[repo_id] = local_model.name
         else:
-            repo_id = getattr(self.config, "kokoro_hf_repo", self.HF_REPO) or self.HF_REPO
             source = resolve_model_source(self.config)
             logger.info("本地未找到模型，从 %s 下载: %s", "Hugging Face" if source == "huggingface" else source, repo_id)
 
@@ -459,7 +501,7 @@ class TTSEngine:
         except ImportError:  # Unit tests and lightweight CI do not need torch.
             torch = None
 
-        generator = pipeline(segment, voice=voice, speed=speed_fn)
+        generator = pipeline(segment, voice=self._resolve_voice_for_pipeline(voice), speed=speed_fn)
         result = next(generator)
         audio = result.audio
         if audio is None:

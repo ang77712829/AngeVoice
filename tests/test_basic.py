@@ -503,3 +503,30 @@ def test_cache_skips_long_text_and_large_audio(tmp_path):
     state.cache_set("ok", (b"a" * 5, "audio/wav"), text="ok")
     assert state.cache_size() == 1
     assert state.cache_bytes() == 5
+
+class TestKokoroLocalPathRegression:
+    def test_local_model_dir_is_not_used_as_repo_id(self, tmp_path):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.engine import TTSEngine
+
+        model_dir = tmp_path / "models"
+        model_dir.mkdir()
+        (model_dir / "kokoro-v1_1-zh.pth").write_bytes(b"x" * 2048)
+        (model_dir / "config.json").write_text("{}", encoding="utf-8")
+        engine = TTSEngine(TTSConfig(model_dir=model_dir))
+        assert engine._safe_kokoro_repo_id() == "hexgrad/Kokoro-82M-v1.1-zh"
+        assert not engine._safe_kokoro_repo_id().startswith("/")
+
+    def test_local_voice_name_resolves_to_models_voices_file(self, tmp_path):
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.engine import TTSEngine
+
+        model_dir = tmp_path / "models"
+        voices = model_dir / "voices"
+        voices.mkdir(parents=True)
+        voice_file = voices / "zm_010.pt"
+        voice_file.write_bytes(b"v" * 2048)
+        engine = TTSEngine(TTSConfig(model_dir=model_dir))
+        assert engine._resolve_voice_for_pipeline("zm_010") == str(voice_file)
+        assert engine._resolve_voice_for_pipeline("../zm_010.pt") == str(voice_file)
+        assert engine._resolve_voice_for_pipeline("missing_voice") == "missing_voice"
