@@ -1,6 +1,7 @@
 let lastData = null;
 let lastConfigPayload = null;
 let activeGroup = 'quality';
+let activeAdminTab = 'overview';
 
 const $ = id => document.getElementById(id);
 
@@ -26,6 +27,15 @@ function toast(message, isError = false) {
   el.classList.add('show');
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+function renderAdminTab() {
+  document.querySelectorAll('[data-admin-panel]').forEach(panel => {
+    panel.classList.toggle('hidden-panel', panel.dataset.adminPanel !== activeAdminTab);
+  });
+  document.querySelectorAll('[data-admin-tab]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.adminTab === activeAdminTab);
+  });
 }
 
 function metricCard(title, value, tone = '') {
@@ -329,12 +339,17 @@ document.addEventListener('click', async event => {
   try {
     const target = event.target.closest('button');
     if (!target) return;
+    const adminTab = target.dataset.adminTab;
     const loadId = target.dataset.load;
     const switchId = target.dataset.switch;
     const unloadId = target.dataset.unload;
     const forceUnloadId = target.dataset.forceUnload;
     const group = target.dataset.configGroup;
     const profile = target.dataset.profile;
+    if (adminTab) {
+      activeAdminTab = adminTab;
+      renderAdminTab();
+    }
     if (loadId) await loadModel(loadId);
     if (switchId) await switchModel(switchId);
     if (unloadId) await unloadModel(unloadId, false);
@@ -392,3 +407,4 @@ $('export-env-btn').onclick = async () => {
 };
 
 refresh().catch(err => toast(err.message, true));
+renderAdminTab();

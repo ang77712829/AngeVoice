@@ -28,8 +28,15 @@
       </div>
     </header>
 
+    <section class="admin-nav">
+      <button class="admin-nav-btn active" data-admin-tab="overview" type="button">概览</button>
+      <button class="admin-nav-btn" data-admin-tab="models" type="button">模型</button>
+      <button class="admin-nav-btn" data-admin-tab="config" type="button">配置</button>
+      <button class="admin-nav-btn" data-admin-tab="security" type="button">安全</button>
+      <button class="admin-nav-btn" data-admin-tab="api" type="button">API/诊断</button>
+    </section>
     <section class="admin-layout">
-      <article class="panel admin-panel overview-panel">
+      <article class="panel admin-panel overview-panel" data-admin-panel="overview">
         <div class="section-head compact">
           <div>
             <p class="eyebrow">Dashboard</p>
@@ -40,7 +47,7 @@
         <div class="metrics-grid admin-metrics" id="admin-metrics"></div>
       </article>
 
-      <article class="panel admin-panel models-panel">
+      <article class="panel admin-panel models-panel" data-admin-panel="models">
         <div class="section-head compact">
           <div>
             <p class="eyebrow">Models</p>
@@ -55,7 +62,7 @@
         <div class="model-list" id="models-body"></div>
       </article>
 
-      <article class="panel admin-panel tuning-panel">
+      <article class="panel admin-panel tuning-panel" data-admin-panel="config">
         <div class="section-head">
           <div>
             <p class="eyebrow">Tuning</p>
@@ -76,7 +83,7 @@
         </details>
       </article>
 
-      <article class="panel admin-panel security-panel">
+      <article class="panel admin-panel security-panel" data-admin-panel="security">
         <div class="section-head compact">
           <div>
             <p class="eyebrow">Security</p>
@@ -93,7 +100,7 @@
         </div>
       </article>
 
-      <article class="panel admin-panel diagnostics-panel">
+      <article class="panel admin-panel diagnostics-panel" data-admin-panel="api">
         <div class="section-head compact">
           <div>
             <p class="eyebrow">Diagnostics</p>
