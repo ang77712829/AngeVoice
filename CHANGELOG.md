@@ -73,7 +73,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Se
 ### 🔐 安全与运维
 - 新增 `KOKORO_TRUST_PROXY_HEADERS=false`，默认不信任 `X-Forwarded-For` / `X-Real-IP`，避免裸露公网时被伪造绕过限流。
 - 新增 `KOKORO_PUBLIC_STATUS_ENDPOINTS`，公网敏感部署可让 `/v1/models`、`/v1/models/current`、`/v1/audio/voices` 也要求 Bearer Token。
-- Admin 支持查看/轮换 `KOKORO_API_KEY=auto` 生成的 key；默认普通 Bearer API Key 不能登录后台，除非显式开启 `KOKORO_ADMIN_ALLOW_API_KEY=true`。
+- Admin 支持查看/轮换 `KOKORO_API_KEY` 生成的 key；管理后台仅支持 Basic Auth 登录，普通 Bearer API Key 无法登录后台。
 - MOSS 克隆参考音频默认裁剪到 `MOSS_PROMPT_AUDIO_MAX_SECONDS=8`，与 Docker、代码默认值和文档口径保持一致。
 
 ### 🧪 测试、文档与发布

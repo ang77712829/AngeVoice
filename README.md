@@ -433,7 +433,7 @@ environment:
 如果必须开放，建议只在内网管理端使用，并配合反代 IP 白名单。
 `.pt` 文件是 PyTorch 序列化格式，理论上可执行任意代码。
 - 不建议把 `/admin/*` 直接暴露到公网。
-- 默认情况下普通 Bearer API Key 不能登录管理后台；如需兼容旧用法，可显式设置 `KOKORO_ADMIN_ALLOW_API_KEY=true`。
+- 管理后台仅支持 Basic Auth 登录，普通 Bearer API Key 无法登录管理后台。
 - 设置 `KOKORO_PUBLIC_STATUS_ENDPOINTS=false` 后，模型/音色 JSON 接口和页面 bootstrap 会隐藏详细目录；公开 `/health` 只返回最小健康信息。
 
 详见 [`docs/SECURITY.md`](docs/SECURITY.md)。
