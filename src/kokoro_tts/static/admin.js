@@ -2,6 +2,21 @@ let lastData = null;
 let lastConfigPayload = null;
 let activeGroup = 'quality';
 let activeAdminTab = 'overview';
+const adminSubtabs = {
+  config: [
+    { key: 'config.runtime', label: '运行配置' },
+    { key: 'config.quality', label: '音频质量' },
+  ],
+  security: [
+    { key: 'security.auth', label: '鉴权与访问' },
+    { key: 'security.deploy', label: '部署预设' },
+  ],
+  api: [
+    { key: 'api.diagnostics', label: '诊断与导出' },
+    { key: 'api.raw', label: '原始状态' },
+  ],
+};
+const activeSubtab = { config: 'config.runtime', security: 'security.auth', api: 'api.diagnostics' };
 
 const $ = id => document.getElementById(id);
 
@@ -35,6 +50,25 @@ function renderAdminTab() {
   });
   document.querySelectorAll('[data-admin-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.adminTab === activeAdminTab);
+  });
+  renderAdminSubnav();
+}
+
+function renderAdminSubnav() {
+  const holder = $('admin-subnav');
+  const tabs = adminSubtabs[activeAdminTab] || [];
+  if (!tabs.length) {
+    holder.innerHTML = '';
+    holder.classList.remove('show');
+    document.querySelectorAll('[data-admin-subpanel]').forEach(el => el.classList.remove('hidden-panel'));
+    return;
+  }
+  holder.classList.add('show');
+  holder.innerHTML = tabs.map(tab => `<button class="admin-subnav-btn ${activeSubtab[activeAdminTab] === tab.key ? 'active' : ''}" data-admin-subtab="${escapeHtml(tab.key)}" type="button">${escapeHtml(tab.label)}</button>`).join('');
+  document.querySelectorAll('[data-admin-subpanel]').forEach(el => {
+    const key = el.dataset.adminSubpanel;
+    if (!key.startsWith(`${activeAdminTab}.`)) return;
+    el.classList.toggle('hidden-panel', key !== activeSubtab[activeAdminTab]);
   });
 }
 
@@ -349,6 +383,7 @@ document.addEventListener('click', async event => {
     const target = event.target.closest('button');
     if (!target) return;
     const adminTab = target.dataset.adminTab;
+    const adminSubtab = target.dataset.adminSubtab;
     const loadId = target.dataset.load;
     const switchId = target.dataset.switch;
     const unloadId = target.dataset.unload;
@@ -358,6 +393,11 @@ document.addEventListener('click', async event => {
     if (adminTab) {
       activeAdminTab = adminTab;
       renderAdminTab();
+    }
+    if (adminSubtab) {
+      const [group] = adminSubtab.split('.', 1);
+      activeSubtab[group] = adminSubtab;
+      renderAdminSubnav();
     }
     if (loadId) await loadModel(loadId);
     if (switchId) await switchModel(switchId);
