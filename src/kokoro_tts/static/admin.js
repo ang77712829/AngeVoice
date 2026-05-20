@@ -194,7 +194,13 @@ function renderConfigForms(payload) {
 
 function renderProfiles(payload) {
   const profiles = payload.schema?.profiles || [];
-  $('profile-grid').innerHTML = profiles.map(profile => `<button class="profile-card" data-profile="${escapeHtml(profile.key)}" type="button">
+  const tuningProfiles = profiles.filter(profile => !String(profile.key).startsWith('deploy_'));
+  $('profile-grid').innerHTML = tuningProfiles.map(profile => `<button class="profile-card" data-profile="${escapeHtml(profile.key)}" type="button">
+    <b>${escapeHtml(profile.label)}</b>
+    <span>${escapeHtml(profile.description)}</span>
+  </button>`).join('');
+  const deployProfiles = profiles.filter(profile => String(profile.key).startsWith('deploy_'));
+  $('deploy-profile-grid').innerHTML = deployProfiles.map(profile => `<button class="profile-card" data-profile="${escapeHtml(profile.key)}" type="button">
     <b>${escapeHtml(profile.label)}</b>
     <span>${escapeHtml(profile.description)}</span>
   </button>`).join('');
@@ -326,6 +332,9 @@ async function saveConfig() {
 }
 
 async function applyProfile(profile) {
+  if (profile === 'deploy_public_hardened') {
+    if (!confirm('将应用“公网加固”预设：会收紧公开接口并启用限流，是否继续？')) return;
+  }
   const result = await api('/admin/api/config/profile', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},

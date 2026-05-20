@@ -136,6 +136,10 @@
   gap: 10px;
   margin-bottom: 14px;
 }
+.deploy-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 4px;
+}
 
 .profile-card {
   display: grid;
