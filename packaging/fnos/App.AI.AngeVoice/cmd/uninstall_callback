@@ -1,0 +1,22 @@
+#!/bin/bash
+# uninstall_callback - 卸载回调
+# 卸载向导中用户可选择是否保留数据
+# 保留数据选项通过 wizard_keep_data 环境变量传入
+
+echo "[AngeVoice] 开始卸载回调..."
+
+# 如果用户选择不保留数据，则删除数据目录
+if [ "$wizard_keep_data" = "false" ] || [ "$wizard_keep_data" = "0" ]; then
+    echo "[AngeVoice] 用户选择删除数据，清理 $TRIM_PKGVAR"
+    rm -rf "$TRIM_PKGVAR/models"
+    rm -rf "$TRIM_PKGVAR/outputs"
+    rm -rf "$TRIM_PKGVAR/prompts"
+    rm -rf "$TRIM_PKGVAR/logs"
+    rm -rf "$TRIM_PKGETC/angevoice.env"
+    echo "[AngeVoice] 数据已清理"
+else
+    echo "[AngeVoice] 用户选择保留数据，跳过清理"
+fi
+
+echo "[AngeVoice] 卸载回调完成"
+exit 0

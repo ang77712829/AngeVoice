@@ -1,0 +1,31 @@
+#!/bin/bash
+# config_callback - 配置向导回调（用户修改设置后执行）
+
+set -e
+
+echo "[AngeVoice] 开始配置回调..."
+
+ENV_FILE="$TRIM_PKGETC/angevoice.env"
+
+# 更新用户修改的配置项
+update_env() {
+    local key="$1"
+    local val="$2"
+    if [ -n "$val" ]; then
+        if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+            sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+        else
+            echo "${key}=${val}" >> "$ENV_FILE"
+        fi
+        echo "[AngeVoice] 更新配置: ${key}=${val}"
+    fi
+}
+
+# 更新模型源
+update_env "ANGEVOICE_MODEL_SOURCE" "$wizard_model_source"
+
+# 更新管理员密码
+update_env "ANGEVOICE_ADMIN_PASSWORD" "$wizard_admin_password"
+
+echo "[AngeVoice] 配置回调完成"
+exit 0

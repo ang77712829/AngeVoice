@@ -1,0 +1,50 @@
+name: angevoice-fnos
+
+services:
+  angevoice:
+    image: ghcr.io/ang77712829/angevoice-cpu:2.6.5.3.3
+    container_name: angevoice-fnos
+
+    ports:
+      - "${TRIM_SERVICE_PORT:-8101}:8000"
+
+    env_file:
+      - ${TRIM_PKGETC}/angevoice.env
+
+    environment:
+      KOKORO_HOST: 0.0.0.0
+      KOKORO_PORT: "8000"
+
+      ANGEVOICE_MODELS_ROOT: /app/models
+      KOKORO_MODEL_DIR: /app/models/models--hexgrad--Kokoro-82M-v1.1-zh
+      MOSS_MODEL_DIR: /app/models/MOSS-TTS-Nano-100M-ONNX
+      MOSS_AUDIO_TOKENIZER_MODEL_DIR: /app/models/MOSS-Audio-Tokenizer-Nano-ONNX
+
+      HF_HUB_CACHE: /app/models
+      HUGGINGFACE_HUB_CACHE: /app/models
+      HF_HOME: /app/models/.hf
+      MODELSCOPE_CACHE: /app/models/modelscope-cache
+
+      ANGEVOICE_OUTPUT_DIR: /app/outputs
+      ANGEVOICE_RUNTIME_CONFIG_FILE: /app/outputs/runtime-config.json
+      ANGEVOICE_API_KEY_FILE: /app/outputs/.angevoice-api-key
+
+      KOKORO_DEVICE: cpu
+      ANGEVOICE_ENABLED_MODELS: kokoro,moss-nano-cpu
+      ANGEVOICE_DEFAULT_MODEL: kokoro
+      MOSS_EXECUTION_PROVIDER: cpu
+      MOSS_CUDA_ENABLED: "false"
+
+    volumes:
+      - ${TRIM_PKGVAR}/models:/app/models
+      - ${TRIM_PKGVAR}/outputs:/app/outputs
+      - ${TRIM_PKGVAR}/prompts:/app/prompts
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+    restart: unless-stopped

@@ -1,0 +1,57 @@
+#!/bin/bash
+# upgrade_callback - 升级回调
+# 核心原则：不删模型、不覆盖用户配置、只追加新字段
+
+set -e
+
+echo "[AngeVoice] 开始升级回调..."
+
+ENV_FILE="$TRIM_PKGETC/angevoice.env"
+
+# ========== 1. 确保数据目录存在 ==========
+mkdir -p "$TRIM_PKGVAR/models"
+mkdir -p "$TRIM_PKGVAR/outputs"
+mkdir -p "$TRIM_PKGVAR/prompts"
+mkdir -p "$TRIM_PKGVAR/logs"
+mkdir -p "$TRIM_PKGETC"
+
+# ========== 2. 备份旧配置 ==========
+if [ -f "$ENV_FILE" ]; then
+    cp "$ENV_FILE" "$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)"
+    echo "[AngeVoice] 旧配置已备份"
+fi
+
+# ========== 3. 追加缺失的环境变量（不覆盖已有值） ==========
+ensure_env_key() {
+    local key="$1"
+    local default_val="$2"
+    if ! grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+        echo "${key}=${default_val}" >> "$ENV_FILE"
+        echo "[AngeVoice] 追加新字段: ${key}=${default_val}"
+    fi
+}
+
+# 基础配置
+ensure_env_key "PYTHONUNBUFFERED" "1"
+ensure_env_key "KOKORO_API_KEY" "auto"
+ensure_env_key "KOKORO_ADMIN_ENABLED" "true"
+ensure_env_key "ANGEVOICE_MODEL_SOURCE" "modelscope"
+ensure_env_key "KOKORO_PREFETCH_VOICES" "true"
+
+# 并发与超时
+ensure_env_key "KOKORO_WORKERS" "1"
+ensure_env_key "KOKORO_MAX_CONCURRENT_REQUESTS" "1"
+ensure_env_key "KOKORO_REQUEST_TIMEOUT_SECONDS" "300"
+
+# 空闲卸载
+ensure_env_key "ANGEVOICE_IDLE_TIMEOUT_SECONDS" "600"
+ensure_env_key "ANGEVOICE_IDLE_CHECK_INTERVAL" "30"
+ensure_env_key "ANGEVOICE_IDLE_UNLOAD_CURRENT" "true"
+
+# 限流与状态
+ensure_env_key "KOKORO_PUBLIC_STATUS_ENDPOINTS" "true"
+ensure_env_key "KOKORO_RATE_LIMIT_QPS" "0"
+ensure_env_key "KOKORO_RATE_LIMIT_BURST" "5"
+
+echo "[AngeVoice] 升级回调完成"
+exit 0

@@ -1,0 +1,16 @@
+{
+    ".url": {
+        "App.AI.AngeVoice.studio": {
+            "title": "AngeVoice Studio",
+            "icon": "images/icon-{0}.png",
+            "type": "url",
+            "protocol": "http",
+            "port": "${TRIM_SERVICE_PORT}",
+            "url": "/",
+            "allUsers": true,
+            "control": {
+                "accessPerm": "readonly"
+            }
+        }
+    }
+}
