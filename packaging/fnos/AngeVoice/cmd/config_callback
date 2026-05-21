@@ -30,5 +30,31 @@ update_env "ANGEVOICE_ADMIN_USERNAME" "$wizard_admin_username"
 # 更新管理员密码
 update_env "ANGEVOICE_ADMIN_PASSWORD" "$wizard_admin_password"
 
+# ========== 同步端口到ui/config ==========
+# 当用户在应用设置中修改端口时，同步更新ui/config的port字段
+CONFIG_FILE="/var/apps/AngeVoice/target/ui/config"
+if [ -n "$TRIM_SERVICE_PORT" ] && [ -f "$CONFIG_FILE" ]; then
+    python3 -c "
+import json, sys
+try:
+    with open('$CONFIG_FILE') as f:
+        config = json.load(f)
+    port_str = str('$TRIM_SERVICE_PORT')
+    changed = False
+    for entry_type in config:
+        for key in config[entry_type]:
+            if config[entry_type][key].get('port') != port_str:
+                config[entry_type][key]['port'] = port_str
+                changed = True
+    if changed:
+        with open('$CONFIG_FILE', 'w') as f:
+            json.dump(config, f, indent=4)
+            f.write('\n')
+        print('[AngeVoice] ui/config端口已同步: ' + port_str)
+except Exception as e:
+    print('[AngeVoice] 端口同步失败: ' + str(e), file=sys.stderr)
+" 2>&1
+fi
+
 echo "[AngeVoice] 配置回调完成"
 exit 0

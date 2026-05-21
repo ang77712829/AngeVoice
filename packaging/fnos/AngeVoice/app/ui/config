@@ -1,11 +1,11 @@
 {
     ".url": {
-        "AngeVoice.studio": {
-            "title": "AngeVoice Studio",
-            "icon": "images/icon-{0}.png",
+        "AngeVoice.Application": {
+            "title": "AngeVoice",
+            "icon": "images/icon_{0}.png",
             "type": "url",
             "protocol": "http",
-            "port": "${TRIM_SERVICE_PORT}",
+            "port": "8101",
             "url": "/",
             "allUsers": true,
             "control": {

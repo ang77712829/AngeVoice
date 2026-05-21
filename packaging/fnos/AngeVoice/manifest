@@ -13,7 +13,7 @@ distributor_url=https://github.com/ang77712829/AngeVoice
 os_min_version=1.1.8
 
 desktop_uidir=ui
-desktop_applaunchname=AngeVoice.studio
+desktop_applaunchname      = AngeVoice.Application
 
 service_port=8101
 checkport=true
