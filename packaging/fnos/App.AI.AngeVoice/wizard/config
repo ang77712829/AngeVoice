@@ -1,51 +1,49 @@
-{
-    "steps": [
-        {
-            "title": "AngeVoice 设置",
-            "description": "",
-            "inputs": [
-                {
-                    "type": "radio",
-                    "field": "wizard_model_source",
-                    "label": "模型下载源",
-                    "initValue": "modelscope",
-                    "options": [
-                        {
-                            "label": "ModelScope（推荐，国内用户）",
-                            "value": "modelscope"
-                        },
-                        {
-                            "label": "自动探测（自动选择可用源）",
-                            "value": "auto"
-                        },
-                        {
-                            "label": "Hugging Face（适合海外网络）",
-                            "value": "huggingface"
-                        },
-                        {
-                            "label": "离线模式（手动放入模型）",
-                            "value": "offline"
-                        }
-                    ],
-                    "rules": [
-                        {
-                            "required": true,
-                            "message": "请选择模型下载源"
-                        }
-                    ]
-                },
-                {
-                    "type": "password",
-                    "field": "wizard_admin_password",
-                    "label": "修改管理员密码（留空不修改）",
-                    "rules": [
-                        {
-                            "min": 6,
-                            "message": "密码长度不能少于6位"
-                        }
-                    ]
-                }
-            ]
-        }
-    ]
-}
+[
+    {
+        "title": "AngeVoice 设置",
+        "description": "",
+        "inputs": [
+            {
+                "type": "radio",
+                "field": "wizard_model_source",
+                "label": "模型下载源",
+                "initValue": "modelscope",
+                "options": [
+                    {
+                        "label": "ModelScope（推荐，国内用户）",
+                        "value": "modelscope"
+                    },
+                    {
+                        "label": "自动探测（自动选择可用源）",
+                        "value": "auto"
+                    },
+                    {
+                        "label": "Hugging Face（适合海外网络）",
+                        "value": "huggingface"
+                    },
+                    {
+                        "label": "离线模式（手动放入模型）",
+                        "value": "offline"
+                    }
+                ],
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请选择模型下载源"
+                    }
+                ]
+            },
+            {
+                "type": "password",
+                "field": "wizard_admin_password",
+                "label": "修改管理员密码（留空不修改）",
+                "rules": [
+                    {
+                        "min": 6,
+                        "message": "密码长度不能少于6位"
+                    }
+                ]
+            }
+        ]
+    }
+]

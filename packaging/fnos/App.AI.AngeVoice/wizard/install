@@ -1,104 +1,102 @@
-{
-    "steps": [
-        {
-            "title": "欢迎安装 AngeVoice",
-            "description": "AngeVoice 是本地中文 TTS 语音合成服务，支持 Kokoro 与 MOSS 双引擎。\n\n**注意事项：**\n- 模型不内置在安装包中，首次启动会自动下载\n- 模型保存在应用数据目录，升级不会覆盖\n- CPU 版适合大多数 NAS，GPU 版后续单独提供",
-            "inputs": []
-        },
-        {
-            "title": "基础配置",
-            "description": "",
-            "inputs": [
-                {
-                    "type": "text",
-                    "field": "wizard_http_port",
-                    "label": "服务端口",
-                    "initValue": "8101",
-                    "rules": [
-                        {
-                            "required": true,
-                            "message": "请输入端口号"
-                        },
-                        {
-                            "pattern": "^[0-9]{2,5}$",
-                            "message": "请输入有效端口号（2-5位数字）"
-                        }
-                    ]
-                },
-                {
-                    "type": "radio",
-                    "field": "wizard_model_source",
-                    "label": "模型下载源",
-                    "initValue": "modelscope",
-                    "options": [
-                        {
-                            "label": "ModelScope（推荐，国内用户）",
-                            "value": "modelscope"
-                        },
-                        {
-                            "label": "自动探测（自动选择可用源）",
-                            "value": "auto"
-                        },
-                        {
-                            "label": "Hugging Face（适合海外网络）",
-                            "value": "huggingface"
-                        },
-                        {
-                            "label": "离线模式（手动放入模型）",
-                            "value": "offline"
-                        }
-                    ],
-                    "rules": [
-                        {
-                            "required": true,
-                            "message": "请选择模型下载源"
-                        }
-                    ]
-                },
-                {
-                    "type": "radio",
-                    "field": "wizard_auto_download",
-                    "label": "首次启动时自动下载模型",
-                    "initValue": "true",
-                    "options": [
-                        {
-                            "label": "是，自动下载（推荐）",
-                            "value": "true"
-                        },
-                        {
-                            "label": "否，我手动放入模型目录",
-                            "value": "false"
-                        }
-                    ],
-                    "rules": [
-                        {
-                            "required": true,
-                            "message": "请选择是否自动下载模型"
-                        }
-                    ]
-                }
-            ]
-        },
-        {
-            "title": "安全配置",
-            "description": "",
-            "inputs": [
-                {
-                    "type": "password",
-                    "field": "wizard_admin_password",
-                    "label": "管理员密码",
-                    "rules": [
-                        {
-                            "required": true,
-                            "message": "请设置管理员密码"
-                        },
-                        {
-                            "min": 6,
-                            "message": "密码长度不能少于6位"
-                        }
-                    ]
-                }
-            ]
-        }
-    ]
-}
+[
+    {
+        "title": "欢迎安装 AngeVoice",
+        "description": "AngeVoice 是本地中文 TTS 语音合成服务，支持 Kokoro 与 MOSS 双引擎。\n\n**注意事项：**\n- 模型不内置在安装包中，首次启动会自动下载\n- 模型保存在应用数据目录，升级不会覆盖\n- CPU 版适合大多数 NAS，GPU 版后续单独提供",
+        "inputs": []
+    },
+    {
+        "title": "基础配置",
+        "description": "",
+        "inputs": [
+            {
+                "type": "text",
+                "field": "wizard_http_port",
+                "label": "服务端口",
+                "initValue": "8101",
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请输入端口号"
+                    },
+                    {
+                        "pattern": "^[0-9]{2,5}$",
+                        "message": "请输入有效端口号（2-5位数字）"
+                    }
+                ]
+            },
+            {
+                "type": "radio",
+                "field": "wizard_model_source",
+                "label": "模型下载源",
+                "initValue": "modelscope",
+                "options": [
+                    {
+                        "label": "ModelScope（推荐，国内用户）",
+                        "value": "modelscope"
+                    },
+                    {
+                        "label": "自动探测（自动选择可用源）",
+                        "value": "auto"
+                    },
+                    {
+                        "label": "Hugging Face（适合海外网络）",
+                        "value": "huggingface"
+                    },
+                    {
+                        "label": "离线模式（手动放入模型）",
+                        "value": "offline"
+                    }
+                ],
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请选择模型下载源"
+                    }
+                ]
+            },
+            {
+                "type": "radio",
+                "field": "wizard_auto_download",
+                "label": "首次启动时自动下载模型",
+                "initValue": "true",
+                "options": [
+                    {
+                        "label": "是，自动下载（推荐）",
+                        "value": "true"
+                    },
+                    {
+                        "label": "否，我手动放入模型目录",
+                        "value": "false"
+                    }
+                ],
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请选择是否自动下载模型"
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "title": "安全配置",
+        "description": "",
+        "inputs": [
+            {
+                "type": "password",
+                "field": "wizard_admin_password",
+                "label": "管理员密码",
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请设置管理员密码"
+                    },
+                    {
+                        "min": 6,
+                        "message": "密码长度不能少于6位"
+                    }
+                ]
+            }
+        ]
+    }
+]
