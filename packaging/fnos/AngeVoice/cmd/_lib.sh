@@ -1,4 +1,7 @@
 #!/bin/bash
+
+log() { echo "[AngeVoice] $*"; }
+
 # _lib.sh - AngeVoice FPK 公共函数库
 # 被 install_callback / config_callback / upgrade_callback 共同引用
 
@@ -65,8 +68,11 @@ sync_runtime_dir() {
 
 # sync_to_appcenter: 遍历所有 @appcenter 卷并同步
 sync_to_appcenter() {
-  sync_runtime_dir "${TRIM_APPDEST_VOL:-}/@appcenter/${APP_NAME}/docker"
+  if [ -n "${TRIM_APPDEST_VOL:-}" ]; then
+    sync_runtime_dir "${TRIM_APPDEST_VOL}/@appcenter/${APP_NAME}/docker"
+  fi
   for dir in /vol*/@appcenter/${APP_NAME}/docker; do
-    [ -d "${dir}" ] && sync_runtime_dir "${dir}"
+    [ -d "${dir}" ] && sync_runtime_dir "${dir}" || true
   done
+  return 0
 }

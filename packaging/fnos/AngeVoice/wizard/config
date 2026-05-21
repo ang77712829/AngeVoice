@@ -4,6 +4,44 @@
         "stepTitle": "AngeVoice 设置",
         "items": [
             {
+                "type": "text",
+                "field": "wizard_http_port",
+                "label": "服务端口（留空不修改）",
+                "initValue": "8101",
+                "rules": [
+                    {
+                        "pattern": "^[0-9]*$",
+                        "message": "端口号必须是数字"
+                    }
+                ]
+            },
+            {
+                "type": "radio",
+                "field": "wizard_device_type",
+                "label": "运行模式（修改后需重启应用）",
+                "initValue": "cpu",
+                "options": [
+                    {
+                        "label": "CPU — 无需 GPU，适用于 NAS / 家用服务器",
+                        "value": "cpu"
+                    },
+                    {
+                        "label": "GPU — NVIDIA CUDA 加速",
+                        "value": "gpu"
+                    },
+                    {
+                        "label": "Legacy GPU — Tesla P4 等旧款 NVIDIA 显卡",
+                        "value": "legacy-gpu"
+                    }
+                ],
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请选择运行模式"
+                    }
+                ]
+            },
+            {
                 "type": "radio",
                 "field": "wizard_model_source",
                 "label": "模型下载源",
@@ -20,6 +58,10 @@
                     {
                         "label": "Hugging Face（适合海外网络）",
                         "value": "huggingface"
+                    },
+                    {
+                        "label": "离线模式（不联网下载，需预先放好模型）",
+                        "value": "offline"
                     }
                 ],
                 "rules": [

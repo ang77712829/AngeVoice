@@ -16,15 +16,61 @@ ENV_FILE="${APP_DOCKER_DIR}/angevoice.env"
 
 MODEL_SOURCE="${wizard_model_source:-}"
 case "${MODEL_SOURCE}" in
-  ''|auto|huggingface|modelscope) ;;
+  ''|auto|huggingface|modelscope|offline) ;;
   *) MODEL_SOURCE="modelscope" ;;
 esac
+
+
+DEVICE="${wizard_device_type:-}"
+case "${DEVICE}" in
+  cpu|gpu|legacy-gpu)
+    upsert_env "ANGEVOICE_FNOS_DEVICE" "${DEVICE}"
+    case "${DEVICE}" in
+      gpu) SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.gpu.yaml" ;;
+      legacy-gpu) SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.legacy-gpu.yaml" ;;
+      *) SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.cpu.yaml" ;;
+    esac
+    if [ -f "${SRC_COMPOSE}" ]; then
+      cp "${SRC_COMPOSE}" "${APP_DOCKER_DIR}/docker-compose.yaml"
+    fi
+    preset="${APP_DOCKER_DIR}/presets/${DEVICE}.env"
+    if [ -f "${preset}" ]; then
+      while IFS= read -r line || [ -n "${line}" ]; do
+        case "${line}" in ''|'#'*) continue ;; esac
+        key="${line%%=*}"
+        val="${line#*=}"
+        [ -n "${key}" ] && upsert_env "${key}" "${val}"
+      done < "${preset}"
+    fi
+    ;;
+esac
+
+if [ -f "${APP_DOCKER_DIR}/docker-compose.yaml" ]; then
+  HOST_PORT="${wizard_http_port:-}"
+  if [ -n "${HOST_PORT}" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "${APP_DOCKER_DIR}/docker-compose.yaml" "${HOST_PORT}" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+port = sys.argv[2] if sys.argv[2:3] and sys.argv[2].isdigit() and len(sys.argv[2]) <= 5 else "8101"
+text = path.read_text(encoding="utf-8")
+text = text.replace("__HOST_PORT__", port)
+path.write_text(text, encoding="utf-8")
+PY
+    else
+      sed -i "s|__HOST_PORT__|${HOST_PORT}|g" "${APP_DOCKER_DIR}/docker-compose.yaml"
+    fi
+  fi
+fi
 
 # 修复：原始源码使用了错误的 KOKORO_ADMIN_USERNAME/PASSWORD，
 # 正确变量名为 ANGEVOICE_ADMIN_USERNAME/PASSWORD
 upsert_env "ANGEVOICE_ADMIN_USERNAME" "${wizard_admin_username}"
 upsert_env "ANGEVOICE_ADMIN_PASSWORD" "${wizard_admin_password}"
 upsert_env "ANGEVOICE_MODEL_SOURCE"   "${MODEL_SOURCE}"
+# 保存当前端口，供升级时读取
+[ -n "${wizard_http_port:-}" ] && upsert_env "ANGEVOICE_FNOS_PORT" "${wizard_http_port}"
 
 # 同步到 @appcenter 运行目录
 sync_to_appcenter

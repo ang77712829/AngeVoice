@@ -82,7 +82,7 @@ cd /path/to/xiaozhi-server
 bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh)
 ```
 
-安装脚本是交互式的，普通用户一路按回车会采用推荐默认值。脚本会自动识别 `docker-compose_all.yml` / `docker-compose.yml` / `compose.yml`，支持飞牛、群晖等 NAS 面板改名后的 compose 文件。
+安装脚本是交互式的，普通用户一路按回车会采用推荐默认值。脚本会自动识别 `docker-compose_all.yml` / `docker-compose.yml` / `compose.yml`，支持群晖等 NAS 面板改名后的 compose 文件。
 
 脚本需要 Docker 权限：root 用户可直接运行；普通用户需要加入 `docker` 用户组，或使用 `sudo` / 管理员终端运行。新增 volume 挂载后仅 `docker restart` 不会生效，因此脚本会自动执行：
 
@@ -340,7 +340,7 @@ WebSocket 流式克隆时，参考音频放在首个 JSON 的 `prompt_audio.data
 
 ## 模型文件
 
-首次运行时，如果本地没有完整模型文件，服务会按 `ANGEVOICE_MODEL_SOURCE` 自动选择下载源。`auto` 不再只依赖 `ipapi.co`：它会先短超时探测 Hugging Face 与 ModelScope 可达性；若 HF 不可达而 ModelScope 可达会直接走 ModelScope；两者都可达时再用国家/地区判断；国家判断失败时按可达性兜底。也可在管理后台或环境变量中强制设为 `modelscope` / `huggingface`。离线部署或想提升冷启动速度，建议手动准备：
+首次运行时，如果本地没有完整模型文件，服务会按 `ANGEVOICE_MODEL_SOURCE` 自动选择下载源。`auto` 不再只依赖 `ipapi.co`：它会先短超时探测 Hugging Face 与 ModelScope 可达性；若 HF 不可达而 ModelScope 可达会直接走 ModelScope；两者都可达时再用国家/地区判断；国家判断失败时按可达性兜底。也可在管理后台或环境变量中强制设为 `modelscope` / `huggingface`；离线部署可设为 `offline`，此时不会联网下载，需提前准备完整模型。想提升冷启动速度，建议手动准备：
 
 ```bash
 pip install huggingface_hub
@@ -404,7 +404,7 @@ environment:
 | `KOKORO_MODEL_DIR` | `/app/models/models--hexgrad--Kokoro-82M-v1.1-zh` | Kokoro 主模型、config 和 voices 目录 |
 | `HF_HUB_CACHE` | `/app/models` | Hugging Face 自动下载缓存根目录，会生成 `models--hexgrad--Kokoro-82M-v1.1-zh` |
 | `MODELSCOPE_CACHE` | `/app/models/modelscope-cache` | ModelScope 自动下载缓存目录 |
-| `ANGEVOICE_MODEL_SOURCE` | `auto` | 模型下载源：`auto` 先探测 Hugging Face/ModelScope 可达性，再用国家判断；也可手动设为 `modelscope` / `huggingface` |
+| `ANGEVOICE_MODEL_SOURCE` | `auto` | 模型下载源：`auto` 先探测 Hugging Face/ModelScope 可达性，再用国家判断；也可手动设为 `modelscope` / `huggingface` / `offline` |
 | `KOKORO_MODELSCOPE_REPO` | `AI-ModelScope/Kokoro-82M-v1.1-zh` | 国内自动下载 Kokoro 的 ModelScope 仓库 |
 | `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | 自动下载 MOSS ONNX 的 ModelScope 仓库；默认兜底使用 |
 | `MOSS_HF_REPO` | - | 可选 Hugging Face MOSS ONNX 仓库；留空时不走 HF MOSS 下载 |

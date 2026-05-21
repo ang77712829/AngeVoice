@@ -41,10 +41,10 @@ ARG MOSS_CUDNN_PACKAGE=nvidia-cudnn-cu12==9.1.0.70
 ENV MOSS_TTS_NANO_PATH=/opt/MOSS-TTS-Nano
 ENV LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/nvidia/cudnn/lib:/usr/local/lib/python3.10/dist-packages/nvidia/cublas/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
 
-# MOSS-TTS-Nano ONNX runtime is included by default in the modern GPU image so
-# the Web UI can switch between Kokoro, MOSS CPU, and MOSS CUDA without rebuilds.
-# ONNX Runtime 1.20.x on CUDA 12 requires the cuDNN 9 runtime.
-# Preserve the upstream OpenMOSS license inside prebuilt images.
+# MOSS-TTS-Nano ONNX 推理运行时已预装在 GPU 镜像中，Web UI 可在
+# Kokoro、MOSS CPU、MOSS CUDA 之间切换而无需重新构建。
+# ONNX Runtime 1.20.x 在 CUDA 12 上需要 cuDNN 9 运行时。
+# 保留上游 OpenMOSS 许可证到预构建镜像中。
 RUN if [ "$INSTALL_MOSS" = "true" ]; then \
       git clone --depth 1 "$MOSS_REPO" "$MOSS_TTS_NANO_PATH" && \
       mkdir -p /app/licenses && \

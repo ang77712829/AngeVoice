@@ -25,9 +25,18 @@
                 "label": "运行模式（GPU 仅支持 NVIDIA 显卡，不支持 AMD/核显）",
                 "initValue": "cpu",
                 "options": [
-                    {"label": "CPU（推荐）— 无需 GPU，适用于 NAS / 家用服务器", "value": "cpu"},
-                    {"label": "GPU — NVIDIA 显卡 CUDA 加速（需安装 nvidia-container-toolkit）", "value": "gpu"},
-                    {"label": "Legacy GPU — 兼容 Tesla P4 等旧款 NVIDIA 显卡", "value": "legacy-gpu"}
+                    {
+                        "label": "CPU（推荐）— 无需 GPU，适用于 NAS / 家用服务器",
+                        "value": "cpu"
+                    },
+                    {
+                        "label": "GPU — NVIDIA 显卡 CUDA 加速（需安装 nvidia-container-toolkit）",
+                        "value": "gpu"
+                    },
+                    {
+                        "label": "Legacy GPU — 兼容 Tesla P4 等旧款 NVIDIA 显卡",
+                        "value": "legacy-gpu"
+                    }
                 ],
                 "rules": [
                     {
@@ -42,9 +51,22 @@
                 "label": "模型下载源",
                 "initValue": "modelscope",
                 "options": [
-                    {"label": "ModelScope（推荐，国内用户）", "value": "modelscope"},
-                    {"label": "自动探测（自动选择可用源）", "value": "auto"},
-                    {"label": "Hugging Face（适合海外网络）", "value": "huggingface"}
+                    {
+                        "label": "ModelScope（推荐，国内用户）",
+                        "value": "modelscope"
+                    },
+                    {
+                        "label": "自动探测（自动选择可用源）",
+                        "value": "auto"
+                    },
+                    {
+                        "label": "Hugging Face（适合海外网络）",
+                        "value": "huggingface"
+                    },
+                    {
+                        "label": "离线模式（不联网下载，需预先放好模型）",
+                        "value": "offline"
+                    }
                 ],
                 "rules": [
                     {

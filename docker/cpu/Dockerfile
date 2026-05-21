@@ -24,9 +24,9 @@ RUN python3 -m pip install --no-cache-dir \
     "torchaudio==${PYTORCH_VERSION}+cpu" \
     --index-url https://download.pytorch.org/whl/cpu
 
-# MOSS-TTS-Nano CPU ONNX runtime. The official repository remains the source
-# of inference code; AngeVoice only imports it through MOSS_TTS_NANO_PATH.
-# Preserve the upstream OpenMOSS license inside prebuilt images.
+# MOSS-TTS-Nano CPU ONNX 推理运行时。MOSS-TTS-Nano 官方仓库是推理代码来源，
+# AngeVoice 通过 MOSS_TTS_NANO_PATH 环境变量引用它。
+# 保留上游 OpenMOSS 许可证到预构建镜像中。
 RUN if [ "$INSTALL_MOSS" = "true" ]; then \
       git clone --depth 1 "$MOSS_REPO" "$MOSS_TTS_NANO_PATH" && \
       mkdir -p /app/licenses && \

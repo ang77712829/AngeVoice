@@ -22,7 +22,7 @@ esac
 
 # 验证模型源
 case "${MODEL_SOURCE}" in
-  auto|huggingface|modelscope) ;;
+  auto|huggingface|modelscope|offline) ;;
   *) log "未知模型源 '${MODEL_SOURCE}'，回退为 modelscope"; MODEL_SOURCE="modelscope" ;;
 esac
 
@@ -52,7 +52,22 @@ if [ ! -f "${SRC_COMPOSE}" ]; then
 fi
 
 cp "${SRC_COMPOSE}" "${APP_DOCKER_DIR}/docker-compose.yaml"
-log "已选择 compose 模板：${SRC_COMPOSE}"
+# install wizard 的端口必须落到 compose；fnOS 的 TRIM_SERVICE_PORT 来自 manifest 默认端口，
+# 不一定等于用户安装时填写的 wizard_http_port。
+if command -v python3 >/dev/null 2>&1; then
+  python3 - "${APP_DOCKER_DIR}/docker-compose.yaml" "${HOST_PORT}" <<'PY'
+from pathlib import Path
+import re, sys
+path = Path(sys.argv[1])
+port = sys.argv[2] if re.fullmatch(r"[0-9]{1,5}", sys.argv[2] or "") else "8101"
+text = path.read_text(encoding="utf-8")
+text = text.replace("__HOST_PORT__", port)
+path.write_text(text, encoding="utf-8")
+PY
+else
+  sed -i "s|__HOST_PORT__|${HOST_PORT}|g" "${APP_DOCKER_DIR}/docker-compose.yaml"
+fi
+log "已选择 compose 模板：${SRC_COMPOSE}，端口=${HOST_PORT}"
 
 # ── 3. 准备 angevoice.env ────────────────────────────────────────────
 ENV_FILE="${APP_DOCKER_DIR}/angevoice.env"
@@ -87,6 +102,7 @@ upsert_env "ANGEVOICE_IDLE_TIMEOUT_SECONDS" "600"
 upsert_env "ANGEVOICE_IDLE_CHECK_INTERVAL"  "30"
 upsert_env "ANGEVOICE_IDLE_UNLOAD_CURRENT"  "true"
 upsert_env "PYTHONUNBUFFERED"               "1"
+upsert_env "ANGEVOICE_FNOS_PORT"             "${HOST_PORT}"
 
 # ── 6. 同步到 @appcenter 运行目录 ────────────────────────────────────
 sync_to_appcenter

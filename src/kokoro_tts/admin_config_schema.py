@@ -573,7 +573,7 @@ _field(
     "security",
     "choice",
     "auto",
-    choices=(("auto", "auto 自动"), ("modelscope", "ModelScope"), ("huggingface", "Hugging Face")),
+    choices=(("auto", "auto 自动"), ("modelscope", "ModelScope"), ("huggingface", "Hugging Face"), ("offline", "offline 离线")),
 )
 _field(
     "moss_hf_repo",

@@ -275,7 +275,7 @@ Full browser FileReader, Python websockets, and Docker default-reference-audio e
 
 ## Model files
 
-If local model files are not found, the service falls back to Hugging Face download. For offline deployments or faster cold starts:
+If local model files are not found, the service falls back to Hugging Face download. For offline deployments or faster cold starts, set `ANGEVOICE_MODEL_SOURCE=offline` only after preparing complete local model assets:
 
 ```bash
 pip install huggingface_hub
@@ -341,7 +341,7 @@ environment:
 | `KOKORO_MODEL_DIR` | `/app/models/models--hexgrad--Kokoro-82M-v1.1-zh` | Kokoro main model, config, and voices directory |
 | `HF_HUB_CACHE` | `/app/models` | Hugging Face cache root; creates `models--hexgrad--Kokoro-82M-v1.1-zh` |
 | `MODELSCOPE_CACHE` | `/app/models/modelscope-cache` | ModelScope cache directory |
-| `ANGEVOICE_MODEL_SOURCE` | `auto` | Model download source: `auto` probes Hugging Face/ModelScope reachability first, then falls back to country detection; can be forced to `modelscope` / `huggingface` |
+| `ANGEVOICE_MODEL_SOURCE` | `auto` | Model download source: `auto` probes Hugging Face/ModelScope reachability first, then falls back to country detection; can be forced to `modelscope` / `huggingface` / `offline` |
 | `KOKORO_MODELSCOPE_REPO` | `AI-ModelScope/Kokoro-82M-v1.1-zh` | ModelScope Kokoro repository for China-friendly auto downloads |
 | `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | ModelScope MOSS ONNX repository used as the default fallback download source |
 | `MOSS_HF_REPO` | - | Optional Hugging Face MOSS ONNX repository; empty by default |

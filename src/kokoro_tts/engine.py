@@ -396,6 +396,11 @@ class TTSEngine:
             KModel.MODEL_NAMES[repo_id] = local_model.name
         else:
             source = resolve_model_source(self.config)
+            if source == "offline":
+                raise RuntimeError(
+                    "ANGEVOICE_MODEL_SOURCE=offline，但本地 Kokoro 模型不完整。"
+                    f"请把 config.json、权重和 voices/*.pt 预先放入：{self.config.model_dir}"
+                )
             logger.info("本地未找到模型，从 %s 下载: %s", "Hugging Face" if source == "huggingface" else source, repo_id)
 
         if self._device == "cpu":

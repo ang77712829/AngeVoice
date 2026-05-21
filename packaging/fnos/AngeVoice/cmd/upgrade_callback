@@ -47,7 +47,22 @@ esac
 
 if [ -f "${SRC_COMPOSE}" ]; then
   cp "${SRC_COMPOSE}" "${APP_DOCKER_DIR}/docker-compose.yaml"
-  log "已更新 compose 文件：device=${DEVICE}, src=${SRC_COMPOSE}"
+  # 端口优先从 env 文件读取（用户之前设置的），回退到 fnOS 系统变量，最后默认 8101
+  SAVED_PORT="$(get_env_val ANGEVOICE_FNOS_PORT || true)"
+  HOST_PORT="${SAVED_PORT:-${TRIM_SERVICE_PORT:-8101}}"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "${APP_DOCKER_DIR}/docker-compose.yaml" "${HOST_PORT}" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+port = sys.argv[2] if sys.argv[2:3] and sys.argv[2].isdigit() and len(sys.argv[2]) <= 5 else "8101"
+text = path.read_text(encoding="utf-8").replace("__HOST_PORT__", port)
+path.write_text(text, encoding="utf-8")
+PY
+  else
+    sed -i "s|__HOST_PORT__|${HOST_PORT}|g" "${APP_DOCKER_DIR}/docker-compose.yaml"
+  fi
+  log "已更新 compose 文件：device=${DEVICE}, src=${SRC_COMPOSE}, port=${HOST_PORT}"
 else
   log "警告：找不到 compose 模板 ${SRC_COMPOSE}，保留现有 docker-compose.yaml"
 fi

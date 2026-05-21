@@ -232,17 +232,19 @@ def _probe_reachability(config) -> tuple[bool, bool]:
 def resolve_model_source(config) -> str:
     """解析实际使用的模型源。
 
-    显式设置 ``ANGEVOICE_MODEL_SOURCE=huggingface/modelscope`` 时直接优先。
+    显式设置 ``ANGEVOICE_MODEL_SOURCE=huggingface/modelscope/offline`` 时直接优先。
     auto 模式会先探测 Hugging Face 和 ModelScope 的真实可达性，避免国内
     部署仅因地区探测接口缓慢或不可用而误选源站。地区判断只作为兜底依据。
     """
     mode = str(getattr(config, "model_source", "auto") or "auto").strip().lower()
-    if mode in {"huggingface", "modelscope"}:
+    if mode in {"huggingface", "modelscope", "offline"}:
         config.model_source_effective = mode
+        if mode == "offline":
+            logger.info("Model source resolved: offline; automatic model download is disabled")
         return mode
 
     cached = str(getattr(config, "model_source_effective", "") or "").strip().lower()
-    if cached in {"huggingface", "modelscope"}:
+    if cached in {"huggingface", "modelscope", "offline"}:
         logger.debug("Using cached model source: %s", cached)
         return cached
 
@@ -333,6 +335,8 @@ def _generic_download_plan(config, *, hf_attr: str, ms_attr: str) -> list[tuple[
         if repo and (kind, repo) not in plan:
             plan.append((kind, repo))
 
+    if source == "offline":
+        return plan
     if source == "modelscope":
         add("modelscope", ms_repo)
         add("huggingface", hf_repo)
@@ -427,6 +431,14 @@ def ensure_kokoro_model_dir(config, *, logger: logging.Logger) -> Path | None:
         config.model_dir = target_dir
         return target_dir
 
+    if str(getattr(config, "model_source", "auto") or "auto").strip().lower() == "offline":
+        logger.warning(
+            "ANGEVOICE_MODEL_SOURCE=offline，已禁用 Kokoro 自动下载；请预先把 config.json、权重和 voices/*.pt 放入：%s",
+            current_dir,
+        )
+        config.model_dir = current_dir
+        return current_dir if has_valid_kokoro_local_assets(current_dir, log=logger) else None
+
     # 若模型已有效但音色不足，仍尝试在同一目录补齐 voices/*.pt。
     download_target = current_dir if has_valid_kokoro_local_assets(current_dir, log=logger) else target_dir
     path = _download_kokoro_assets(config, download_target, logger=logger)
@@ -502,6 +514,14 @@ def ensure_moss_model_dir(config, *, logger: logging.Logger) -> Path | None:
         config.moss_model_dir = resolved
         return resolved
 
+    if str(getattr(config, "model_source", "auto") or "auto").strip().lower() == "offline":
+        config.moss_model_dir = target
+        logger.warning(
+            "ANGEVOICE_MODEL_SOURCE=offline，已禁用 MOSS 自动下载；请预先把 browser_poc_manifest.json 及 ONNX 资产放入：%s",
+            target,
+        )
+        return target
+
     downloaded = _download_moss_model_assets(config, target, logger=logger)
     if downloaded:
         resolved = resolve_valid_moss_model_dir(downloaded, log=logger) or resolve_valid_moss_model_dir(target, log=logger)
@@ -536,6 +556,14 @@ def ensure_moss_audio_tokenizer_dir(config, *, logger: logging.Logger) -> Path |
     if resolved:
         config.moss_audio_tokenizer_model_dir = resolved
         return resolved
+
+    if str(getattr(config, "model_source", "auto") or "auto").strip().lower() == "offline":
+        config.moss_audio_tokenizer_model_dir = target
+        logger.warning(
+            "ANGEVOICE_MODEL_SOURCE=offline，已禁用 MOSS Audio Tokenizer 自动下载；请预先把 codec_browser_onnx_meta.json 及 ONNX 资产放入：%s",
+            target,
+        )
+        return target
 
     downloaded = _download_moss_audio_tokenizer_assets(config, target, logger=logger)
     if downloaded:

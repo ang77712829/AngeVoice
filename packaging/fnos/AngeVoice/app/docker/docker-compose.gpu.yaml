@@ -5,13 +5,14 @@ services:
     image: ghcr.io/ang77712829/angevoice-gpu:latest
     container_name: angevoice
     ports:
-      - "${TRIM_SERVICE_PORT:-8101}:8000"
+      - "__HOST_PORT__:8000"
     env_file:
       - ./angevoice.env
     volumes:
       - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/models:/app/models"
       - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/outputs:/app/outputs"
       - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/prompts:/app/prompts"
+      - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/logs:/app/logs"
     deploy:
       resources:
         reservations:

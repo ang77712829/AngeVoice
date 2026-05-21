@@ -269,9 +269,13 @@ class TTSConfig:
         normalized_key = api_key.lower()
         if api_key and normalized_key in PLACEHOLDER_API_KEYS:
             raise ValueError("KOKORO_API_KEY is still a placeholder; set a real secret or leave it empty")
-        admin_password = (os.environ.get("ANGEVOICE_ADMIN_PASSWORD") or "").strip()
+        admin_password = (
+            os.environ.get("ANGEVOICE_ADMIN_PASSWORD")
+            or os.environ.get("KOKORO_ADMIN_PASSWORD")
+            or ""
+        ).strip()
         if self.admin_enabled and not admin_password:
-            raise ValueError("KOKORO_ADMIN_ENABLED=true requires ANGEVOICE_ADMIN_PASSWORD")
+            raise ValueError("KOKORO_ADMIN_ENABLED=true requires ANGEVOICE_ADMIN_PASSWORD or legacy KOKORO_ADMIN_PASSWORD")
         if self.admin_enabled and admin_password.lower() in PLACEHOLDER_ADMIN_PASSWORDS:
             raise ValueError("ANGEVOICE_ADMIN_PASSWORD is still a placeholder; set a real strong password")
         if self.voice_upload_enabled and not self.admin_enabled:
@@ -280,8 +284,8 @@ class TTSConfig:
             raise ValueError("ANGEVOICE_ENABLED_MODELS cannot be empty")
         self.enabled_models = [str(item).strip().lower() for item in self.enabled_models if str(item).strip()]
         self.model_source = str(self.model_source or "auto").strip().lower()
-        if self.model_source not in {"auto", "huggingface", "modelscope"}:
-            raise ValueError("ANGEVOICE_MODEL_SOURCE must be auto, huggingface, or modelscope")
+        if self.model_source not in {"auto", "huggingface", "modelscope", "offline"}:
+            raise ValueError("ANGEVOICE_MODEL_SOURCE must be auto, huggingface, modelscope, or offline")
         self.moss_execution_provider = str(self.moss_execution_provider or "cpu").strip().lower()
         if self.moss_execution_provider not in {"cpu", "cuda"}:
             raise ValueError("MOSS_EXECUTION_PROVIDER must be cpu or cuda")

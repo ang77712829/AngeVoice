@@ -3,8 +3,8 @@ FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Legacy GPU profile: conservative CUDA 11.8 runtime for older drivers/cards.
-# ffmpeg is included for optional MP3 output when KOKORO_MP3_ENABLED=true.
+# Legacy GPU 配置：使用 CUDA 11.8 运行时，兼容旧款驱动和显卡。
+# ffmpeg 用于可选 MP3 输出（KOKORO_MP3_ENABLED=true 时生效）。
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -23,7 +23,7 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
 
 ARG PYTORCH_VERSION=2.5.1
 
-# CUDA 11.8 PyTorch is usually more conservative than CUDA 12.x for older GPU environments.
+# CUDA 11.8 版 PyTorch 比 CUDA 12.x 更保守，适合旧 GPU 环境。
 # AngeVoice/MOSS 推理不需要 torchvision，保持镜像更轻。
 RUN python3 -m pip install --no-cache-dir \
     "torch==${PYTORCH_VERSION}+cu118" \
@@ -37,10 +37,10 @@ ARG MOSS_RUNTIME_INDEX_URL=https://aiinfra.pkgs.visualstudio.com/PublicPackages/
 ENV MOSS_TTS_NANO_PATH=/opt/MOSS-TTS-Nano
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
 
-# MOSS-TTS-Nano ONNX runtime is preinstalled for legacy GPU images too, so users
-# can opt into MOSS CUDA after validation without rebuilding the image. The
-# Compose profile keeps that CUDA model hidden by default.
-# Preserve the upstream OpenMOSS license inside prebuilt images.
+# MOSS-TTS-Nano ONNX 推理运行时也预装在 legacy GPU 镜像中，
+# 用户可在验证后启用 MOSS CUDA 而无需重新构建镜像。
+# Compose 配置默认隐藏该 CUDA 模型。
+# 保留上游 OpenMOSS 许可证到预构建镜像中。
 RUN if [ "$INSTALL_MOSS" = "true" ]; then \
       git clone --depth 1 "$MOSS_REPO" "$MOSS_TTS_NANO_PATH" && \
       mkdir -p /app/licenses && \
@@ -55,7 +55,7 @@ COPY src/ src/
 
 RUN python3 -m pip install --no-cache-dir -e .
 
-# Preinstall spaCy English model used by Kokoro/Misaki to avoid runtime download.
+# 预装 spaCy 英文模型（misaki/kokoro 依赖，避免每次启动重新下载）
 RUN python3 -m pip install --no-cache-dir \
     en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 

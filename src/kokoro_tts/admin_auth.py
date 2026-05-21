@@ -11,11 +11,22 @@ from fastapi import HTTPException, Request
 
 
 def admin_username() -> str:
-    return os.environ.get("ANGEVOICE_ADMIN_USERNAME", "admin") or "admin"
+    """Return the configured admin username.
+
+    ``ANGEVOICE_ADMIN_*`` is the canonical namespace.  ``KOKORO_ADMIN_*``
+    is kept as a compatibility fallback for early Docker/FPK packages that
+    wrote the old variable names.
+    """
+    return (
+        os.environ.get("ANGEVOICE_ADMIN_USERNAME")
+        or os.environ.get("KOKORO_ADMIN_USERNAME")
+        or "admin"
+    )
 
 
 def admin_password() -> str:
-    return os.environ.get("ANGEVOICE_ADMIN_PASSWORD", "") or ""
+    """Return the configured admin password with legacy env fallback."""
+    return os.environ.get("ANGEVOICE_ADMIN_PASSWORD") or os.environ.get("KOKORO_ADMIN_PASSWORD") or ""
 
 
 def candidate_encodings(value: str) -> list[bytes]:
