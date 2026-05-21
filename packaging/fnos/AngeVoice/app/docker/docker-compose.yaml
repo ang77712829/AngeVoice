@@ -2,7 +2,7 @@ name: angevoice-fnos
 
 services:
   angevoice:
-    image: ghcr.io/ang77712829/angevoice-cpu:2.6.5.3.3
+    image: ghcr.io/ang77712829/angevoice-cpu:latest
     container_name: angevoice
 
     ports:
