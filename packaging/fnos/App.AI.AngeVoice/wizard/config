@@ -1,6 +1,5 @@
 [
     {
-        "title": "AngeVoice 设置",
         "description": "",
         "inputs": [
             {
@@ -44,6 +43,7 @@
                     }
                 ]
             }
-        ]
+        ],
+        "stepTitle": "AngeVoice 设置"
     }
 ]
