@@ -1,6 +1,6 @@
 [
     {
-        "description": "AngeVoice 是本地中文 TTS 语音合成服务，支持 Kokoro 与 MOSS 双引擎。\n\n**注意事项：**\n- 模型不内置，首次启动自动下载\n- 升级不会覆盖模型\n- CPU 版适合大多数 NAS",
+        "description": "AngeVoice 是本地中文 TTS 语音合成服务，支持 Kokoro 与 MOSS 双引擎。\n\n**注意事项：**\n- 模型不内置，首次启动自动下载\n- 升级不会覆盖模型\n- CPU 版适合大多数 NAS\n- 安装完成后请进入管理后台安全选项中复制 API Key 并填入客户端使用",
         "stepTitle": "基础配置",
         "items": [
             {
@@ -77,6 +77,22 @@
         "description": "",
         "stepTitle": "安全配置",
         "items": [
+            {
+                "type": "text",
+                "field": "wizard_admin_username",
+                "label": "管理员用户名",
+                "initValue": "admin",
+                "rules": [
+                    {
+                        "required": true,
+                        "message": "请输入管理员用户名"
+                    },
+                    {
+                        "min": 2,
+                        "message": "用户名长度不能少于2位"
+                    }
+                ]
+            },
             {
                 "type": "password",
                 "field": "wizard_admin_password",

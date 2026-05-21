@@ -50,6 +50,16 @@ fi
 # 安装向导中用户填写的值通过 wizard_ 前缀环境变量传入
 # 例如 wizard_http_port, wizard_model_source, wizard_admin_password 等
 
+# 管理员用户名
+if [ -n "$wizard_admin_username" ]; then
+    if grep -q "ANGEVOICE_ADMIN_USERNAME" "$ENV_FILE"; then
+        sed -i "s|ANGEVOICE_ADMIN_USERNAME=.*|ANGEVOICE_ADMIN_USERNAME=$wizard_admin_username|" "$ENV_FILE"
+    else
+        echo "ANGEVOICE_ADMIN_USERNAME=$wizard_admin_username" >> "$ENV_FILE"
+    fi
+    echo "[AngeVoice] 管理员用户名已配置: $wizard_admin_username"
+fi
+
 # 管理员密码
 if [ -n "$wizard_admin_password" ]; then
     # 使用 sed 追加或更新密码

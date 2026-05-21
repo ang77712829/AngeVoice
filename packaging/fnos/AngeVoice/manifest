@@ -1,7 +1,7 @@
 appname=AngeVoice
 version=2.6.533-fnos1
 display_name=AngeVoice
-desc=本地中文 TTS 语音合成服务，支持 Kokoro v1.1 Chinese 与 MOSS-TTS-Nano 双引擎，提供 OpenAI 兼容 API、WebSocket 流式合成和 Studio Web UI。模型不内置，首次启动自动下载。
+desc=本地中文 TTS 语音合成服务，支持 Kokoro v1.1 Chinese 与 MOSS-TTS-Nano 双引擎，提供 OpenAI 兼容 API、WebSocket 流式合成和 Studio Web UI。模型不内置，首次启动自动下载。安装完成后请进入管理后台安全选项中复制 API Key 并填入客户端使用。
 platform=all
 source=thirdparty
 

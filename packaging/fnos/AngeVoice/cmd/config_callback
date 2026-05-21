@@ -24,6 +24,9 @@ update_env() {
 # 更新模型源
 update_env "ANGEVOICE_MODEL_SOURCE" "$wizard_model_source"
 
+# 更新管理员用户名
+update_env "ANGEVOICE_ADMIN_USERNAME" "$wizard_admin_username"
+
 # 更新管理员密码
 update_env "ANGEVOICE_ADMIN_PASSWORD" "$wizard_admin_password"
 

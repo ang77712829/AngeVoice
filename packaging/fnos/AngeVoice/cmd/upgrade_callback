@@ -35,6 +35,7 @@ ensure_env_key() {
 ensure_env_key "PYTHONUNBUFFERED" "1"
 ensure_env_key "KOKORO_API_KEY" "auto"
 ensure_env_key "KOKORO_ADMIN_ENABLED" "true"
+ensure_env_key "ANGEVOICE_ADMIN_USERNAME" "admin"
 ensure_env_key "ANGEVOICE_MODEL_SOURCE" "modelscope"
 ensure_env_key "KOKORO_PREFETCH_VOICES" "true"
 
