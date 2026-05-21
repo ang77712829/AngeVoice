@@ -504,19 +504,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [服务画像](docs/SERVICE_PROFILES.md)
 - [多模型运行时](docs/MODEL_RUNTIME.md)
 - [MOSS 音频听感排障](docs/MOSS_AUDIO_QUALITY.md)
-- [v2.6 功能说明](docs/V2_5_FEATURES.md)
-- [路线图](docs/ROADMAP.md)
 - [老架构 GPU 部署说明](docker/legacy-gpu/README.md)
-
-## 赞赏
-
-如果 AngeVoice 对你有帮助，欢迎请作者喝杯咖啡 ☕
-
-| 微信赞赏 | 支付宝赞赏 |
-|:---:|:---:|
-| ![微信赞赏](docs/images/sponsor_wechat.png) | ![支付宝赞赏](docs/images/sponsor_alipay.png) |
-
-> 扫码赞赏，金额随缘。你的支持是持续维护的动力 ❤️
 
 ## License
 

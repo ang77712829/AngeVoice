@@ -20,8 +20,8 @@
                 "initValue": "cpu",
                 "options": [
                     {"label": "CPU（推荐）— 适用于无GPU的NAS/家用服务器", "value": "cpu"},
-                    {"label": "GPU — 需要NVIDIA显卡 + nvidia-container-toolkit", "value": "gpu"},
-                    {"label": "Legacy GPU — Tesla P4等旧卡（CPU推理为主）", "value": "legacy-gpu"}
+                    {"label": "GPU — NVIDIA显卡加速推理（需nvidia-container-toolkit）", "value": "gpu"},
+                    {"label": "Legacy GPU — Tesla P4等旧卡（GPU不可用时的备选方案）", "value": "legacy-gpu"}
                 ],
                 "rules": [
                     {"required": true, "message": "请选择运行模式"}
@@ -29,7 +29,7 @@
             },
             {
                 "type": "tips",
-                "helpText": "⚠️ <strong>GPU模式前置条件（必须全部满足）：</strong><br>• 已安装NVIDIA显卡驱动（nvidia-smi可正常显示）<br>• 已安装nvidia-container-toolkit<br>• Docker已配置NVIDIA运行时（/etc/docker/daemon.json中runtimes有nvidia）<br><br>如未满足以上条件，选择GPU模式后容器将无法启动。"
+                "helpText": "ℹ️ <strong>关于GPU模式：</strong><br>• <strong>仅适配NVIDIA显卡</strong>，暂不支持AMD显卡和Intel核显，请见谅<br>• GPU模式需要NVIDIA显卡驱动 + nvidia-container-toolkit<br>• Legacy GPU模式适用于Tesla P4等旧架构卡（如GPU模式不可用时的备选）<br><br>如果您使用AMD显卡、Intel核显或无独立显卡，请选择CPU模式，性能已针对NAS环境优化。"
             },
             {
                 "type": "radio",
@@ -38,7 +38,7 @@
                 "initValue": "",
                 "options": [
                     {"label": "我使用CPU模式，无需确认GPU条件", "value": "cpu-skip"},
-                    {"label": "✅ 我已确认环境满足GPU条件，继续使用GPU模式", "value": "gpu-confirmed"},
+                    {"label": "✅ 我已确认使用NVIDIA显卡且环境满足条件，继续使用GPU模式", "value": "gpu-confirmed"},
                     {"label": "❌ 我的环境不满足，改用CPU模式", "value": "gpu-cancel"}
                 ],
                 "rules": [
