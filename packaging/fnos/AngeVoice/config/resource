@@ -3,21 +3,15 @@
         "shares": [
             {
                 "name": "models",
-                "permission": {
-                    "rw": ["angevoice"]
-                }
+                "permission": {"rw": ["angevoice"]}
             },
             {
                 "name": "outputs",
-                "permission": {
-                    "rw": ["angevoice"]
-                }
+                "permission": {"rw": ["angevoice"]}
             },
             {
                 "name": "prompts",
-                "permission": {
-                    "rw": ["angevoice"]
-                }
+                "permission": {"rw": ["angevoice"]}
             }
         ]
     },

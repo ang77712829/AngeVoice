@@ -5,11 +5,11 @@
             "icon": "images/icon_{0}.png",
             "type": "url",
             "protocol": "http",
-            "port": "8101",
+            "port": "${wizard_http_port}",
             "url": "/",
             "allUsers": true,
             "control": {
-                "accessPerm": "readonly"
+                "accessPerm": "editable"
             }
         }
     }

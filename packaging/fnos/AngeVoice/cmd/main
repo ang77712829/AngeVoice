@@ -1,17 +1,20 @@
 #!/bin/bash
+# main — 容器状态检查脚本
+# 功能：供 fnOS 框架调用，检查 AngeVoice 容器是否正常运行
+set -e
 
 FILE_PATH="${TRIM_APPDEST}/docker/docker-compose.yaml"
 
-is_docker_running () {
+is_docker_running() {
     DOCKER_NAME=""
 
-    if [ -f "$FILE_PATH" ]; then
-        DOCKER_NAME=$(cat $FILE_PATH | grep "container_name" | awk -F ':' '{print $2}' | xargs)
-        echo "DOCKER_NAME is set to: $DOCKER_NAME"
+    if [ -f "${FILE_PATH}" ]; then
+        DOCKER_NAME=$(grep "container_name" "${FILE_PATH}" | awk -F ':' '{print $2}' | xargs)
+        echo "容器名称：${DOCKER_NAME}"
     fi
 
-    if [ -n "$DOCKER_NAME" ]; then
-        docker inspect $DOCKER_NAME | grep -q "\"Status\": \"running\"," || exit 1
+    if [ -n "${DOCKER_NAME}" ]; then
+        docker inspect "${DOCKER_NAME}" | grep -q '"Status": "running",' || exit 1
         return
     fi
 }

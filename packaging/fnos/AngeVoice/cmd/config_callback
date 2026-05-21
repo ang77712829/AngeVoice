@@ -1,28 +1,33 @@
 #!/bin/bash
-# config_callback - 应用设置变更回调
-# 当用户在管理后台修改配置时执行
+# config_callback — 配置更新回调脚本
+# 功能：用户在应用设置中修改配置向导时，更新 angevoice.env
+# 注意：env 变更需重启容器后生效（飞牛 → 应用中心 → AngeVoice → 重启）
 set -e
 
-echo "[AngeVoice] 配置变更回调..."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_lib.sh
+source "${SCRIPT_DIR}/_lib.sh"
 
-# 更新env文件中的管理配置
-ENV_FILE="${TRIM_PKGETC:-/vol3/@appconf/AngeVoice}/angevoice.env"
-[ -f "$ENV_FILE" ] || exit 0
+APP_NAME="${TRIM_APPNAME:-AngeVoice}"
+APP_DOCKER_DIR="${TRIM_APPDEST}/docker"
+ENV_FILE="${APP_DOCKER_DIR}/angevoice.env"
 
-update_env() {
-    local key="$1" val="$2"
-    [ -z "$val" ] && return
-    if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
-        sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
-    else
-        echo "${key}=${val}" >> "$ENV_FILE"
-    fi
-}
+[ -f "${ENV_FILE}" ] || exit 0
 
-# 更新向导变量（如果fnOS传入了新值）
-update_env "KOKORO_ADMIN_USERNAME" "$wizard_admin_username"
-update_env "KOKORO_ADMIN_PASSWORD" "$wizard_admin_password"
-update_env "ANGEVOICE_MODEL_SOURCE" "$wizard_model_source"
+MODEL_SOURCE="${wizard_model_source:-}"
+case "${MODEL_SOURCE}" in
+  ''|auto|huggingface|modelscope) ;;
+  *) MODEL_SOURCE="modelscope" ;;
+esac
 
-echo "[AngeVoice] 配置回调完成"
+# 修复：原始源码使用了错误的 KOKORO_ADMIN_USERNAME/PASSWORD，
+# 正确变量名为 ANGEVOICE_ADMIN_USERNAME/PASSWORD
+upsert_env "ANGEVOICE_ADMIN_USERNAME" "${wizard_admin_username}"
+upsert_env "ANGEVOICE_ADMIN_PASSWORD" "${wizard_admin_password}"
+upsert_env "ANGEVOICE_MODEL_SOURCE"   "${MODEL_SOURCE}"
+
+# 同步到 @appcenter 运行目录
+sync_to_appcenter
+
+log "配置已更新；如变更未立即生效，请在飞牛中重启 AngeVoice 容器。"
 exit 0

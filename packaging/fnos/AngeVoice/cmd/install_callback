@@ -1,135 +1,95 @@
 #!/bin/bash
-# install_callback - FPK安装回调
-# 合并env预设 + 生成docker-compose + 创建数据目录
+# install_callback — 安装回调脚本
+# 功能：根据向导选择运行模式，复制对应的 compose 文件，写入 angevoice.env
 set -e
 
-echo "[AngeVoice] 开始安装回调..."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_lib.sh
+source "${SCRIPT_DIR}/_lib.sh"
 
-# ========== 1. 确定最终设备类型 ==========
+APP_NAME="${TRIM_APPNAME:-AngeVoice}"
+APP_DOCKER_DIR="${TRIM_APPDEST}/docker"
+DATA_DIR="${TRIM_PKGVAR}"
+HOST_PORT="${wizard_http_port:-8101}"
 FINAL_DEVICE="${wizard_device_type:-cpu}"
-if [ "$FINAL_DEVICE" = "gpu" ] && [ "$wizard_gpu_confirm" != "gpu-confirmed" ]; then
-    FINAL_DEVICE="cpu"
-    echo "[AngeVoice] GPU未确认，回退到CPU模式"
+MODEL_SOURCE="${wizard_model_source:-modelscope}"
+
+# 验证设备类型
+case "${FINAL_DEVICE}" in
+  cpu|gpu|legacy-gpu) ;;
+  *) log "未知运行模式 '${FINAL_DEVICE}'，回退到 CPU 模式"; FINAL_DEVICE="cpu" ;;
+esac
+
+# 验证模型源
+case "${MODEL_SOURCE}" in
+  auto|huggingface|modelscope) ;;
+  *) log "未知模型源 '${MODEL_SOURCE}'，回退为 modelscope"; MODEL_SOURCE="modelscope" ;;
+esac
+
+log "安装开始：device=${FINAL_DEVICE}, port=${HOST_PORT}, model_source=${MODEL_SOURCE}"
+
+# ── 1. 创建数据目录 ──────────────────────────────────────────────────
+mkdir -p "${DATA_DIR}/models" "${DATA_DIR}/outputs" "${DATA_DIR}/prompts" "${DATA_DIR}/logs"
+mkdir -p "${APP_DOCKER_DIR}"
+
+# ── 2. 选择 docker-compose 文件 ──────────────────────────────────────
+# 每种模式有独立的 compose 文件，携带对应的镜像名和 GPU 资源声明
+case "${FINAL_DEVICE}" in
+  gpu)
+    SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.gpu.yaml"
+    ;;
+  legacy-gpu)
+    SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.legacy-gpu.yaml"
+    ;;
+  *)
+    SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.cpu.yaml"
+    ;;
+esac
+
+if [ ! -f "${SRC_COMPOSE}" ]; then
+  log "错误：找不到 compose 模板文件 ${SRC_COMPOSE}"
+  exit 1
 fi
-echo "[AngeVoice] 最终设备类型: $FINAL_DEVICE"
 
-# ========== 2. 创建数据目录 ==========
-DATA_DIR="${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}"
-mkdir -p "$DATA_DIR/models" "$DATA_DIR/outputs" "$DATA_DIR/prompts" "$DATA_DIR/logs"
-echo "[AngeVoice] 数据目录: $DATA_DIR"
+cp "${SRC_COMPOSE}" "${APP_DOCKER_DIR}/docker-compose.yaml"
+log "已选择 compose 模板：${SRC_COMPOSE}"
 
-# ========== 3. 合并env文件 ==========
-ENV_DIR="${TRIM_PKGETC:-/vol3/@appconf/AngeVoice}"
-mkdir -p "$ENV_DIR"
-TARGET_ENV="$ENV_DIR/angevoice.env"
-
-# 3a. 复制base env
-FPK_ENV="/var/apps/AngeVoice/app/docker/angevoice.env"
-if [ -f "$FPK_ENV" ]; then
-    cp "$FPK_ENV" "$TARGET_ENV"
-    echo "[AngeVoice] 基础env已复制"
+# ── 3. 准备 angevoice.env ────────────────────────────────────────────
+ENV_FILE="${APP_DOCKER_DIR}/angevoice.env"
+if [ ! -f "${ENV_FILE}" ]; then
+  touch "${ENV_FILE}"
 fi
 
-# 3b. 合并设备预设
-PRESET_ENV="/var/apps/AngeVoice/app/docker/presets/${FINAL_DEVICE}.env"
-if [ -f "$PRESET_ENV" ]; then
-    while IFS= read -r line; do
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${line// /}" ]] && continue
-        key="${line%%=*}"
-        if grep -q "^${key}=" "$TARGET_ENV" 2>/dev/null; then
-            sed -i "s|^${key}=.*|${line}|" "$TARGET_ENV"
-        else
-            echo "$line" >> "$TARGET_ENV"
-        fi
-    done < "$PRESET_ENV"
-    echo "[AngeVoice] 设备预设已应用: $FINAL_DEVICE"
-fi
-
-# 3c. 更新向导值
-update_env() {
-    [ -z "$2" ] && return
-    if grep -q "^$1=" "$TARGET_ENV" 2>/dev/null; then
-        sed -i "s|^$1=.*|$1=$2|" "$TARGET_ENV"
-    else
-        echo "$1=$2" >> "$TARGET_ENV"
-    fi
+# ── 4. 合并设备预设（preset 文件只覆盖设备相关变量）────────────────────
+merge_preset() {
+  local preset="${APP_DOCKER_DIR}/presets/${FINAL_DEVICE}.env"
+  [ -f "${preset}" ] || return 0
+  log "合并设备预设：${preset}"
+  while IFS= read -r line || [ -n "${line}" ]; do
+    case "${line}" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"
+    val="${line#*=}"
+    [ -n "${key}" ] && upsert_env "${key}" "${val}"
+  done < "${preset}"
 }
-update_env "KOKORO_ADMIN_USERNAME" "$wizard_admin_username"
-update_env "KOKORO_ADMIN_PASSWORD" "$wizard_admin_password"
-update_env "ANGEVOICE_MODEL_SOURCE" "$wizard_model_source"
-update_env "KOKORO_PREFETCH_VOICES" "true"
+merge_preset
 
-echo "[AngeVoice] env配置完成"
+# ── 5. 写入核心配置（向导值优先）──────────────────────────────────────
+upsert_env "ANGEVOICE_FNOS_DEVICE"          "${FINAL_DEVICE}"
+upsert_env "ANGEVOICE_MODEL_SOURCE"         "${MODEL_SOURCE}"
+upsert_env "KOKORO_ADMIN_ENABLED"           "true"
+upsert_env "ANGEVOICE_ADMIN_USERNAME"       "${wizard_admin_username:-admin}"
+upsert_env "ANGEVOICE_ADMIN_PASSWORD"       "${wizard_admin_password:-admin123456}"
+upsert_env "KOKORO_PREFETCH_VOICES"         "true"
+upsert_env "KOKORO_API_KEY"                 "auto"
+upsert_env "ANGEVOICE_API_KEY_FILE"         "/app/outputs/.angevoice-api-key"
+upsert_env "ANGEVOICE_IDLE_TIMEOUT_SECONDS" "600"
+upsert_env "ANGEVOICE_IDLE_CHECK_INTERVAL"  "30"
+upsert_env "ANGEVOICE_IDLE_UNLOAD_CURRENT"  "true"
+upsert_env "PYTHONUNBUFFERED"               "1"
 
-# ========== 4. 用Python生成docker-compose ==========
-HOST_PORT="${TRIM_SERVICE_PORT:-8101}"
-COMPOSE_DIR="${TRIM_APPDATA:-/vol3/@appcenter/AngeVoice}/docker"
-mkdir -p "$COMPOSE_DIR"
-TARGET_COMPOSE="$COMPOSE_DIR/docker-compose.yaml"
+# ── 6. 同步到 @appcenter 运行目录 ────────────────────────────────────
+sync_to_appcenter
 
-python3 - "$TARGET_COMPOSE" "$FINAL_DEVICE" "$HOST_PORT" "$DATA_DIR" << 'PYGEN'
-import sys
-
-target, device, host_port, data_dir = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-
-# GPU额外配置
-gpu_env = ""
-gpu_section = ""
-if device == "gpu":
-    gpu_env = """
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility"""
-    gpu_section = """
-    gpus: all"""
-
-compose = f"""name: angevoice-fnos
-
-services:
-  angevoice:
-    image: ghcr.io/ang77712829/angevoice-{device}-latest
-    container_name: angevoice
-
-    ports:
-      - "{host_port}:8000"
-
-    env_file:
-      - /vol3/@appconf/AngeVoice/angevoice.env
-
-    environment:
-      KOKORO_HOST: 0.0.0.0
-      KOKORO_PORT: "8000"
-      ANGEVOICE_MODELS_ROOT: /app/models
-      KOKORO_MODEL_DIR: /app/models/models--hexgrad--Kokoro-82M-v1.1-zh
-      MOSS_MODEL_DIR: /app/models/MOSS-TTS-Nano-100M-ONNX
-      MOSS_AUDIO_TOKENIZER_MODEL_DIR: /app/models/MOSS-Audio-Tokenizer-Nano-ONNX
-      HF_HUB_CACHE: /app/models
-      HUGGINGFACE_HUB_CACHE: /app/models
-      HF_HOME: /app/models/.hf
-      MODELSCOPE_CACHE: /app/models/modelscope-cache
-      ANGEVOICE_OUTPUT_DIR: /app/outputs
-      ANGEVOICE_RUNTIME_CONFIG_FILE: /app/outputs/runtime-config.json
-      ANGEVOICE_API_KEY_FILE: /app/outputs/.angevoice-api-key{gpu_env}{gpu_section}
-
-    volumes:
-      - {data_dir}/models:/app/models
-      - {data_dir}/outputs:/app/outputs
-      - {data_dir}/prompts:/app/prompts
-
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 90s
-
-    restart: unless-stopped
-"""
-
-with open(target, "w") as f:
-    f.write(compose)
-print(f"[AngeVoice] compose已生成: {target}")
-PYGEN
-
-echo "[AngeVoice] 安装回调完成 (device=$FINAL_DEVICE, port=$HOST_PORT)"
+log "安装回调完成：device=${FINAL_DEVICE}, port=${HOST_PORT}"
 exit 0

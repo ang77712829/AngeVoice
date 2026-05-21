@@ -20,10 +20,6 @@
                     {
                         "label": "Hugging Face（适合海外网络）",
                         "value": "huggingface"
-                    },
-                    {
-                        "label": "离线模式（手动放入模型）",
-                        "value": "offline"
                     }
                 ],
                 "rules": [
@@ -41,7 +37,7 @@
                 "rules": [
                     {
                         "min": 2,
-                        "message": "用户名长度不能少于2位"
+                        "message": "用户名长度不能少于 2 位"
                     }
                 ]
             },
@@ -52,7 +48,7 @@
                 "rules": [
                     {
                         "min": 6,
-                        "message": "密码长度不能少于6位"
+                        "message": "密码长度不能少于 6 位"
                     }
                 ]
             }

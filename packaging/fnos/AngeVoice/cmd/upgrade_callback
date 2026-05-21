@@ -1,58 +1,59 @@
 #!/bin/bash
-# upgrade_callback - 升级回调
-# 核心原则：不删模型、不覆盖用户配置、只追加新字段
-
+# upgrade_callback — 升级回调脚本
+# 功能：不覆盖已有模型和用户 env；补充新增字段；按设备类型重新路由 compose
 set -e
 
-echo "[AngeVoice] 开始升级回调..."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=_lib.sh
+source "${SCRIPT_DIR}/_lib.sh"
 
-ENV_FILE="$TRIM_PKGETC/angevoice.env"
+APP_NAME="${TRIM_APPNAME:-AngeVoice}"
+APP_DOCKER_DIR="${TRIM_APPDEST}/docker"
+DATA_DIR="${TRIM_PKGVAR}"
+ENV_FILE="${APP_DOCKER_DIR}/angevoice.env"
 
-# ========== 1. 确保数据目录存在 ==========
-mkdir -p "$TRIM_PKGVAR/models"
-mkdir -p "$TRIM_PKGVAR/outputs"
-mkdir -p "$TRIM_PKGVAR/prompts"
-mkdir -p "$TRIM_PKGVAR/logs"
-mkdir -p "$TRIM_PKGETC"
+mkdir -p "${DATA_DIR}/models" "${DATA_DIR}/outputs" "${DATA_DIR}/prompts" "${DATA_DIR}/logs" "${APP_DOCKER_DIR}"
+[ -f "${ENV_FILE}" ] || touch "${ENV_FILE}"
+cp "${ENV_FILE}" "${ENV_FILE}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
 
-# ========== 2. 备份旧配置 ==========
-if [ -f "$ENV_FILE" ]; then
-    cp "$ENV_FILE" "$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)"
-    echo "[AngeVoice] 旧配置已备份"
+# 只补充不存在的字段，不覆盖用户已有配置
+ensure_env "PYTHONUNBUFFERED"               "1"
+ensure_env "KOKORO_API_KEY"                 "auto"
+ensure_env "KOKORO_ADMIN_ENABLED"           "true"
+ensure_env "ANGEVOICE_ADMIN_USERNAME"       "admin"
+ensure_env "ANGEVOICE_ADMIN_PASSWORD"       "admin123456"
+ensure_env "ANGEVOICE_MODEL_SOURCE"         "modelscope"
+ensure_env "KOKORO_PREFETCH_VOICES"         "true"
+ensure_env "ANGEVOICE_IDLE_TIMEOUT_SECONDS" "600"
+ensure_env "ANGEVOICE_IDLE_CHECK_INTERVAL"  "30"
+ensure_env "ANGEVOICE_IDLE_UNLOAD_CURRENT"  "true"
+ensure_env "ANGEVOICE_API_KEY_FILE"         "/app/outputs/.angevoice-api-key"
+
+# 迁移：旧版本错误地写了 KOKORO_ADMIN_USERNAME/PASSWORD，将其迁移到正确的字段
+old_user="$(get_env_val KOKORO_ADMIN_USERNAME || true)"
+old_pass="$(get_env_val KOKORO_ADMIN_PASSWORD || true)"
+[ -n "${old_user}" ] && ensure_env "ANGEVOICE_ADMIN_USERNAME" "${old_user}"
+[ -n "${old_pass}" ] && ensure_env "ANGEVOICE_ADMIN_PASSWORD" "${old_pass}"
+
+# 按已保存的设备类型路由正确的 compose 文件
+DEVICE="$(get_env_val ANGEVOICE_FNOS_DEVICE || true)"
+case "${DEVICE}" in cpu|gpu|legacy-gpu) ;; *) DEVICE="cpu" ;; esac
+
+case "${DEVICE}" in
+  gpu)        SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.gpu.yaml" ;;
+  legacy-gpu) SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.legacy-gpu.yaml" ;;
+  *)          SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.cpu.yaml" ;;
+esac
+
+if [ -f "${SRC_COMPOSE}" ]; then
+  cp "${SRC_COMPOSE}" "${APP_DOCKER_DIR}/docker-compose.yaml"
+  log "已更新 compose 文件：device=${DEVICE}, src=${SRC_COMPOSE}"
+else
+  log "警告：找不到 compose 模板 ${SRC_COMPOSE}，保留现有 docker-compose.yaml"
 fi
 
-# ========== 3. 追加缺失的环境变量（不覆盖已有值） ==========
-ensure_env_key() {
-    local key="$1"
-    local default_val="$2"
-    if ! grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
-        echo "${key}=${default_val}" >> "$ENV_FILE"
-        echo "[AngeVoice] 追加新字段: ${key}=${default_val}"
-    fi
-}
+# 同步到 @appcenter 运行目录
+sync_to_appcenter
 
-# 基础配置
-ensure_env_key "PYTHONUNBUFFERED" "1"
-ensure_env_key "KOKORO_API_KEY" "auto"
-ensure_env_key "KOKORO_ADMIN_ENABLED" "true"
-ensure_env_key "ANGEVOICE_ADMIN_USERNAME" "admin"
-ensure_env_key "ANGEVOICE_MODEL_SOURCE" "modelscope"
-ensure_env_key "KOKORO_PREFETCH_VOICES" "true"
-
-# 并发与超时
-ensure_env_key "KOKORO_WORKERS" "1"
-ensure_env_key "KOKORO_MAX_CONCURRENT_REQUESTS" "1"
-ensure_env_key "KOKORO_REQUEST_TIMEOUT_SECONDS" "300"
-
-# 空闲卸载
-ensure_env_key "ANGEVOICE_IDLE_TIMEOUT_SECONDS" "600"
-ensure_env_key "ANGEVOICE_IDLE_CHECK_INTERVAL" "30"
-ensure_env_key "ANGEVOICE_IDLE_UNLOAD_CURRENT" "true"
-
-# 限流与状态
-ensure_env_key "KOKORO_PUBLIC_STATUS_ENDPOINTS" "true"
-ensure_env_key "KOKORO_RATE_LIMIT_QPS" "0"
-ensure_env_key "KOKORO_RATE_LIMIT_BURST" "5"
-
-echo "[AngeVoice] 升级回调完成"
+log "升级回调完成：device=${DEVICE}"
 exit 0

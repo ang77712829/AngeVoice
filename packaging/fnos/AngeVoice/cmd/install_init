@@ -1,4 +1,4 @@
 #!/bin/bash
-# install_init - 安装前初始化（在向导之前执行）
-# 此脚本在用户看到安装向导之前执行，用于预检查
+# install_init - 安装前初始化（向导之前执行）
+# fnOS 框架自动创建 TRIM_PKGETC、TRIM_PKGVAR 等目录，保持最小化
 exit 0

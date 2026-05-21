@@ -1,0 +1,21 @@
+name: angevoice-fnos
+
+services:
+  angevoice:
+    image: ghcr.io/ang77712829/angevoice-cpu:latest
+    container_name: angevoice
+    ports:
+      - "${TRIM_SERVICE_PORT:-8101}:8000"
+    env_file:
+      - ./angevoice.env
+    volumes:
+      - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/models:/app/models"
+      - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/outputs:/app/outputs"
+      - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/prompts:/app/prompts"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped

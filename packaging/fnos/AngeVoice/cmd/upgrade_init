@@ -1,3 +1,6 @@
 #!/bin/bash
-# upgrade_init - 升级前初始化
+# upgrade_init - 更新前初始化
+set -e
+echo "[AngeVoice] upgrade_init: 准备更新..."
+mkdir -p "${TRIM_PKGETC:-/vol3/@appconf/AngeVoice}"
 exit 0
