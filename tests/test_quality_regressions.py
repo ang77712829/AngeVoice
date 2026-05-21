@@ -114,11 +114,42 @@ def test_moss_model_assets_reject_lfs_only_dir(tmp_path):
     )
     assert not has_valid_moss_model_assets(model_dir)
 
+    (model_dir / "browser_poc_manifest.json").write_text("{}", encoding="utf-8")
     real_model = model_dir / "encoder.onnx"
     with real_model.open("wb") as handle:
         handle.seek(1024 * 1024)
         handle.write(b"\0")
     assert has_valid_moss_model_assets(model_dir)
+
+
+def test_moss_model_assets_accept_nested_browser_dir(tmp_path):
+    """MOSS 目录允许把官方资产放在下级兼容目录中。"""
+
+    from kokoro_tts.model_sources import resolve_valid_moss_model_dir
+
+    root = tmp_path / "MOSS-TTS-Nano-100M-ONNX"
+    nested = root / "MOSS-TTS-Nano-ONNX-CPU"
+    nested.mkdir(parents=True)
+    (nested / "browser_poc_manifest.json").write_text("{}", encoding="utf-8")
+    with (nested / "encoder.onnx").open("wb") as handle:
+        handle.seek(1024 * 1024)
+        handle.write(b"\0")
+
+    assert resolve_valid_moss_model_dir(root) == nested
+
+
+def test_moss_model_assets_reject_onnx_without_manifest(tmp_path):
+    """缺少 browser manifest 时不能把 ONNX 文件误判为可加载资产。"""
+
+    from kokoro_tts.model_sources import has_valid_moss_model_assets
+
+    root = tmp_path / "MOSS-TTS-Nano-100M-ONNX"
+    root.mkdir()
+    with (root / "encoder.onnx").open("wb") as handle:
+        handle.seek(1024 * 1024)
+        handle.write(b"\0")
+
+    assert not has_valid_moss_model_assets(root)
 
 
 def test_drop_model_unload_failure_keeps_engine_and_marks_pending():
@@ -151,3 +182,154 @@ def test_get_engine_load_failure_cleanup_catches_unload_fallback_failure():
     with pytest.raises(RuntimeError, match="load failed"):
         manager.get_engine("kokoro", load=True)
     assert manager._active_counts["kokoro"] == 0
+
+
+
+def test_ensure_moss_model_dir_downloads_when_target_is_empty(monkeypatch, tmp_path):
+    """MOSS 目录存在但无资产时必须触发下载，而不是直接交给 runtime 报错。"""
+
+    from kokoro_tts import model_sources
+
+    target = tmp_path / "MOSS-TTS-Nano-100M-ONNX"
+    target.mkdir()
+    cfg = TTSConfig(moss_model_dir=target, model_source="huggingface")
+    calls: list[tuple[str, str]] = []
+
+    def fake_modelscope(repo_id, target_dir, *, logger):
+        calls.append(("modelscope", repo_id))
+        (target_dir / "browser_poc_manifest.json").write_text("{}", encoding="utf-8")
+        model_file = target_dir / "encoder.onnx"
+        with model_file.open("wb") as handle:
+            handle.seek(1024 * 1024)
+            handle.write(b"\0")
+        return target_dir
+
+    monkeypatch.setattr(model_sources, "resolve_model_source", lambda _cfg: "huggingface")
+    monkeypatch.setattr(model_sources, "_huggingface_snapshot_download", lambda *args, **kwargs: None)
+    monkeypatch.setattr(model_sources, "_modelscope_snapshot_download", fake_modelscope)
+
+    resolved = model_sources.ensure_moss_model_dir(cfg, logger=MagicMock())
+    assert resolved == target
+    assert ("modelscope", cfg.moss_modelscope_repo) in calls
+    assert model_sources.has_valid_moss_model_assets(target)
+
+
+def test_ensure_moss_model_dir_rejects_readme_only_dir(monkeypatch, tmp_path):
+    """只有 README 的 MOSS 目录不能被视为可用目录。"""
+
+    from kokoro_tts import model_sources
+
+    target = tmp_path / "MOSS-TTS-Nano-100M-ONNX"
+    target.mkdir()
+    (target / "README.md").write_text("占位说明", encoding="utf-8")
+    cfg = TTSConfig(moss_model_dir=target, model_source="auto")
+    monkeypatch.setattr(model_sources, "resolve_model_source", lambda _cfg: "modelscope")
+    monkeypatch.setattr(model_sources, "_modelscope_snapshot_download", lambda *args, **kwargs: None)
+    monkeypatch.setattr(model_sources, "_huggingface_snapshot_download", lambda *args, **kwargs: None)
+
+    resolved = model_sources.ensure_moss_model_dir(cfg, logger=MagicMock())
+    assert resolved is None  # M1 修复：失败时返回 None
+    assert not model_sources.has_valid_moss_model_assets(target)
+
+
+
+# === M3: config.moss_model_dir = None 回退路径 ===
+
+def test_ensure_moss_model_dir_fallback_when_config_is_none(monkeypatch, tmp_path):
+    """config.moss_model_dir 为 None 时应回退到 default_moss_model_dir()。"""
+    from kokoro_tts import model_sources
+
+    default_dir = tmp_path / "MOSS-TTS-Nano-100M-ONNX"
+    default_dir.mkdir()
+    # 放入有效资产
+    (default_dir / "browser_poc_manifest.json").write_text("{}", encoding="utf-8")
+    model_file = default_dir / "encoder.onnx"
+    with model_file.open("wb") as handle:
+        handle.seek(1024 * 1024)
+        handle.write(b"\0")
+
+    cfg = TTSConfig(moss_model_dir=None, model_source="auto")
+    monkeypatch.setattr(model_sources, "default_moss_model_dir", lambda: default_dir)
+
+    resolved = model_sources.ensure_moss_model_dir(cfg, logger=MagicMock())
+    assert resolved == default_dir
+
+
+# === M4: _has_large_model_file 边界值测试 ===
+
+def test_has_large_model_file_boundary_size(tmp_path):
+    """1MB 边界值测试：不足 1MB 不应通过，超过 1MB 应通过。"""
+    from kokoro_tts.model_sources import _has_large_model_file
+
+    # 不足 1MB (1MB - 1 字节)
+    under_dir = tmp_path / "under_1mb"
+    under_dir.mkdir()
+    (under_dir / "browser_poc_manifest.json").write_text("{}", encoding="utf-8")
+    under_file = under_dir / "encoder.onnx"
+    with under_file.open("wb") as handle:
+        handle.write(b"\0" * (1024 * 1024 - 1))  # 1MB - 1 字节
+    assert not _has_large_model_file(under_dir)
+
+    # 恰好 1MB
+    exact_dir = tmp_path / "exact_1mb"
+    exact_dir.mkdir()
+    (exact_dir / "browser_poc_manifest.json").write_text("{}", encoding="utf-8")
+    exact_file = exact_dir / "encoder.onnx"
+    with exact_file.open("wb") as handle:
+        handle.seek(1024 * 1024)
+        handle.write(b"\0")
+    assert _has_large_model_file(exact_dir)
+
+
+def test_has_large_model_file_wrong_suffix(tmp_path):
+    """只有 .json/.txt 文件不应视为有效模型资产。"""
+    from kokoro_tts.model_sources import _has_large_model_file
+
+    dir_path = tmp_path / "wrong_suffix"
+    dir_path.mkdir()
+    (dir_path / "browser_poc_manifest.json").write_text("{}", encoding="utf-8")
+    # 创建一个大文件但后缀不对
+    big_file = dir_path / "data.txt"
+    with big_file.open("wb") as handle:
+        handle.seek(1024 * 1024)
+        handle.write(b"\0")
+    assert not _has_large_model_file(dir_path)
+
+
+# === M5: resolve_valid_moss_model_dir 警告日志测试 ===
+
+def test_resolve_valid_moss_model_dir_warns_lfs_only(tmp_path, caplog):
+    """只有 LFS 指针的目录应触发 LFS 指针警告。"""
+    import logging
+    from kokoro_tts.model_sources import resolve_valid_moss_model_dir
+
+    lfs_dir = tmp_path / "lfs_only"
+    lfs_dir.mkdir()
+    # 写一个 LFS 指针文件
+    (lfs_dir / "encoder.onnx").write_text("version https://git-lfs.github.com/spec/v1", encoding="utf-8")
+
+    logger = logging.getLogger("test")
+    with caplog.at_level(logging.WARNING):
+        result = resolve_valid_moss_model_dir(lfs_dir, log=logger)
+    assert result is None
+    assert any("LFS 指针" in msg for msg in caplog.messages)
+
+
+def test_resolve_valid_moss_model_dir_warns_missing_manifest(tmp_path, caplog):
+    """缺少 manifest 的目录应触发 manifest 缺失警告。"""
+    import logging
+    from kokoro_tts.model_sources import resolve_valid_moss_model_dir
+
+    no_manifest_dir = tmp_path / "no_manifest"
+    no_manifest_dir.mkdir()
+    # 创建一个大文件但没有 manifest
+    model_file = no_manifest_dir / "encoder.onnx"
+    with model_file.open("wb") as handle:
+        handle.seek(1024 * 1024)
+        handle.write(b"\0")
+
+    logger = logging.getLogger("test")
+    with caplog.at_level(logging.WARNING):
+        result = resolve_valid_moss_model_dir(no_manifest_dir, log=logger)
+    assert result is None
+    assert any("browser_poc_manifest.json" in msg for msg in caplog.messages)

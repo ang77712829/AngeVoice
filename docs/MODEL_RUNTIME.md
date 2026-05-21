@@ -103,6 +103,8 @@ request:
 | `MODELSCOPE_CACHE` | `/app/models/modelscope-cache` | ModelScope cache directory |
 | `MOSS_TTS_NANO_PATH` | - | Path to a local clone of `OpenMOSS/MOSS-TTS-Nano` |
 | `MOSS_MODEL_DIR` | `/app/models/MOSS-TTS-Nano-100M-ONNX` | MOSS ONNX asset directory |
+| `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | MOSS ONNX ModelScope repository used for automatic fallback download |
+| `MOSS_HF_REPO` | - | Optional MOSS ONNX Hugging Face repository |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | `cpu` or `cuda` |
 | `MOSS_CUDA_ENABLED` | `true` | Allows registering `moss-nano-cuda`; CPU/legacy Compose disable it |
 | `MOSS_CUDA_MEMORY_LIMIT_MB` | `0` | Optional ORT CUDA arena cap; `0` leaves VRAM unrestricted for general GPU compatibility |
@@ -248,3 +250,8 @@ selected `onnxruntime-gpu` wheel.
 ## MOSS long-text segmentation
 
 `MOSS_SEGMENT_LENGTH=120` controls MOSS-only text segmentation. It is separate from `KOKORO_SEGMENT_LENGTH` so Kokoro can keep shorter segments while MOSS uses a stability-first short chunk on NAS/P4 to reduce mixed-language drift, stutter and artifacts.
+
+
+### MOSS ONNX 自动下载兜底
+
+切换到 `moss-nano-cpu` 或 `moss-nano-cuda` 时，AngeVoice 会先检查 `MOSS_MODEL_DIR` 是否包含有效的 ONNX 资产和 `browser_poc_manifest.json`。如果目录为空、只有 README、Git LFS 指针或占位文件，会自动尝试从 `MOSS_MODELSCOPE_REPO` 下载到统一模型目录。`MOSS_HF_REPO` 默认为空，只有显式配置后才会尝试 Hugging Face MOSS ONNX 仓库。

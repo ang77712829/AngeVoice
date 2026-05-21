@@ -128,6 +128,7 @@ class TTSConfig:
     kokoro_hf_repo: str = "hexgrad/Kokoro-82M-v1.1-zh"
     kokoro_modelscope_repo: str = "AI-ModelScope/Kokoro-82M-v1.1-zh"
     moss_modelscope_repo: str = "openmoss/MOSS-TTS-Nano-100M-ONNX"
+    moss_hf_repo: str = ""
 
     moss_model_dir: Optional[Path] = None
     moss_repo_path: Optional[Path] = None

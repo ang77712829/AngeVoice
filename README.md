@@ -406,7 +406,8 @@ environment:
 | `MODELSCOPE_CACHE` | `/app/models/modelscope-cache` | ModelScope 自动下载缓存目录 |
 | `ANGEVOICE_MODEL_SOURCE` | `auto` | 模型下载源：`auto` 先探测 Hugging Face/ModelScope 可达性，再用国家判断；也可手动设为 `modelscope` / `huggingface` |
 | `KOKORO_MODELSCOPE_REPO` | `AI-ModelScope/Kokoro-82M-v1.1-zh` | 国内自动下载 Kokoro 的 ModelScope 仓库 |
-| `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | 国内自动下载 MOSS ONNX 的 ModelScope 仓库 |
+| `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | 自动下载 MOSS ONNX 的 ModelScope 仓库；默认兜底使用 |
+| `MOSS_HF_REPO` | - | 可选 Hugging Face MOSS ONNX 仓库；留空时不走 HF MOSS 下载 |
 | `MOSS_MODEL_DIR` | `/app/models/MOSS-TTS-Nano-100M-ONNX` | MOSS ONNX 模型目录 |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider：`cpu` / `cuda` |
 | `MOSS_CUDA_ENABLED` | `false` | 是否允许注册/切换 `moss-nano-cuda`；CPU/legacy-gpu 默认关闭，通用 GPU 画像开启 |

@@ -343,7 +343,8 @@ environment:
 | `MODELSCOPE_CACHE` | `/app/models/modelscope-cache` | ModelScope cache directory |
 | `ANGEVOICE_MODEL_SOURCE` | `auto` | Model download source: `auto` probes Hugging Face/ModelScope reachability first, then falls back to country detection; can be forced to `modelscope` / `huggingface` |
 | `KOKORO_MODELSCOPE_REPO` | `AI-ModelScope/Kokoro-82M-v1.1-zh` | ModelScope Kokoro repository for China-friendly auto downloads |
-| `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | ModelScope MOSS ONNX repository for China-friendly auto downloads |
+| `MOSS_MODELSCOPE_REPO` | `openmoss/MOSS-TTS-Nano-100M-ONNX` | ModelScope MOSS ONNX repository used as the default fallback download source |
+| `MOSS_HF_REPO` | - | Optional Hugging Face MOSS ONNX repository; empty by default |
 | `MOSS_MODEL_DIR` | `/app/models/MOSS-TTS-Nano-100M-ONNX` | MOSS ONNX model directory |
 | `MOSS_EXECUTION_PROVIDER` | `cpu` | MOSS ONNX provider: `cpu` / `cuda` |
 | `MOSS_CUDA_ENABLED` | `false` | Allow/register `moss-nano-cuda`; CPU/legacy-gpu keep it off, standard GPU enables it. |

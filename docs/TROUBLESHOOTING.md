@@ -627,3 +627,8 @@ KOKORO_TRUST_PROXY_HEADERS=true
 ## MOSS 长文本仍有卡顿/爆音
 
 优先确认 `MOSS_SEGMENT_LENGTH=120` 和 `MOSS_MIXED_ENGLISH_POLICY=translate` 已生效。它只影响 MOSS 分段，不影响 Kokoro。P4/NAS 默认用较短分段降低中英文混合尾部变调、卡顿和失真；高显存机器可在后台尝试 180~260。
+
+
+## MOSS 切换时报 browser_onnx model assets not found
+
+如果切换 `moss-nano-cpu` 或 `moss-nano-cuda` 时看到 `browser_onnx model assets not found under the provided --model-dir`，说明 `MOSS_MODEL_DIR` 存在但没有真正的 ONNX 模型资产。2.6.5.3.1 起，服务会在目录为空、只有 README、Git LFS 指针或占位文件时自动尝试从 `MOSS_MODELSCOPE_REPO` 下载。仍失败时请检查网络，或手动把 `browser_poc_manifest.json` 和 ONNX 文件放入 `/app/models/MOSS-TTS-Nano-100M-ONNX`。

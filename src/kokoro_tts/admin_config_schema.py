@@ -576,6 +576,16 @@ _field(
     choices=(("auto", "auto 自动"), ("modelscope", "ModelScope"), ("huggingface", "Hugging Face")),
 )
 _field(
+    "moss_hf_repo",
+    "MOSS_HF_REPO",
+    "MOSS HF 仓库",
+    "advanced",
+    "str",
+    "",
+    restart=True,
+    help="可选。默认留空并使用 ModelScope 仓库兜底下载 MOSS ONNX 资产；如上游提供 Hugging Face 仓库，可在这里填写。",
+)
+_field(
     "text_single_newline_policy",
     "ANGEVOICE_SINGLE_NEWLINE_POLICY",
     "单换行策略",

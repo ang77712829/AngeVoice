@@ -73,6 +73,7 @@ _WORKER_ENV_EXPORTS = {
     "KOKORO_HF_REPO": "kokoro_hf_repo",
     "KOKORO_MODELSCOPE_REPO": "kokoro_modelscope_repo",
     "MOSS_MODELSCOPE_REPO": "moss_modelscope_repo",
+    "MOSS_HF_REPO": "moss_hf_repo",
     "ANGEVOICE_IDLE_TIMEOUT_SECONDS": "model_idle_timeout_seconds",
     "ANGEVOICE_IDLE_CHECK_INTERVAL": "model_idle_check_interval",
     "ANGEVOICE_IDLE_UNLOAD_CURRENT": "model_idle_unload_current",

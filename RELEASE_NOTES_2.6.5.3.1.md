@@ -1,4 +1,6 @@
-# AngeVoice 2.6.5.3 Release Notes
+# AngeVoice 2.6.5.3.1 Release Notes
+
+本版本包含 MOSS ONNX 紧急修复：切换 MOSS 时若统一模型目录存在但缺少 `browser_poc_manifest.json` 或真实 ONNX 资产，会自动尝试从 `MOSS_MODELSCOPE_REPO` 下载补全，不再直接抛出 500。
 
 本版本重点集成 TTS 后端完整包、修复模型目录混乱和 Kokoro 音色 LFS 指针刷屏问题，并优化 Docker/NAS 下的模型持久化体验。
 
@@ -68,7 +70,7 @@ AngeVoice
 - `docker/entrypoint.sh` 使用 `set -euo pipefail`。
 - `docker/.env.example` 去除重复变量，并补充后台默认密码的公网安全提示。
 - `README_EN.md` 补齐中文版已有的 MOSS 音频后处理、实时流式、限流和队列配置说明。
-- `V2_5_FEATURES.md`、`SERVICE_PROFILES.md` 等文档中的旧默认值已对齐到 2.6.5.3。
+- `V2_5_FEATURES.md`、`SERVICE_PROFILES.md` 等文档中的旧默认值已对齐到 2.6.5.3.1。
 ## 最终追加修复
 
 在二次配置审查后，最终包继续补齐以下细节：
@@ -80,3 +82,11 @@ AngeVoice
 - `test_text_rules_false_not_reported_as_enabled` 不再依赖真实 MOSS runtime 依赖，适合轻量 CI 环境。
 - 本轮新增和触碰代码注释统一使用中文说明。
 
+
+
+## MOSS ONNX 紧急修复
+
+- `ensure_moss_model_dir()` 不再把空目录、README-only 目录、Git LFS 指针目录交给官方 runtime。
+- 默认使用 `MOSS_MODELSCOPE_REPO=openmoss/MOSS-TTS-Nano-100M-ONNX` 兜底下载 MOSS ONNX 资产。
+- 新增可选 `MOSS_HF_REPO`，仅在用户显式配置后尝试 Hugging Face MOSS ONNX 下载。
+- 新增回归测试覆盖空目录自动下载和 README-only 目录拒绝。

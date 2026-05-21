@@ -79,6 +79,7 @@ STR_ENV: dict[str, str] = {
     "KOKORO_HF_REPO": "kokoro_hf_repo",
     "KOKORO_MODELSCOPE_REPO": "kokoro_modelscope_repo",
     "MOSS_MODELSCOPE_REPO": "moss_modelscope_repo",
+    "MOSS_HF_REPO": "moss_hf_repo",
     "MOSS_EXECUTION_PROVIDER": "moss_execution_provider",
     "MOSS_DEFAULT_VOICE": "moss_default_voice",
     "MOSS_SAMPLE_MODE": "moss_sample_mode",
