@@ -439,6 +439,16 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [Roadmap](docs/ROADMAP.md)
 - [Legacy GPU Deployment](docker/legacy-gpu/README.md)
 
+## Sponsor
+
+If AngeVoice has been helpful, feel free to buy the author a coffee ☕
+
+| WeChat | Alipay |
+|:---:|:---:|
+| ![WeChat](docs/images/sponsor_wechat.png) | ![Alipay](docs/images/sponsor_alipay.png) |
+
+> Scan to donate. Any amount is appreciated ❤️
+
 ## License
 
 AngeVoice project code is MIT.
