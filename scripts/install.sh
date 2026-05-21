@@ -42,6 +42,9 @@ _bootstrap_exec_full_repo() {
   }
   if [[ -d "$target/.git" ]]; then
     git -C "$target" fetch --all --prune || true
+    git -C "$target" restore --staged . 2>/dev/null || true
+    git -C "$target" restore . 2>/dev/null || true
+    git -C "$target" clean -fd 2>/dev/null || true
     git -C "$target" pull --ff-only || true
   elif [[ -e "$target" && -n "$(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
     printf '[0;31m[ERROR][0m 安装目录已存在但不是 AngeVoice git 仓库：%s
@@ -165,6 +168,9 @@ ensure_repo() {
     log "使用当前项目目录：$INSTALL_DIR"
     if [[ -d "$INSTALL_DIR/.git" && "$INSTALL_DIR_SET_BY_USER" == "true" ]]; then
       git -C "$INSTALL_DIR" fetch --all --prune || warn "git fetch 失败，将继续使用现有代码。"
+      git -C "$INSTALL_DIR" restore --staged . 2>/dev/null || true
+      git -C "$INSTALL_DIR" restore . 2>/dev/null || true
+      git -C "$INSTALL_DIR" clean -fd 2>/dev/null || true
       git -C "$INSTALL_DIR" pull --ff-only || warn "git pull 失败，将继续使用现有代码。"
     fi
     return
@@ -172,6 +178,9 @@ ensure_repo() {
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     log "检测到已有仓库：$INSTALL_DIR"
     git -C "$INSTALL_DIR" fetch --all --prune || warn "git fetch 失败，将继续使用现有代码。"
+    git -C "$INSTALL_DIR" restore --staged . 2>/dev/null || true
+    git -C "$INSTALL_DIR" restore . 2>/dev/null || true
+    git -C "$INSTALL_DIR" clean -fd 2>/dev/null || true
     git -C "$INSTALL_DIR" pull --ff-only || warn "git pull 失败，将继续使用现有代码。"
     return
   fi
