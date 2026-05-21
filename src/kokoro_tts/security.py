@@ -9,8 +9,10 @@ from .config import TTSConfig
 
 def _extract_bearer_token(auth: str) -> str:
     """Extract bearer token from Authorization header value (case-insensitive prefix)."""
-    if auth.lower().startswith("bearer "):
-        return auth[7:]
+    value = str(auth or "").strip()
+    if value.lower().startswith("bearer"):
+        token = value[6:]
+        return token.strip()
     return ""
 
 
