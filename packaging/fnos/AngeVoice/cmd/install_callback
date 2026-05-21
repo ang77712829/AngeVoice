@@ -1,6 +1,6 @@
 #!/bin/bash
 # install_callback - 安装回调（向导完成后执行）
-# 创建数据目录、生成 env 配置文件
+# env文件随FPK打包，这里只追加向导中用户填写的值
 
 set -e
 
@@ -15,80 +15,42 @@ mkdir -p "$TRIM_PKGETC"
 
 echo "[AngeVoice] 数据目录已创建: $TRIM_PKGVAR"
 
-# ========== 2. 生成 env 配置文件 ==========
+# ========== 2. 更新env配置文件 ==========
+# env文件随FPK打包到docker/angevoice.env，不需要重新生成
+# 只把向导中用户填写的值追加/更新进去
 ENV_FILE="$TRIM_PKGETC/angevoice.env"
 
-# 如果已存在则不覆盖（升级场景）
-if [ -f "$ENV_FILE" ]; then
-    echo "[AngeVoice] env 文件已存在，跳过生成（升级场景）"
-else
-    cat > "$ENV_FILE" << 'ENVEOF'
-PYTHONUNBUFFERED=1
-
-KOKORO_API_KEY=auto
-KOKORO_ADMIN_ENABLED=true
-
-ANGEVOICE_MODEL_SOURCE=modelscope
-KOKORO_PREFETCH_VOICES=true
-
-KOKORO_WORKERS=1
-KOKORO_MAX_CONCURRENT_REQUESTS=1
-KOKORO_REQUEST_TIMEOUT_SECONDS=300
-
-ANGEVOICE_IDLE_TIMEOUT_SECONDS=600
-ANGEVOICE_IDLE_CHECK_INTERVAL=30
-ANGEVOICE_IDLE_UNLOAD_CURRENT=true
-
-KOKORO_PUBLIC_STATUS_ENDPOINTS=true
-KOKORO_RATE_LIMIT_QPS=0
-KOKORO_RATE_LIMIT_BURST=5
-ENVEOF
-    echo "[AngeVoice] env 文件已生成: $ENV_FILE"
+# 兼容旧版：如果env文件不存在（升级场景），从FPK包内复制
+if [ ! -f "$ENV_FILE" ] && [ -f "/var/apps/AngeVoice/app/docker/angevoice.env" ]; then
+    cp "/var/apps/AngeVoice/app/docker/angevoice.env" "$ENV_FILE"
+    echo "[AngeVoice] env文件从FPK包复制: $ENV_FILE"
 fi
 
-# ========== 3. 写入向导配置的值 ==========
-# 安装向导中用户填写的值通过 wizard_ 前缀环境变量传入
-# 例如 wizard_http_port, wizard_model_source, wizard_admin_password 等
+# 更新向导配置的值
+update_env() {
+    local key="$1"
+    local val="$2"
+    if [ -n "$val" ] && [ -f "$ENV_FILE" ]; then
+        if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+            sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+        else
+            echo "${key}=${val}" >> "$ENV_FILE"
+        fi
+        echo "[AngeVoice] 更新配置: ${key}=${val}"
+    fi
+}
 
 # 管理员用户名
-if [ -n "$wizard_admin_username" ]; then
-    if grep -q "ANGEVOICE_ADMIN_USERNAME" "$ENV_FILE"; then
-        sed -i "s|ANGEVOICE_ADMIN_USERNAME=.*|ANGEVOICE_ADMIN_USERNAME=$wizard_admin_username|" "$ENV_FILE"
-    else
-        echo "ANGEVOICE_ADMIN_USERNAME=$wizard_admin_username" >> "$ENV_FILE"
-    fi
-    echo "[AngeVoice] 管理员用户名已配置: $wizard_admin_username"
-fi
+update_env "KOKORO_ADMIN_USERNAME" "$wizard_admin_username"
 
 # 管理员密码
-if [ -n "$wizard_admin_password" ]; then
-    # 使用 sed 追加或更新密码
-    if grep -q "ANGEVOICE_ADMIN_PASSWORD" "$ENV_FILE"; then
-        sed -i "s|ANGEVOICE_ADMIN_PASSWORD=.*|ANGEVOICE_ADMIN_PASSWORD=$wizard_admin_password|" "$ENV_FILE"
-    else
-        echo "ANGEVOICE_ADMIN_PASSWORD=$wizard_admin_password" >> "$ENV_FILE"
-    fi
-    echo "[AngeVoice] 管理员密码已配置"
-fi
+update_env "KOKORO_ADMIN_PASSWORD" "$wizard_admin_password"
 
 # 模型源
-if [ -n "$wizard_model_source" ]; then
-    if grep -q "ANGEVOICE_MODEL_SOURCE" "$ENV_FILE"; then
-        sed -i "s|ANGEVOICE_MODEL_SOURCE=.*|ANGEVOICE_MODEL_SOURCE=$wizard_model_source|" "$ENV_FILE"
-    else
-        echo "ANGEVOICE_MODEL_SOURCE=$wizard_model_source" >> "$ENV_FILE"
-    fi
-    echo "[AngeVoice] 模型源已配置: $wizard_model_source"
-fi
+update_env "ANGEVOICE_MODEL_SOURCE" "$wizard_model_source"
 
 # 自动下载
-if [ -n "$wizard_auto_download" ]; then
-    if grep -q "KOKORO_PREFETCH_VOICES" "$ENV_FILE"; then
-        sed -i "s|KOKORO_PREFETCH_VOICES=.*|KOKORO_PREFETCH_VOICES=$wizard_auto_download|" "$ENV_FILE"
-    else
-        echo "KOKORO_PREFETCH_VOICES=$wizard_auto_download" >> "$ENV_FILE"
-    fi
-fi
+update_env "KOKORO_PREFETCH_VOICES" "$wizard_auto_download"
 
 echo "[AngeVoice] 安装回调完成"
 exit 0
