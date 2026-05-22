@@ -1,6 +1,7 @@
 #!/bin/bash
 # upgrade_callback — 升级回调脚本
-# 功能：不覆盖已有模型和用户 env；补充新增字段；按设备类型重新路由 compose
+# 功能：不覆盖已有用户 env；补充新增字段；迁移旧变量名
+# 注意：设备类型由 cmd/main start 自动检测
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,46 +30,15 @@ ensure_env "ANGEVOICE_IDLE_CHECK_INTERVAL"  "30"
 ensure_env "ANGEVOICE_IDLE_UNLOAD_CURRENT"  "true"
 ensure_env "ANGEVOICE_API_KEY_FILE"         "/app/outputs/.angevoice-api-key"
 
-# 迁移：旧版本错误地写了 KOKORO_ADMIN_USERNAME/PASSWORD，将其迁移到正确的字段
+# 迁移：旧版本错误地写了 KOKORO_ADMIN_USERNAME/PASSWORD
 old_user="$(get_env_val KOKORO_ADMIN_USERNAME || true)"
 old_pass="$(get_env_val KOKORO_ADMIN_PASSWORD || true)"
 [ -n "${old_user}" ] && ensure_env "ANGEVOICE_ADMIN_USERNAME" "${old_user}"
 [ -n "${old_pass}" ] && ensure_env "ANGEVOICE_ADMIN_PASSWORD" "${old_pass}"
 
-# 按已保存的设备类型路由正确的 compose 文件
-DEVICE="$(get_env_val ANGEVOICE_FNOS_DEVICE || true)"
-case "${DEVICE}" in cpu|gpu|legacy-gpu) ;; *) DEVICE="cpu" ;; esac
-
-case "${DEVICE}" in
-  gpu)        SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.gpu.yaml" ;;
-  legacy-gpu) SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.legacy-gpu.yaml" ;;
-  *)          SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.cpu.yaml" ;;
-esac
-
-if [ -f "${SRC_COMPOSE}" ]; then
-  cp "${SRC_COMPOSE}" "${APP_DOCKER_DIR}/docker-compose.yaml"
-  # 端口优先从 env 文件读取（用户之前设置的），回退到 fnOS 系统变量，最后默认 8101
-  SAVED_PORT="$(get_env_val ANGEVOICE_FNOS_PORT || true)"
-  HOST_PORT="${SAVED_PORT:-${TRIM_SERVICE_PORT:-8101}}"
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "${APP_DOCKER_DIR}/docker-compose.yaml" "${HOST_PORT}" <<'PY'
-from pathlib import Path
-import sys
-path = Path(sys.argv[1])
-port = sys.argv[2] if sys.argv[2:3] and sys.argv[2].isdigit() and len(sys.argv[2]) <= 5 else "8101"
-text = path.read_text(encoding="utf-8").replace("__HOST_PORT__", port)
-path.write_text(text, encoding="utf-8")
-PY
-  else
-    sed -i "s|__HOST_PORT__|${HOST_PORT}|g" "${APP_DOCKER_DIR}/docker-compose.yaml"
-  fi
-  log "已更新 compose 文件：device=${DEVICE}, src=${SRC_COMPOSE}, port=${HOST_PORT}"
-else
-  log "警告：找不到 compose 模板 ${SRC_COMPOSE}，保留现有 docker-compose.yaml"
-fi
-
 # 同步到 @appcenter 运行目录
 sync_to_appcenter
 
-log "升级回调完成：device=${DEVICE}"
+# 注意：设备类型由 cmd/main start 在下次启动时自动检测
+log "升级回调完成；设备类型将在下次启动时由 cmd/main 自动检测"
 exit 0

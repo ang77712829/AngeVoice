@@ -1,6 +1,7 @@
 #!/bin/bash
 # install_callback — 安装回调脚本
-# 功能：根据向导选择运行模式，复制对应的 compose 文件，写入 angevoice.env
+# 功能：创建数据目录、写入 env 配置默认值
+# 注意：fnOS 不会把向导变量传给 callback，设备类型由 cmd/main start 自动检测
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,74 +11,37 @@ source "${SCRIPT_DIR}/_lib.sh"
 APP_NAME="${TRIM_APPNAME:-AngeVoice}"
 APP_DOCKER_DIR="${TRIM_APPDEST}/docker"
 DATA_DIR="${TRIM_PKGVAR}"
-HOST_PORT="${wizard_http_port:-8101}"
-FINAL_DEVICE="${wizard_device_type:-cpu}"
-MODEL_SOURCE="${wizard_model_source:-modelscope}"
+HOST_PORT="${TRIM_SERVICE_PORT:-8101}"
 
-# 验证设备类型
-case "${FINAL_DEVICE}" in
-  cpu|gpu|legacy-gpu) ;;
-  *) log "未知运行模式 '${FINAL_DEVICE}'，回退到 CPU 模式"; FINAL_DEVICE="cpu" ;;
-esac
-
-# 验证模型源
-case "${MODEL_SOURCE}" in
-  auto|huggingface|modelscope|offline) ;;
-  *) log "未知模型源 '${MODEL_SOURCE}'，回退为 modelscope"; MODEL_SOURCE="modelscope" ;;
-esac
-
-log "安装开始：device=${FINAL_DEVICE}, port=${HOST_PORT}, model_source=${MODEL_SOURCE}"
+log "安装回调开始"
 
 # ── 1. 创建数据目录 ──────────────────────────────────────────────────
 mkdir -p "${DATA_DIR}/models" "${DATA_DIR}/outputs" "${DATA_DIR}/prompts" "${DATA_DIR}/logs"
 mkdir -p "${APP_DOCKER_DIR}"
 
-# ── 2. 选择 docker-compose 文件 ──────────────────────────────────────
-# 每种模式有独立的 compose 文件，携带对应的镜像名和 GPU 资源声明
-case "${FINAL_DEVICE}" in
-  gpu)
-    SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.gpu.yaml"
-    ;;
-  legacy-gpu)
-    SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.legacy-gpu.yaml"
-    ;;
-  *)
-    SRC_COMPOSE="${APP_DOCKER_DIR}/docker-compose.cpu.yaml"
-    ;;
-esac
-
-if [ ! -f "${SRC_COMPOSE}" ]; then
-  log "错误：找不到 compose 模板文件 ${SRC_COMPOSE}"
-  exit 1
-fi
-
-cp "${SRC_COMPOSE}" "${APP_DOCKER_DIR}/docker-compose.yaml"
-# install wizard 的端口必须落到 compose；fnOS 的 TRIM_SERVICE_PORT 来自 manifest 默认端口，
-# 不一定等于用户安装时填写的 wizard_http_port。
-if command -v python3 >/dev/null 2>&1; then
-  python3 - "${APP_DOCKER_DIR}/docker-compose.yaml" "${HOST_PORT}" <<'PY'
-from pathlib import Path
-import re, sys
-path = Path(sys.argv[1])
-port = sys.argv[2] if re.fullmatch(r"[0-9]{1,5}", sys.argv[2] or "") else "8101"
-text = path.read_text(encoding="utf-8")
-text = text.replace("__HOST_PORT__", port)
-path.write_text(text, encoding="utf-8")
-PY
-else
-  sed -i "s|__HOST_PORT__|${HOST_PORT}|g" "${APP_DOCKER_DIR}/docker-compose.yaml"
-fi
-log "已选择 compose 模板：${SRC_COMPOSE}，端口=${HOST_PORT}"
-
-# ── 3. 准备 angevoice.env ────────────────────────────────────────────
+# ── 2. 准备 angevoice.env（默认值，cmd/main start 会覆盖设备类型）────
 ENV_FILE="${APP_DOCKER_DIR}/angevoice.env"
 if [ ! -f "${ENV_FILE}" ]; then
   touch "${ENV_FILE}"
 fi
 
-# ── 4. 合并设备预设（preset 文件只覆盖设备相关变量）────────────────────
+# 写入核心配置默认值
+upsert_env "ANGEVOICE_FNOS_PORT"             "${HOST_PORT}"
+upsert_env "ANGEVOICE_MODEL_SOURCE"          "modelscope"
+upsert_env "KOKORO_ADMIN_ENABLED"            "true"
+upsert_env "ANGEVOICE_ADMIN_USERNAME"        "${wizard_admin_username:-admin}"
+upsert_env "ANGEVOICE_ADMIN_PASSWORD"        "${wizard_admin_password:-admin123456}"
+upsert_env "KOKORO_PREFETCH_VOICES"          "true"
+upsert_env "KOKORO_API_KEY"                  "auto"
+upsert_env "ANGEVOICE_API_KEY_FILE"          "/app/outputs/.angevoice-api-key"
+upsert_env "ANGEVOICE_IDLE_TIMEOUT_SECONDS"  "600"
+upsert_env "ANGEVOICE_IDLE_CHECK_INTERVAL"   "30"
+upsert_env "ANGEVOICE_IDLE_UNLOAD_CURRENT"   "true"
+upsert_env "PYTHONUNBUFFERED"                "1"
+
+# ── 3. 合并 CPU 预设作为默认值（cmd/main start 会按实际设备重新合并）──
 merge_preset() {
-  local preset="${APP_DOCKER_DIR}/presets/${FINAL_DEVICE}.env"
+  local preset="${APP_DOCKER_DIR}/presets/${1}.env"
   [ -f "${preset}" ] || return 0
   log "合并设备预设：${preset}"
   while IFS= read -r line || [ -n "${line}" ]; do
@@ -87,25 +51,10 @@ merge_preset() {
     [ -n "${key}" ] && upsert_env "${key}" "${val}"
   done < "${preset}"
 }
-merge_preset
+merge_preset "cpu"
 
-# ── 5. 写入核心配置（向导值优先）──────────────────────────────────────
-upsert_env "ANGEVOICE_FNOS_DEVICE"          "${FINAL_DEVICE}"
-upsert_env "ANGEVOICE_MODEL_SOURCE"         "${MODEL_SOURCE}"
-upsert_env "KOKORO_ADMIN_ENABLED"           "true"
-upsert_env "ANGEVOICE_ADMIN_USERNAME"       "${wizard_admin_username:-admin}"
-upsert_env "ANGEVOICE_ADMIN_PASSWORD"       "${wizard_admin_password:-admin123456}"
-upsert_env "KOKORO_PREFETCH_VOICES"         "true"
-upsert_env "KOKORO_API_KEY"                 "auto"
-upsert_env "ANGEVOICE_API_KEY_FILE"         "/app/outputs/.angevoice-api-key"
-upsert_env "ANGEVOICE_IDLE_TIMEOUT_SECONDS" "600"
-upsert_env "ANGEVOICE_IDLE_CHECK_INTERVAL"  "30"
-upsert_env "ANGEVOICE_IDLE_UNLOAD_CURRENT"  "true"
-upsert_env "PYTHONUNBUFFERED"               "1"
-upsert_env "ANGEVOICE_FNOS_PORT"             "${HOST_PORT}"
-
-# ── 6. 同步到 @appcenter 运行目录 ────────────────────────────────────
+# ── 4. 同步到 @appcenter 运行目录 ────────────────────────────────────
 sync_to_appcenter
 
-log "安装回调完成：device=${FINAL_DEVICE}, port=${HOST_PORT}"
+log "安装回调完成（设备类型将由 cmd/main start 自动检测）"
 exit 0
