@@ -46,15 +46,10 @@ detect_device() {
     device="$(get_env_val ANGEVOICE_FNOS_DEVICE)"
   fi
   
-  # 3. GPU 探测
+  # 2. GPU 探测：有 NVIDIA GPU 就用 gpu，legacy-gpu 仅作兜底
   if [ -z "${device}" ] || [ "${device}" = "cpu" ]; then
     if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q "GPU"; then
-      # 检测是否为旧款 GPU（Tesla P4 等）
-      if nvidia-smi -L 2>/dev/null | grep -qi "Tesla\|P4\|P100\|K80\|M40\|M60"; then
-        device="legacy-gpu"
-      else
-        device="gpu"
-      fi
+      device="gpu"
       log "GPU 自动检测：${device}"
     else
       device="cpu"
