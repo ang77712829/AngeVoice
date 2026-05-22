@@ -1,18 +1,30 @@
 {
-    "data-share": {
-        "shares": [
-            {
-                "name": "models",
-                "permission": {"rw": ["angevoice"]}
-            },
-            {
-                "name": "outputs",
-                "permission": {"rw": ["angevoice"]}
-            },
-            {
-                "name": "prompts",
-                "permission": {"rw": ["angevoice"]}
-            }
-        ]
-    }
+  "docker-project": {
+    "projects": [
+      {
+        "name": "angevoice",
+        "path": "docker"
+      }
+    ]
+  },
+  "data-share": {
+    "shares": [
+      {
+        "name": "models",
+        "permission": { "rw": ["angevoice"] }
+      },
+      {
+        "name": "outputs",
+        "permission": { "rw": ["angevoice"] }
+      },
+      {
+        "name": "prompts",
+        "permission": { "rw": ["angevoice"] }
+      },
+      {
+        "name": "logs",
+        "permission": { "rw": ["angevoice"] }
+      }
+    ]
+  }
 }

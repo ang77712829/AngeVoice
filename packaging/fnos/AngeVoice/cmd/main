@@ -1,168 +1,26 @@
 #!/bin/bash
-# main — AngeVoice 应用生命周期管理脚本
-# 功能：由 fnOS 调用，管理 Docker 容器的启动、停止和状态检查
-# 注意：已移除 config/resource 中的 docker-project，由本脚本自行管理 docker compose
-set -e
+# Docker 应用启停由 fnOS docker-project 管理；这里仅报告活动 profile 的容器状态。
+set -u
 
-COMPOSE_DIR="${TRIM_APPDEST}/docker"
-COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yaml"
-ENV_FILE="${COMPOSE_DIR}/angevoice.env"
-CONTAINER_NAME="angevoice"
-
-log() {
-  echo "[AngeVoice] $*"
-  if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
-    echo "[AngeVoice] $*" >> "${TRIM_TEMP_LOGFILE}" 2>/dev/null || true
-  fi
-}
-
-# 读取 env 文件中的值
-get_env_val() {
-  grep -E "^$1=" "${ENV_FILE}" 2>/dev/null | tail -n 1 | cut -d= -f2- | sed 's/^"//;s/"$//'
-}
-
-# 写入 env 文件
-upsert_env() {
-  local key="$1" val="$2"
-  [ -z "${val}" ] && return 0
-  if [ -f "${ENV_FILE}" ]; then
-    if grep -q "^${key}=" "${ENV_FILE}" 2>/dev/null; then
-      sed -i "s|^${key}=.*|${key}=${val}|" "${ENV_FILE}"
-    else
-      echo "${key}=${val}" >> "${ENV_FILE}"
+is_running() {
+  local name
+  for name in angevoice-cpu angevoice-gpu angevoice-legacy-gpu; do
+    if docker inspect "$name" >/dev/null 2>&1; then
+      [ "$(docker inspect -f '{{.State.Status}}' "$name" 2>/dev/null)" = "running" ]
+      return $?
     fi
-  else
-    echo "${key}=${val}" > "${ENV_FILE}"
-  fi
+  done
+  return 1
 }
 
-# 检测设备类型：优先级 向导变量 > env文件 > GPU探测 > 默认cpu
-detect_device() {
-  # 1. 检查向导变量（fnOS 可能在启动时传入）
-  local device="${wizard_device_type:-}"
-  
-  # 2. 检查 env 文件
-  if [ -z "${device}" ] && [ -f "${ENV_FILE}" ]; then
-    device="$(get_env_val ANGEVOICE_FNOS_DEVICE)"
-  fi
-  
-  # 2. GPU 探测：有 NVIDIA GPU 就用 gpu，legacy-gpu 仅作兜底
-  if [ -z "${device}" ] || [ "${device}" = "cpu" ]; then
-    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q "GPU"; then
-      device="gpu"
-      log "GPU 自动检测：${device}"
-    else
-      device="cpu"
-    fi
-  fi
-  
-  echo "${device}"
-}
-
-# 根据设备类型选择 compose 模板并渲染
-prepare_compose() {
-  local device="$1"
-  local port="$2"
-  
-  case "${device}" in
-    gpu)        SRC_COMPOSE="${COMPOSE_DIR}/docker-compose.gpu.yaml" ;;
-    legacy-gpu) SRC_COMPOSE="${COMPOSE_DIR}/docker-compose.legacy-gpu.yaml" ;;
-    *)          SRC_COMPOSE="${COMPOSE_DIR}/docker-compose.cpu.yaml" ;;
-  esac
-  
-  if [ ! -f "${SRC_COMPOSE}" ]; then
-    log "错误：找不到 compose 模板 ${SRC_COMPOSE}"
-    exit 1
-  fi
-  
-  cp "${SRC_COMPOSE}" "${COMPOSE_FILE}"
-  
-  # 渲染端口占位符
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "${COMPOSE_FILE}" "${port}" <<'PY'
-from pathlib import Path
-import sys
-path = Path(sys.argv[1])
-port = sys.argv[2] if sys.argv[2:3] and sys.argv[2].isdigit() and len(sys.argv[2]) <= 5 else "8101"
-text = path.read_text(encoding="utf-8").replace("__HOST_PORT__", port)
-path.write_text(text, encoding="utf-8")
-PY
-  else
-    sed -i "s|__HOST_PORT__|${port}|g" "${COMPOSE_FILE}"
-  fi
-  
-  log "compose 已就绪：device=${device}, port=${port}, template=$(basename ${SRC_COMPOSE})"
-}
-
-is_docker_running() {
-  if [ -f "${COMPOSE_FILE}" ]; then
-    local name
-    name=$(grep "container_name" "${COMPOSE_FILE}" | awk -F ':' '{print $2}' | xargs 2>/dev/null)
-    [ -n "${name}" ] && CONTAINER_NAME="${name}"
-  fi
-  docker inspect "${CONTAINER_NAME}" 2>/dev/null | grep -q '"Status": "running",'
-}
-
-start_compose() {
-  if [ ! -f "${COMPOSE_FILE}" ]; then
-    log "错误：找不到 ${COMPOSE_FILE}"
-    exit 1
-  fi
-
-  # 检测设备类型
-  local device
-  device="$(detect_device)"
-  
-  # 获取端口
-  local port
-  port="$(get_env_val ANGEVOICE_FNOS_PORT)"
-  port="${port:-${TRIM_SERVICE_PORT:-8101}}"
-  
-  # 准备 compose 文件（确保设备类型和端口正确）
-  prepare_compose "${device}" "${port}"
-  
-  # 更新 env 文件中的设备类型
-  upsert_env "ANGEVOICE_FNOS_DEVICE" "${device}"
-
-  # 切换到 compose 目录
-  cd "${COMPOSE_DIR}" || exit 1
-
-  # 如果容器已存在，先停止
-  if docker inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then
-    log "容器已存在，停止旧容器..."
-    docker compose down 2>/dev/null || docker-compose down 2>/dev/null || true
-    sleep 2
-  fi
-
-  log "启动容器：docker compose up -d (device=${device})"
-  docker compose up -d 2>/dev/null || docker-compose up -d 2>/dev/null
-  log "容器启动命令已执行"
-}
-
-stop_compose() {
-  cd "${COMPOSE_DIR}" 2>/dev/null || exit 0
-  log "停止容器：docker compose down"
-  docker compose down 2>/dev/null || docker-compose down 2>/dev/null || true
-  log "容器已停止"
-}
-
-case "${1}" in
-start)
-  start_compose
-  exit 0
-  ;;
-stop)
-  stop_compose
-  exit 0
-  ;;
-status)
-  if is_docker_running; then
+case "${1:-}" in
+  start|stop)
     exit 0
-  else
-    exit 3
-  fi
-  ;;
-*)
-  exit 1
-  ;;
+    ;;
+  status)
+    if is_running; then exit 0; else exit 3; fi
+    ;;
+  *)
+    exit 1
+    ;;
 esac

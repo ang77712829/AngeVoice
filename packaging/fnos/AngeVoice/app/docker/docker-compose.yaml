@@ -1,22 +1,122 @@
 name: angevoice-fnos
 
 services:
-  angevoice:
+  angevoice-cpu:
+    profiles: ["cpu"]
     image: ghcr.io/ang77712829/angevoice-cpu:latest
-    container_name: angevoice
+    container_name: angevoice-cpu
     ports:
-      - "${TRIM_SERVICE_PORT:-8101}:8000"
+      - "${wizard_http_port:-8101}:8000"
     env_file:
       - ./angevoice.env
+    environment:
+      KOKORO_ADMIN_ENABLED: "true"
+      ANGEVOICE_ADMIN_USERNAME: "${wizard_admin_username:-admin}"
+      ANGEVOICE_ADMIN_PASSWORD: "${wizard_admin_password}"
+      ANGEVOICE_MODEL_SOURCE: "${wizard_model_source:-modelscope}"
+      ANGEVOICE_FNOS_DEVICE: "cpu"
+      KOKORO_DEVICE: "cpu"
+      ANGEVOICE_ENABLED_MODELS: "kokoro,moss-nano-cpu"
+      ANGEVOICE_DEFAULT_MODEL: "kokoro"
+      MOSS_EXECUTION_PROVIDER: "cpu"
+      MOSS_CUDA_ENABLED: "false"
+      KOKORO_PREFETCH_VOICES: "true"
     volumes:
-      - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/models:/app/models"
-      - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/outputs:/app/outputs"
-      - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/prompts:/app/prompts"
-      - "${TRIM_PKGVAR:-/vol3/@appdata/AngeVoice}/logs:/app/logs"
+      - "${TRIM_PKGVAR}/models:/app/models"
+      - "${TRIM_PKGVAR}/outputs:/app/outputs"
+      - "${TRIM_PKGVAR}/prompts:/app/prompts"
+      - "${TRIM_PKGVAR}/logs:/app/logs"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 90s
+    restart: unless-stopped
+
+  angevoice-gpu:
+    profiles: ["gpu"]
+    image: ghcr.io/ang77712829/angevoice-gpu:latest
+    container_name: angevoice-gpu
+    ports:
+      - "${wizard_http_port:-8101}:8000"
+    env_file:
+      - ./angevoice.env
+    environment:
+      KOKORO_ADMIN_ENABLED: "true"
+      ANGEVOICE_ADMIN_USERNAME: "${wizard_admin_username:-admin}"
+      ANGEVOICE_ADMIN_PASSWORD: "${wizard_admin_password}"
+      ANGEVOICE_MODEL_SOURCE: "${wizard_model_source:-modelscope}"
+      ANGEVOICE_FNOS_DEVICE: "gpu"
+      KOKORO_DEVICE: "cuda"
+      ANGEVOICE_ENABLED_MODELS: "kokoro,moss-nano-cpu,moss-nano-cuda"
+      ANGEVOICE_DEFAULT_MODEL: "kokoro"
+      MOSS_EXECUTION_PROVIDER: "cuda"
+      MOSS_CUDA_ENABLED: "true"
+      KOKORO_PREFETCH_VOICES: "true"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    volumes:
+      - "${TRIM_PKGVAR}/models:/app/models"
+      - "${TRIM_PKGVAR}/outputs:/app/outputs"
+      - "${TRIM_PKGVAR}/prompts:/app/prompts"
+      - "${TRIM_PKGVAR}/logs:/app/logs"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 150s
+    restart: unless-stopped
+
+  angevoice-legacy-gpu:
+    profiles: ["legacy-gpu"]
+    image: ghcr.io/ang77712829/angevoice-legacy-gpu:latest
+    container_name: angevoice-legacy-gpu
+    ports:
+      - "${wizard_http_port:-8101}:8000"
+    env_file:
+      - ./angevoice.env
+    environment:
+      KOKORO_ADMIN_ENABLED: "true"
+      ANGEVOICE_ADMIN_USERNAME: "${wizard_admin_username:-admin}"
+      ANGEVOICE_ADMIN_PASSWORD: "${wizard_admin_password}"
+      ANGEVOICE_MODEL_SOURCE: "${wizard_model_source:-modelscope}"
+      ANGEVOICE_FNOS_DEVICE: "legacy-gpu"
+      KOKORO_DEVICE: "cuda"
+      KOKORO_REQUEST_TIMEOUT_SECONDS: "600"
+      KOKORO_SEGMENT_LENGTH: "100"
+      ANGEVOICE_ENABLED_MODELS: "kokoro,moss-nano-cpu"
+      ANGEVOICE_DEFAULT_MODEL: "kokoro"
+      MOSS_EXECUTION_PROVIDER: "cpu"
+      MOSS_CUDA_ENABLED: "false"
+      MOSS_PROCESS_ISOLATION_ENABLED: "false"
+      KOKORO_PREFETCH_VOICES: "true"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    volumes:
+      - "${TRIM_PKGVAR}/models:/app/models"
+      - "${TRIM_PKGVAR}/outputs:/app/outputs"
+      - "${TRIM_PKGVAR}/prompts:/app/prompts"
+      - "${TRIM_PKGVAR}/logs:/app/logs"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 150s
     restart: unless-stopped

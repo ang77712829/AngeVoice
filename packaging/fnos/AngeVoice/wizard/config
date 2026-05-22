@@ -1,99 +1,65 @@
 [
-    {
-        "description": "",
-        "stepTitle": "AngeVoice 设置",
-        "items": [
-            {
-                "type": "text",
-                "field": "wizard_http_port",
-                "label": "服务端口（留空不修改）",
-                "initValue": "8101",
-                "rules": [
-                    {
-                        "pattern": "^[0-9]*$",
-                        "message": "端口号必须是数字"
-                    }
-                ]
-            },
-            {
-                "type": "radio",
-                "field": "wizard_device_type",
-                "label": "运行模式（修改后需重启应用）",
-                "initValue": "cpu",
-                "options": [
-                    {
-                        "label": "CPU — 无需 GPU，适用于 NAS / 家用服务器",
-                        "value": "cpu"
-                    },
-                    {
-                        "label": "GPU — NVIDIA CUDA 加速",
-                        "value": "gpu"
-                    },
-                    {
-                        "label": "Legacy GPU — Tesla P4 等旧款 NVIDIA 显卡",
-                        "value": "legacy-gpu"
-                    }
-                ],
-                "rules": [
-                    {
-                        "required": true,
-                        "message": "请选择运行模式"
-                    }
-                ]
-            },
-            {
-                "type": "radio",
-                "field": "wizard_model_source",
-                "label": "模型下载源",
-                "initValue": "modelscope",
-                "options": [
-                    {
-                        "label": "ModelScope（推荐，国内用户）",
-                        "value": "modelscope"
-                    },
-                    {
-                        "label": "自动探测（自动选择可用源）",
-                        "value": "auto"
-                    },
-                    {
-                        "label": "Hugging Face（适合海外网络）",
-                        "value": "huggingface"
-                    },
-                    {
-                        "label": "离线模式（不联网下载，需预先放好模型）",
-                        "value": "offline"
-                    }
-                ],
-                "rules": [
-                    {
-                        "required": true,
-                        "message": "请选择模型下载源"
-                    }
-                ]
-            },
-            {
-                "type": "text",
-                "field": "wizard_admin_username",
-                "label": "管理员用户名（留空不修改）",
-                "initValue": "admin",
-                "rules": [
-                    {
-                        "min": 2,
-                        "message": "用户名长度不能少于 2 位"
-                    }
-                ]
-            },
-            {
-                "type": "password",
-                "field": "wizard_admin_password",
-                "label": "修改管理员密码（留空不修改）",
-                "rules": [
-                    {
-                        "min": 6,
-                        "message": "密码长度不能少于 6 位"
-                    }
-                ]
-            }
+  {
+    "stepTitle": "AngeVoice 设置",
+    "description": "修改后请停止并重新启动应用，使 Docker 容器按新设置重建。为避免覆盖为空值，保存设置时请重新填写管理员密码。",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_http_port",
+        "label": "服务端口",
+        "initValue": "8101",
+        "rules": [
+          { "required": true, "message": "请输入端口号" },
+          { "pattern": "^[0-9]{2,5}$", "message": "端口号必须是数字" }
         ]
-    }
+      },
+      {
+        "type": "radio",
+        "field": "COMPOSE_PROFILES",
+        "label": "运行模式（更改后需重启应用）",
+        "initValue": "cpu",
+        "options": [
+          { "label": "CPU — 无需 GPU", "value": "cpu" },
+          { "label": "GPU — NVIDIA CUDA 加速", "value": "gpu" },
+          { "label": "Legacy GPU — Tesla P4 / 较旧驱动兼容模式", "value": "legacy-gpu" }
+        ],
+        "rules": [
+          { "required": true, "message": "请选择运行模式" }
+        ]
+      },
+      {
+        "type": "radio",
+        "field": "wizard_model_source",
+        "label": "模型下载源",
+        "initValue": "modelscope",
+        "options": [
+          { "label": "ModelScope（推荐，国内网络）", "value": "modelscope" },
+          { "label": "自动探测", "value": "auto" },
+          { "label": "Hugging Face", "value": "huggingface" }
+        ],
+        "rules": [
+          { "required": true, "message": "请选择模型下载源" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_admin_username",
+        "label": "管理员用户名",
+        "initValue": "admin",
+        "rules": [
+          { "required": true, "message": "请输入管理员用户名" },
+          { "min": 2, "max": 32, "message": "用户名长度应为 2 到 32 位" }
+        ]
+      },
+      {
+        "type": "password",
+        "field": "wizard_admin_password",
+        "label": "管理员密码（保存设置时需重新输入）",
+        "rules": [
+          { "required": true, "message": "请输入管理员密码" },
+          { "min": 8, "max": 128, "message": "密码长度应为 8 到 128 位" }
+        ]
+      }
+    ]
+  }
 ]

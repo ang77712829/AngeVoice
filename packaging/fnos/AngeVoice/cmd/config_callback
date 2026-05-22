@@ -1,41 +1,11 @@
 #!/bin/bash
-# config_callback — 配置更新回调脚本
-# 功能：用户在应用设置中修改配置时，更新 angevoice.env
-# 注意：fnOS 不会把向导变量传给 callback，设备类型由 cmd/main start 自动检测
-set -e
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=_lib.sh
-source "${SCRIPT_DIR}/_lib.sh"
-
-APP_NAME="${TRIM_APPNAME:-AngeVoice}"
-APP_DOCKER_DIR="${TRIM_APPDEST}/docker"
-ENV_FILE="${APP_DOCKER_DIR}/angevoice.env"
-
-[ -f "${ENV_FILE}" ] || exit 0
-
-# 处理模型源
-MODEL_SOURCE="${wizard_model_source:-}"
-case "${MODEL_SOURCE}" in
-  ''|auto|huggingface|modelscope|offline) ;;
-  *) MODEL_SOURCE="modelscope" ;;
-esac
-[ -n "${MODEL_SOURCE}" ] && upsert_env "ANGEVOICE_MODEL_SOURCE" "${MODEL_SOURCE}"
-
-# 处理端口
-HOST_PORT="${wizard_http_port:-}"
-[ -n "${HOST_PORT}" ] && upsert_env "ANGEVOICE_FNOS_PORT" "${HOST_PORT}"
-
-# 处理管理员账号
-[ -n "${wizard_admin_username:-}" ] && upsert_env "ANGEVOICE_ADMIN_USERNAME" "${wizard_admin_username}"
-[ -n "${wizard_admin_password:-}" ] && upsert_env "ANGEVOICE_ADMIN_PASSWORD" "${wizard_admin_password}"
-
-# 注意：设备类型不在此处处理（fnOS 不传 wizard_device_type）
-# 设备类型由 cmd/main start 根据 GPU 自动检测
-# 用户需要重启应用使新配置生效
-
-# 同步到 @appcenter 运行目录
-sync_to_appcenter
-
-log "配置已更新；如变更未立即生效，请在飞牛中重启 AngeVoice 容器。"
+# 向导配置将由 fnOS 保存为环境变量，下一次应用启动时由 docker-project 重新用于 compose 插值。
+set -eu
+log() { echo "[AngeVoice] $*"; }
+PROFILE="${COMPOSE_PROFILES:-cpu}"
+PORT="${wizard_http_port:-8101}"
+case "$PROFILE" in cpu|gpu|legacy-gpu) ;; *) exit 1 ;; esac
+case "$PORT" in *[!0-9]*|'') exit 1 ;; esac
+[ "$PORT" -ge 1024 ] && [ "$PORT" -le 65535 ] || exit 1
+log "设置已保存：profile=${PROFILE}, port=${PORT}。请停止并重新启动应用以应用新的容器配置。"
 exit 0
