@@ -25,6 +25,7 @@
 
 ### 开源许可与致谢
 - AngeVoice 项目代码许可由 MIT 统一调整为 Apache License 2.0，与 Kokoro、MOSS-TTS-Nano、ZipVoice 三项核心上游集成对齐。
+- 新增标准 `NOTICE` 文件，明确 AngeVoice 版权所有者为 `Copyright 2026 安歌 (ang77712829)`，并随源码、镜像与 fnOS/FPK 包分发。
 - 补齐 ZipVoice 致谢与第三方许可归属说明；其他运行时资产仍遵循各自许可证。
 
 ### Docker、ARM64 与 fnOS/FPK

@@ -39,7 +39,7 @@ RUN if [ "$INSTALL_MOSS" = "true" ]; then \
     fi
 
 # 复制项目
-COPY pyproject.toml README.md README_EN.md LICENSE THIRD_PARTY_NOTICES.md ACKNOWLEDGEMENTS.md ./
+COPY pyproject.toml README.md README_EN.md LICENSE NOTICE THIRD_PARTY_NOTICES.md ACKNOWLEDGEMENTS.md ./
 COPY licenses/ licenses/
 COPY src/ src/
 COPY scripts/ scripts/

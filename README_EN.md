@@ -439,6 +439,6 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 
 ## License and acknowledgements
 
-AngeVoice is released under the [Apache License 2.0](LICENSE). Its core model/runtime integrations are built on [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), [MOSS-TTS-Nano](https://github.com/OpenMOSS/MOSS-TTS-Nano), and [ZipVoice](https://github.com/k2-fsa/ZipVoice), each used under its upstream Apache License 2.0 terms. Other dependencies and runtime-downloaded assets remain subject to their own licenses.
+AngeVoice is released under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE) for the project copyright notice. Its core model/runtime integrations are built on [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), [MOSS-TTS-Nano](https://github.com/OpenMOSS/MOSS-TTS-Nano), and [ZipVoice](https://github.com/k2-fsa/ZipVoice), each used under its upstream Apache License 2.0 terms. Other dependencies and runtime-downloaded assets remain subject to their own licenses.
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
+See [NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).

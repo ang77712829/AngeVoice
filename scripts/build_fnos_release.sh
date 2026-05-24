@@ -13,7 +13,7 @@ PYV
 )"
 OUT="${1:-$ROOT/dist/AngeVoice_v${VERSION}.fpk}"
 mkdir -p "$(dirname "$OUT")"
-[[ -f "$PKG/manifest" && -f "$PKG/app/docker/docker-compose.yaml" && -f "$PKG/app/docker/angevoice.env" ]] || {
+[[ -f "$PKG/manifest" && -f "$PKG/LICENSE" && -f "$PKG/NOTICE" && -f "$PKG/app/docker/docker-compose.yaml" && -f "$PKG/app/docker/angevoice.env" ]] || {
   echo "fnOS packaging tree incomplete" >&2
   exit 1
 }
@@ -56,7 +56,7 @@ text = re.sub(r'^version\s*=.*$', f'version                       = {version}', 
 text = re.sub(r'^checksum\s*=.*$', f'checksum                   = {checksum}', text, flags=re.M)
 out.write_text(text, encoding='utf-8')
 PYMANIFEST
-for item in ICON.PNG ICON_256.PNG LICENSE cmd config wizard; do
+for item in ICON.PNG ICON_256.PNG LICENSE NOTICE cmd config wizard; do
   cp -a "$PKG/$item" "$STAGE/root/"
 done
 tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -czf "$OUT" -C "$STAGE/root" .

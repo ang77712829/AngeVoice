@@ -1,0 +1,16 @@
+AngeVoice
+Copyright 2026 安歌 (ang77712829)
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file
+included with this distribution.
+
+AngeVoice integrates or provides compatibility with the following upstream
+projects under their respective Apache License 2.0 terms:
+
+- Kokoro / Kokoro-82M — hexgrad
+- MOSS-TTS-Nano — OpenMOSS Team, Fudan University, SII and MOSI
+- ZipVoice / ZipVoice-Distill — k2-fsa contributors
+
+Additional third-party components and runtime assets retain their respective
+copyrights and license terms. See THIRD_PARTY_NOTICES.md and
+ACKNOWLEDGEMENTS.md for attribution details.

@@ -1,6 +1,6 @@
 # License References
 
-AngeVoice framework code is released under the Apache License 2.0. See `../LICENSE`.
+AngeVoice framework code is released under the Apache License 2.0. See `../LICENSE`; the AngeVoice copyright notice is in `../NOTICE`.
 
 Core integrated upstream projects use Apache License 2.0 terms and retain their own attribution:
 
@@ -10,4 +10,4 @@ Core integrated upstream projects use Apache License 2.0 terms and retain their 
 
 Additional runtime assets retain their own upstream terms; for example, `charactr/vocos-mel-24khz` is recorded as MIT-licensed in `../THIRD_PARTY_NOTICES.md`.
 
-When redistributing Docker images or derived packages, preserve `LICENSE`, `THIRD_PARTY_NOTICES.md`, `ACKNOWLEDGEMENTS.md`, and upstream license files bundled or downloaded by the integration.
+When redistributing Docker images or derived packages, preserve `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `ACKNOWLEDGEMENTS.md`, and upstream license files bundled or downloaded by the integration.

@@ -51,7 +51,7 @@ RUN if [ "$INSTALL_MOSS" = "true" ]; then \
       python3 -m pip install --no-cache-dir --index-url "$MOSS_RUNTIME_INDEX_URL" "$MOSS_RUNTIME_PACKAGE"; \
     fi
 
-COPY pyproject.toml README.md README_EN.md LICENSE THIRD_PARTY_NOTICES.md ACKNOWLEDGEMENTS.md ./
+COPY pyproject.toml README.md README_EN.md LICENSE NOTICE THIRD_PARTY_NOTICES.md ACKNOWLEDGEMENTS.md ./
 COPY licenses/ licenses/
 COPY src/ src/
 COPY scripts/ scripts/

@@ -1,6 +1,6 @@
 # License and Attribution Compliance
 
-AngeVoice framework code is released under the Apache License 2.0. See `../LICENSE`.
+AngeVoice framework code is released under the Apache License 2.0. See `../LICENSE`; the project copyright notice is recorded in `../NOTICE`.
 
 The three core model/runtime integrations used by AngeVoice — Kokoro, MOSS-TTS-Nano and ZipVoice — are also supplied upstream under Apache License 2.0 terms. This alignment simplifies public distribution, while upstream attribution and any bundled license notices must still be preserved. Other dependencies and runtime-downloaded assets remain subject to their own licenses.
 
@@ -24,6 +24,7 @@ Dockerfiles copy AngeVoice legal material into the image and preserve bundled/do
 
 ```text
 /app/LICENSE
+/app/NOTICE
 /app/THIRD_PARTY_NOTICES.md
 /app/ACKNOWLEDGEMENTS.md
 /app/licenses/
@@ -34,14 +35,16 @@ Dockerfiles copy AngeVoice legal material into the image and preserve bundled/do
 Before publishing a source release, wheel, Docker image or fnOS/FPK package:
 
 1. Keep the AngeVoice Apache License 2.0 `LICENSE` file.
-2. Keep `THIRD_PARTY_NOTICES.md` and `ACKNOWLEDGEMENTS.md`.
-3. Preserve upstream license files included by bundled or downloaded third-party projects.
-4. Keep Kokoro, MOSS-TTS-Nano and ZipVoice attribution visible in public documentation.
-5. Do not claim ownership of third-party model assets or remove license terms for non-Apache dependencies such as Vocos.
+2. Keep the AngeVoice copyright/attribution `NOTICE` file.
+3. Keep `THIRD_PARTY_NOTICES.md` and `ACKNOWLEDGEMENTS.md`.
+4. Preserve upstream license files included by bundled or downloaded third-party projects.
+5. Keep Kokoro, MOSS-TTS-Nano and ZipVoice attribution visible in public documentation.
+6. Do not claim ownership of third-party model assets or remove license terms for non-Apache dependencies such as Vocos.
 
 ## Related files
 
 - `../LICENSE`
+- `../NOTICE`
 - `../THIRD_PARTY_NOTICES.md`
 - `../ACKNOWLEDGEMENTS.md`
 - `../licenses/README.md`

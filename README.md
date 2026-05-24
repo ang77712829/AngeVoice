@@ -508,7 +508,7 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 
 ## 开源许可与致谢
 
-AngeVoice 以 [Apache License 2.0](LICENSE) 开源。核心模型与运行时集成来自 [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M)、[MOSS-TTS-Nano](https://github.com/OpenMOSS/MOSS-TTS-Nano) 与 [ZipVoice](https://github.com/k2-fsa/ZipVoice)，三项核心上游均按其 Apache License 2.0 条款使用。其他依赖和运行时下载资产仍遵循各自许可证。
+AngeVoice 以 [Apache License 2.0](LICENSE) 开源；项目版权声明见 [NOTICE](NOTICE)。核心模型与运行时集成来自 [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M)、[MOSS-TTS-Nano](https://github.com/OpenMOSS/MOSS-TTS-Nano) 与 [ZipVoice](https://github.com/k2-fsa/ZipVoice)，三项核心上游均按其 Apache License 2.0 条款使用。其他依赖和运行时下载资产仍遵循各自许可证。
 
-详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。
+详见 [NOTICE](NOTICE)、[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。
 
