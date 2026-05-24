@@ -1,9 +1,13 @@
-# License Copies
+# License References
 
-This directory records third-party license references used by AngeVoice integrations.
+AngeVoice framework code is released under the Apache License 2.0. See `../LICENSE`.
 
-- Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+Core integrated upstream projects use Apache License 2.0 terms and retain their own attribution:
 
-Kokoro/Kokoro-82M and MOSS-TTS-Nano/OpenMOSS assets remain under their upstream licenses. See `../THIRD_PARTY_NOTICES.md` for attribution details.
+- Kokoro / `hexgrad/Kokoro-82M-v1.1-zh` — Apache License 2.0
+- MOSS-TTS-Nano / `OpenMOSS/MOSS-TTS-Nano` — Apache License 2.0
+- ZipVoice / `k2-fsa/ZipVoice` — Apache License 2.0; vendored upstream license preserved at `../vendor/ZipVoice/LICENSE`
 
-When redistributing Docker images or derived packages, preserve upstream license files included by the upstream projects as well as this notice.
+Additional runtime assets retain their own upstream terms; for example, `charactr/vocos-mel-24khz` is recorded as MIT-licensed in `../THIRD_PARTY_NOTICES.md`.
+
+When redistributing Docker images or derived packages, preserve `LICENSE`, `THIRD_PARTY_NOTICES.md`, `ACKNOWLEDGEMENTS.md`, and upstream license files bundled or downloaded by the integration.

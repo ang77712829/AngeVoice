@@ -181,40 +181,41 @@ def test_update_checker_reports_new_release_without_auto_update():
     assert status["auto_update"] is False
 
 
-def test_v266_version_and_fnos_wizards_expose_single_service_variable_modes_and_safe_default_warning():
+def test_v266_version_and_fnos_wizards_expose_compose_profile_modes_and_safe_default_warning():
     from kokoro_tts import __version__
     assert __version__ == "2.6.6"
     root = Path(__file__).resolve().parents[1]
     install = json.loads((root / "packaging/fnos/AngeVoice/wizard/install").read_text(encoding="utf-8"))
     text = json.dumps(install, ensure_ascii=False)
     assert "标准 GPU" in text and "legacy-gpu" in text and "CPU" in text
-    assert "wizard_run_mode" in text and "COMPOSE_PROFILES" not in text
+    assert "COMPOSE_PROFILES" in text and "wizard_run_mode" not in text
     assert "admin123" in text and "公网暴露前必须完成修改" in text
     compose = (root / "packaging/fnos/AngeVoice/app/docker/docker-compose.yaml").read_text(encoding="utf-8")
-    assert compose.count("  angevoice:") == 1
-    assert "  angevoice-gpu:" not in compose and "  angevoice-legacy-gpu:" not in compose
-    assert "${ANGEVOICE_FNOS_IMAGE:-ghcr.io/ang77712829/angevoice-cpu:latest}" in compose
+    for profile in ("cpu", "gpu", "legacy-gpu"):
+        assert f'profiles: ["{profile}"]' in compose
+        assert f"angevoice-{profile}:latest" in compose
     assert "${wizard_admin_password:-admin123}" in compose
-    assert "${TRIM_PKGVAR}/credentials:/app/credentials" in compose
-    assert "${TRIM_PKGVAR}/prompts:/app/prompts" in compose
+    assert compose.count("${TRIM_PKGVAR}/credentials:/app/credentials") == 3
+    assert compose.count("${TRIM_PKGVAR}/prompts:/app/prompts") == 3
 
 
-
-
-def test_v266_fnos_is_single_service_variable_routed_and_release_workflow_uploads_fpk():
+def test_v266_fnos_is_one_compose_file_direct_profile_routed_and_release_workflow_uploads_fpk():
     root = Path(__file__).resolve().parents[1]
     compose = (root / "packaging/fnos/AngeVoice/app/docker/docker-compose.yaml").read_text(encoding="utf-8")
     install = (root / "packaging/fnos/AngeVoice/wizard/install").read_text(encoding="utf-8")
-    mode_writer = (root / "packaging/fnos/AngeVoice/cmd/_mode_env.sh").read_text(encoding="utf-8")
+    callback = (root / "packaging/fnos/AngeVoice/cmd/install_callback").read_text(encoding="utf-8")
     workflow = (root / ".github/workflows/container.yml").read_text(encoding="utf-8")
-    assert compose.count("  angevoice:") == 1
-    assert "profiles:" not in compose and "COMPOSE_PROFILES" not in compose
-    assert "wizard_run_mode" in install and "COMPOSE_PROFILES" not in install
-    assert "angevoice-cpu:latest" in mode_writer and "angevoice-gpu:latest" in mode_writer
-    assert "angevoice-legacy-gpu:latest" in mode_writer
+    for profile in ("cpu", "gpu", "legacy-gpu"):
+        assert f'profiles: ["{profile}"]' in compose
+        assert f"angevoice-{profile}:latest" in compose
+    assert "COMPOSE_PROFILES" in install and "wizard_run_mode" not in install
+    assert "COMPOSE_PROFILES" in callback and "_mode_env" not in callback
+    assert not (root / "packaging/fnos/AngeVoice/cmd/_mode_env.sh").exists()
+    assert not (root / "packaging/fnos/AngeVoice/app/docker/.env").exists()
     assert "platforms: linux/amd64,linux/arm64" in workflow
     assert "Build fnOS FPK package and source archive" in workflow and '"dist/AngeVoice_v${VERSION}.fpk"' in workflow
     assert "release-assets:" in workflow
     assert "gh release upload" in workflow
     assert "scripts/build_source_release_zip.py" in workflow
     assert (root / "scripts/build_source_release_zip.py").exists()
+

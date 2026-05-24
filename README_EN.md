@@ -6,7 +6,7 @@ English | [中文](README.md) | [Documentation index](docs/README.md)
 
 [![CI](https://github.com/ang77712829/AngeVoice/actions/workflows/ci.yml/badge.svg)](https://github.com/ang77712829/AngeVoice/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
 ## One-command install (recommended)
 
@@ -77,7 +77,7 @@ Good fits:
 - Web apps that need segment playback, stop generation, and batch ZIP export
 - CPU, NVIDIA GPU, and legacy/conservative CUDA environments
 
-> Model source: the default engine is built on Kokoro v1.1 / Kokoro-82M Chinese. MOSS-TTS-Nano integration uses the official OpenMOSS runtime code. Model copyright, license, and restrictions follow upstream repositories.
+> Core upstream projects: the default engine is built on Kokoro v1.1 / Kokoro-82M Chinese; MOSS-TTS-Nano uses the official OpenMOSS runtime; ZipVoice provides zero-shot voice cloning. All three core upstream projects use the Apache License 2.0; see `THIRD_PARTY_NOTICES.md` and `ACKNOWLEDGEMENTS.md` for attribution.
 
 ## Studio preview
 
@@ -437,8 +437,8 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [Multi-Model Runtime](docs/MODEL_RUNTIME.md)
 - [Legacy GPU Deployment](docker/legacy-gpu/README.md)
 
-## License
+## License and acknowledgements
 
-AngeVoice project code is MIT.
-Kokoro and MOSS-TTS-Nano remain under their upstream licenses.
-See `THIRD_PARTY_NOTICES.md` and `ACKNOWLEDGEMENTS.md`.
+AngeVoice is released under the [Apache License 2.0](LICENSE). Its core model/runtime integrations are built on [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), [MOSS-TTS-Nano](https://github.com/OpenMOSS/MOSS-TTS-Nano), and [ZipVoice](https://github.com/k2-fsa/ZipVoice), each used under its upstream Apache License 2.0 terms. Other dependencies and runtime-downloaded assets remain subject to their own licenses.
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).

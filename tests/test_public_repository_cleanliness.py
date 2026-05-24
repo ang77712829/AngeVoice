@@ -31,13 +31,12 @@ def test_public_markdown_links_resolve_within_source_tree():
                 assert destination.exists(), f"{path.relative_to(ROOT)} -> {target}"
 
 
-def test_runtime_templates_use_latest_images_and_fnos_has_safe_default_mode_file():
+def test_runtime_templates_use_latest_images_and_fnos_uses_pre_start_profile_routing():
     image_files = [
         ROOT / "docker/cpu/docker-compose.yml",
         ROOT / "docker/gpu/docker-compose.yml",
         ROOT / "docker/legacy-gpu/docker-compose.yml",
         ROOT / "packaging/fnos/AngeVoice/app/docker/docker-compose.yaml",
-        ROOT / "packaging/fnos/AngeVoice/cmd/_mode_env.sh",
     ]
     for path in image_files:
         text = path.read_text(encoding="utf-8")
@@ -45,6 +44,10 @@ def test_runtime_templates_use_latest_images_and_fnos_has_safe_default_mode_file
         for line in text.splitlines():
             if "angevoice-" in line and "ghcr.io/" in line:
                 assert ":latest" in line, f"{path.relative_to(ROOT)}: {line}"
-    mode_defaults = (ROOT / "packaging/fnos/AngeVoice/app/docker/.env").read_text(encoding="utf-8")
-    assert "angevoice-cpu:latest" in mode_defaults
-    assert "PASSWORD" not in mode_defaults and "API_KEY" not in mode_defaults
+    compose = (ROOT / "packaging/fnos/AngeVoice/app/docker/docker-compose.yaml").read_text(encoding="utf-8")
+    for profile in ("cpu", "gpu", "legacy-gpu"):
+        assert f'profiles: ["{profile}"]' in compose
+    install = (ROOT / "packaging/fnos/AngeVoice/wizard/install").read_text(encoding="utf-8")
+    assert "COMPOSE_PROFILES" in install
+    assert not (ROOT / "packaging/fnos/AngeVoice/app/docker/.env").exists()
+

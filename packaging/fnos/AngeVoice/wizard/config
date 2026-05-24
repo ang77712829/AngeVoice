@@ -21,8 +21,8 @@
       },
       {
         "type": "radio",
-        "field": "wizard_run_mode",
-        "label": "运行模式（由单一 Docker 服务按变量选择镜像）",
+        "field": "COMPOSE_PROFILES",
+        "label": "运行模式（由 docker-project 启动前直接选择）",
         "initValue": "cpu",
         "options": [
           {

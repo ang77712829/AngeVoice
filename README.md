@@ -1,12 +1,12 @@
 # AngeVoice
 
-> 轻量级中文 TTS 自托管服务。默认使用 Kokoro v1.1 中文模型，可按需切换 MOSS-TTS-Nano；提供 OpenAI 兼容 API、WebSocket 流式、Studio Web UI、浏览器录音、通用音色克隆与管理、批量合成、缓存、统计和 Docker CPU/GPU/老显卡部署。
+> 轻量级中文 TTS 自托管服务。默认使用 Kokoro v1.1 中文模型，可按需切换 MOSS-TTS-Nano 与 ZipVoice；提供 OpenAI 兼容 API、WebSocket 流式、Studio Web UI、浏览器录音、通用音色克隆与管理、批量合成、缓存、统计和 Docker CPU/GPU/老显卡部署。
 
 [English](README_EN.md) | 中文 | [文档目录](docs/README.md)
 
 [![CI](https://github.com/ang77712829/AngeVoice/actions/workflows/ci.yml/badge.svg)](https://github.com/ang77712829/AngeVoice/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
 ## 一键安装（推荐普通用户）
 
@@ -129,7 +129,7 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 - 需要逐段播放、停止生成、批量导出 ZIP 的 Web 应用
 - CPU、NVIDIA GPU、老架构 GPU（如 Tesla P4）/ 保守 CUDA 环境
 
-> 模型来源：默认引擎基于 Kokoro v1.1 / Kokoro-82M 中文模型；MOSS-TTS-Nano 集成使用 OpenMOSS 官方运行时代码。模型版权、许可证与限制请以上游仓库为准。
+> 核心上游：默认引擎基于 Kokoro v1.1 / Kokoro-82M 中文模型；MOSS-TTS-Nano 集成使用 OpenMOSS 官方运行时；ZipVoice 集成用于零样本音色克隆。三项核心上游均采用 Apache License 2.0，来源与致谢见 `THIRD_PARTY_NOTICES.md` 与 `ACKNOWLEDGEMENTS.md`。
 
 ## Studio 预览
 
@@ -506,9 +506,9 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 - [MOSS 音频听感排障](docs/MOSS_AUDIO_QUALITY.md)
 - [老架构 GPU 部署说明](docker/legacy-gpu/README.md)
 
-## License
+## 开源许可与致谢
 
-AngeVoice project code is MIT.
-Kokoro and MOSS-TTS-Nano remain under their upstream licenses.
-See `THIRD_PARTY_NOTICES.md` and `ACKNOWLEDGEMENTS.md`.
+AngeVoice 以 [Apache License 2.0](LICENSE) 开源。核心模型与运行时集成来自 [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M)、[MOSS-TTS-Nano](https://github.com/OpenMOSS/MOSS-TTS-Nano) 与 [ZipVoice](https://github.com/k2-fsa/ZipVoice)，三项核心上游均按其 Apache License 2.0 条款使用。其他依赖和运行时下载资产仍遵循各自许可证。
+
+详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。
 

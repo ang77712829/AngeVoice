@@ -129,16 +129,23 @@ def test_admin_can_persist_new_credentials_and_download_redacted_diagnostics(mon
 
 
 
-def test_fnos_final_package_uses_single_service_variable_routing_for_v266():
+def test_fnos_final_package_uses_one_compose_file_with_pre_start_profile_routing_for_v266():
     root = Path(__file__).resolve().parents[1]
     guide = (root / "docs/FNOS_FPK.md").read_text(encoding="utf-8")
     manifest = (root / "packaging/fnos/AngeVoice/manifest").read_text(encoding="utf-8")
     compose = (root / "packaging/fnos/AngeVoice/app/docker/docker-compose.yaml").read_text(encoding="utf-8")
-    mode_writer = (root / "packaging/fnos/AngeVoice/cmd/_mode_env.sh").read_text(encoding="utf-8")
-    assert "单一 Docker 服务配置" in guide and "app/docker/docker-compose.yaml" in guide and "wizard_run_mode=cpu | gpu | legacy-gpu" in guide
+    install_callback = (root / "packaging/fnos/AngeVoice/cmd/install_callback").read_text(encoding="utf-8")
+    assert "一个固定的 `app/docker/docker-compose.yaml`" in guide
+    assert "COMPOSE_PROFILES=cpu | gpu | legacy-gpu" in guide
     assert "version               = 2.6.6" in manifest
-    assert compose.count("  angevoice:") == 1
-    assert "profiles:" not in compose and "COMPOSE_PROFILES" not in compose
-    assert "${ANGEVOICE_FNOS_IMAGE:-ghcr.io/ang77712829/angevoice-cpu:latest}" in compose
-    assert "ghcr.io/ang77712829/angevoice-gpu:latest" in mode_writer
-    assert "ZIPVOICE_EXECUTION_PROVIDER" in compose and "ANGEVOICE_FNOS_ZIPVOICE_PROVIDER" in compose
+    for profile in ("cpu", "gpu", "legacy-gpu"):
+        assert f'profiles: ["{profile}"]' in compose
+        assert f"ghcr.io/ang77712829/angevoice-{profile}:latest" in compose
+    assert "${wizard_admin_password:-admin123}" in compose
+    assert "ZIPVOICE_EXECUTION_PROVIDER" in compose and "zipvoice" in compose
+    assert "COMPOSE_PROFILES" in install_callback
+    assert "_mode_env" not in install_callback
+    fnos_env = (root / "packaging/fnos/AngeVoice/app/docker/angevoice.env").read_text(encoding="utf-8")
+    assert "不包含真实 API Key 或可登录默认密码" not in fnos_env
+    assert "首次进入默认凭据在下方明示" in fnos_env
+

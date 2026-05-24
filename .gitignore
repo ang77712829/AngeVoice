@@ -50,9 +50,6 @@ htmlcov/
 # Tracked public configuration templates; never place real secrets in these files.
 # .env.dev, .env.staging, .env.prod and .env.example are intentionally included.
 
-# Non-sensitive fnOS mode defaults required by the single-service package template.
-!packaging/fnos/AngeVoice/app/docker/.env
-
 # Internal handoff and validation materials are not part of the public repository.
 docs/delivery/
 docs/internal/

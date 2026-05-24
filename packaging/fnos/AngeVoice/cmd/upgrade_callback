@@ -1,9 +1,9 @@
 #!/bin/bash
-# AngeVoice fnOS 升级回调：保留数据并根据升级向导选项更新单服务运行模式变量。
+# 升级后处理：持久化数据保留；新版 compose 在启动前直接使用升级向导透传的 COMPOSE_PROFILES。
 set -eu
-. "$(dirname "$0")/_mode_env.sh"
-MODE="${wizard_run_mode:-cpu}"
-mkdir -p "${TRIM_PKGVAR}/models" "${TRIM_PKGVAR}/outputs" "${TRIM_PKGVAR}/prompts" "${TRIM_PKGVAR}/credentials" "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/logs"
-angevoice_write_mode_env "$MODE"
-echo "[AngeVoice] 升级完成：mode=${MODE}；模型、profiles、输出、凭据与运行配置目录均已保留。"
+PROFILE="${COMPOSE_PROFILES:-cpu}"
+case "$PROFILE" in cpu|gpu|legacy-gpu) ;; *) exit 1 ;; esac
+mkdir -p "${TRIM_PKGVAR}/models" "${TRIM_PKGVAR}/outputs" "${TRIM_PKGVAR}/prompts" \
+  "${TRIM_PKGVAR}/credentials" "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/logs"
+echo "[AngeVoice] 升级完成：profile=${PROFILE}；模型、音色、输出、凭据与运行配置目录均已保留。"
 exit 0

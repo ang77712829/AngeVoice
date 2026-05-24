@@ -62,6 +62,11 @@ def test_container_workflow_builds_arm64_cpu_and_publishes_latest_only_for_relea
     smoke = (_root() / ".github/workflows/docker-smoke.yml").read_text(encoding="utf-8")
     assert "cpu-arm64-build" in smoke
     assert "platforms: linux/arm64" in smoke
+    cpu_dockerfile = (_root() / "docker/cpu/Dockerfile").read_text(encoding="utf-8")
+    assert '"torch==${PYTORCH_VERSION}"' in cpu_dockerfile
+    assert '"torchaudio==${PYTORCH_VERSION}"' in cpu_dockerfile
+    assert '"torch==${PYTORCH_VERSION}+cpu"' not in cpu_dockerfile
+    assert '"torchaudio==${PYTORCH_VERSION}+cpu"' not in cpu_dockerfile
 
 
 def test_health_and_diagnostics_identify_runtime_deployment_profile(tmp_path):

@@ -23,10 +23,14 @@
 - 修正生产环境 API Key 与运行配置持久化路径，凭据与配置不再落入输出目录。
 - 加固 WebSocket 失败统计与关闭边界、运行配置原子持久化、请求历史清理和空请求校验；根环境变量模板保持纯注释示例，避免复制时意外启用选项。
 
+### 开源许可与致谢
+- AngeVoice 项目代码许可由 MIT 统一调整为 Apache License 2.0，与 Kokoro、MOSS-TTS-Nano、ZipVoice 三项核心上游集成对齐。
+- 补齐 ZipVoice 致谢与第三方许可归属说明；其他运行时资产仍遵循各自许可证。
+
 ### Docker、ARM64 与 fnOS/FPK
 - CPU/GPU/Legacy 三画像统一持久化契约；标准 GPU 为 Tesla P4 主路径。
 - GitHub Actions 增加 CPU `linux/arm64` 构建，CPU 镜像支持 amd64/arm64 多架构发布。
-- fnOS/FPK 改为单一静态 Compose 服务 + 安装向导 `wizard_run_mode` 变量选择 CPU / 标准 GPU / Legacy GPU 镜像 的包装结构。
+- fnOS/FPK 采用一个静态 `docker-compose.yaml`，安装向导通过 `COMPOSE_PROFILES` 在 docker-project 创建容器前直接选择 CPU / 标准 GPU / Legacy GPU 服务与镜像，并共享模型、音色、凭据及运行配置持久化目录。
 
 
 All notable changes to AngeVoice TTS service will be documented in this file.

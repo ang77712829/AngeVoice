@@ -20,10 +20,12 @@ ARG INSTALL_ZIPVOICE=true
 ENV MOSS_TTS_NANO_PATH=/opt/MOSS-TTS-Nano
 ENV ZIPVOICE_REPO_PATH=/opt/ZipVoice
 
-# CPU 版 PyTorch。AngeVoice/MOSS 推理不需要 torchvision，保持镜像更轻。
+# CPU 版 PyTorch。官方 CPU index 的安装命令使用不带 +cpu 后缀的版本约束；
+# 这样同一 Dockerfile 可同时解析 linux/amd64 与 linux/arm64 wheel。
+# AngeVoice/MOSS 推理不需要 torchvision，保持镜像更轻。
 RUN python3 -m pip install --no-cache-dir \
-    "torch==${PYTORCH_VERSION}+cpu" \
-    "torchaudio==${PYTORCH_VERSION}+cpu" \
+    "torch==${PYTORCH_VERSION}" \
+    "torchaudio==${PYTORCH_VERSION}" \
     --index-url https://download.pytorch.org/whl/cpu
 
 # MOSS-TTS-Nano CPU ONNX 推理运行时。MOSS-TTS-Nano 官方仓库是推理代码来源，

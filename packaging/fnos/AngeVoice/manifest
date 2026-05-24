@@ -15,5 +15,5 @@ desktop_uidir         = ui
 desktop_applaunchname = AngeVoice.Application
 service_port          = 8101
 checkport             = false
-changelog             = v2.6.6：完成 ZipVoice CPU/CUDA 与自动回退、通用音色管理和网页录音、后台安全与更新提示、ARM64 CPU 镜像，以及 fnOS 单服务变量驱动的 CPU/GPU/Legacy 包装。
+changelog             = v2.6.6：完成 ZipVoice CPU/CUDA 与自动回退、通用音色管理、管理后台安全与更新提示、ARM64 CPU 镜像；fnOS 使用单一 Compose 文件并由向导在启动前直接选择 CPU/GPU/Legacy 服务。
 checksum                   = generated_at_package_build
