@@ -7,6 +7,7 @@ release can let the operating system reliably reclaim CPU RSS and GPU memory.
 
 from __future__ import annotations
 
+from contextlib import suppress
 import multiprocessing as mp
 import queue
 import threading
@@ -246,14 +247,26 @@ class EngineProcessClient:
         return self._result_queue
 
     def _discard_queues(self) -> None:
-        if self._result_queue is not None:
+        result_queue = self._result_queue
+        command_queue = self._command_queue
+
+        if result_queue is not None:
             while True:
                 try:
-                    self._result_queue.get_nowait()
+                    result_queue.get_nowait()
                 except queue.Empty:
                     break
                 except Exception:
                     break
+
+        for managed_queue in (command_queue, result_queue):
+            if managed_queue is None:
+                continue
+            with suppress(Exception):
+                managed_queue.close()
+            with suppress(Exception):
+                managed_queue.join_thread()
+
         self._command_queue = None
         self._result_queue = None
 
