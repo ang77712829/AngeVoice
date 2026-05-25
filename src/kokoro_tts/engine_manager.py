@@ -225,6 +225,15 @@ class EngineManager:
                         self._pending_rebuild.add(target_id)
                         logger.warning("执行待重建失败，保留待重建标记：%s", target_id, exc_info=True)
 
+    def _unload_other_loaded_models(self, target_id: str) -> None:
+        """Keep one warm runtime by default to protect NAS RAM/VRAM budgets."""
+        for model_id, other in list(self._engines.items()):
+            if model_id == target_id or not bool(getattr(other, "is_loaded", False)):
+                continue
+            if self._active_count(model_id) > 0:
+                raise HTTPException(status_code=409, detail=f"Model {model_id} is busy; cannot wake {target_id} yet")
+            self.unload_model(model_id, force=False, raise_if_busy=False)
+
     def get_engine(self, model_id: str | None = None, *, load: bool = True, provider_hint: str | None = None):
         resolution = self.resolve_model_id(model_id)
         target_id = resolution.canonical_id
@@ -232,6 +241,11 @@ class EngineManager:
         self._ensure_resolution_enabled(resolution)
         with self._lock:
             engine = self._engines.get(target_id)
+            needs_load = bool(load and (engine is None or not bool(getattr(engine, "is_loaded", False))))
+            unloaded_for_target = False
+            if needs_load:
+                self._unload_other_loaded_models(target_id)
+                unloaded_for_target = True
             if engine is not None and target_id == "moss" and effective_provider_hint:
                 current_provider = str(getattr(engine, "requested_provider", "") or "").strip().lower()
                 if current_provider and current_provider != effective_provider_hint:
@@ -239,6 +253,10 @@ class EngineManager:
                         raise HTTPException(status_code=409, detail="MOSS provider switch is busy")
                     self.drop_model(target_id, force=False, raise_if_busy=True)
                     engine = None
+                    needs_load = bool(load)
+            if needs_load and engine is None and not unloaded_for_target:
+                self._unload_other_loaded_models(target_id)
+
             if engine is not None and (getattr(engine, "is_healthy", True) is False):
                 logger.info("丢弃异常模型实例后重新创建：%s", target_id)
                 self.drop_model(target_id, force=True, raise_if_busy=False)
@@ -267,6 +285,18 @@ class EngineManager:
                     raise
                 self._touch_model(target_id)
             return engine
+
+    def warm_model(self, model_id: str, *, provider_hint: str | None = None) -> dict[str, Any]:
+        """Load a model into memory without changing the selected runtime model."""
+        resolution = self.resolve_model_id(model_id)
+        target_id = resolution.canonical_id
+        self._ensure_resolution_enabled(resolution)
+        engine = self.get_engine(
+            target_id,
+            load=True,
+            provider_hint=provider_hint or resolution.provider_hint,
+        )
+        return self._engine_metadata(engine)
 
     def unload_model(self, model_id: str, *, force: bool = False, raise_if_busy: bool = True) -> bool:
         target_id = self.normalize_model_id(model_id)
@@ -421,6 +451,10 @@ class EngineManager:
             "idle_unload_current": bool(getattr(self.cfg, "model_idle_unload_current", True)),
             "idle_unloaded": idle_unloaded,
             "wakeable": True,
+            "process_isolated": bool(getattr(self.cfg, f"{spec.id}_process_isolation_enabled", False)) if spec.id in {"kokoro", "moss", "zipvoice"} else False,
+            "process_alive": False,
+            "worker_pid": None,
+            "release_guarantee": "worker_exit" if bool(getattr(self.cfg, f"{spec.id}_process_isolation_enabled", False)) else "in_process_best_effort",
             "last_generation_seconds": None,
             "last_audio_seconds": None,
             "last_rtf": None,

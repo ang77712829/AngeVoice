@@ -41,11 +41,26 @@ def make_verify_api_key(cfg: TTSConfig):
 
 
 async def verify_ws_key(cfg: TTSConfig, websocket: WebSocket, token: str = "") -> bool:
-    """Validate a WebSocket token/header pair against ``KOKORO_API_KEY``."""
+    """Validate WebSocket credentials against ``KOKORO_API_KEY``.
+
+    Query-string tokens and Authorization Bearer tokens are treated as
+    alternative credentials so mixed clients/proxies remain compatible during
+    token rotation and reconnect flows.
+    """
     expected_key = effective_api_key(cfg)
     if not expected_key:
         return True
+
     auth = websocket.headers.get("authorization", "")
     header_token = _extract_bearer_token(auth)
-    supplied = token or header_token
-    return hmac.compare_digest(supplied, expected_key)
+
+    supplied_tokens = []
+    if token:
+        supplied_tokens.append(token)
+    if header_token and header_token not in supplied_tokens:
+        supplied_tokens.append(header_token)
+
+    if not supplied_tokens:
+        return False
+
+    return any(hmac.compare_digest(candidate, expected_key) for candidate in supplied_tokens)
