@@ -40,7 +40,7 @@ def test_runtime_templates_use_latest_images_and_fnos_uses_verified_profile_rout
     ]
     for path in image_files:
         text = path.read_text(encoding="utf-8")
-        assert ":2.6.601" not in text
+        assert ":2.6.602" not in text
         for line in text.splitlines():
             if "angevoice-" in line and "ghcr.io/" in line:
                 assert ":latest" in line, f"{path.relative_to(ROOT)}: {line}"
