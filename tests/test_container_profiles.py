@@ -56,7 +56,7 @@ def test_container_workflow_builds_arm64_cpu_and_publishes_latest_only_for_relea
     assert "workflow_dispatch" in workflow
     assert "type=raw,value=latest,enable=${{ steps.publish.outputs.release == 'true' }}" in workflow
     assert "startsWith(github.ref, 'refs/tags/v')" in workflow
-    assert "Branch push built the images without publishing them." in workflow
+    assert "Branch push built images without publishing" in workflow
     assert "platforms: linux/amd64,linux/arm64" in workflow
     assert "platforms: ${{ matrix.platforms }}" in workflow
     smoke = (_root() / ".github/workflows/docker-smoke.yml").read_text(encoding="utf-8")
