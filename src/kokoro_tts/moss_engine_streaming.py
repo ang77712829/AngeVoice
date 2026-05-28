@@ -203,11 +203,12 @@ class MossStreamingMixin:
                 if cancel_check is not None:
                     try:
                         if bool(cancel_check()):
+                            # 只设 cancel_flag 通知 worker 子进程在帧间隙停止推理，
+                            # 不杀进程，模型保持加载。下一个请求可直接复用。
+                            # 只有 drain 超时或 worker 真的 exit 才走 kill 路径。
                             if self._process_client is not None:
-                                self._process_client.close(kill=True)
-                                self._process_client = None
-                            # 用户取消不是 runtime 故障，但 worker 已被杀掉，下一次请求需要重载。
-                            self._loaded = False
+                                self._process_client.soft_cancel()
+                            logger.info("MOSS 隔离流式取消：已通知 worker 停止推理，保持进程存活")
                             break
                     except Exception:
                         logger.debug("MOSS 隔离流式 cancel_check 失败", exc_info=True)

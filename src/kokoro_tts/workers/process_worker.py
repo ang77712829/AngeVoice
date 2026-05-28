@@ -243,15 +243,19 @@ class EngineProcessClient:
                         )
                     continue
                 deadline = time.monotonic() + idle_timeout
-                # 收到属于当前请求的帧，清除 drain 状态。
-                drain_deadline = None
+                # done 消息时清除 drain 状态，确保 cancel 后 drain 窗口持续到最后一帧排空。
+                if result.kind == "done":
+                    drain_deadline = None
+                    return
+                # 收到当前请求的帧，但未 done，保持 drain 状态继续排空。
+                # drain_deadline 仅在 done 时清除，由 drain 超时兜底保护。
                 if result.kind == "event":
                     yield result.payload
-                elif result.kind == "done":
-                    return
                 elif result.kind == "error":
+                    drain_deadline = None
                     raise RuntimeError(str(result.payload))
                 else:
+                    drain_deadline = None
                     raise RuntimeError(f"{self.engine_id} worker returned unexpected stream message: {result.kind}")
 
     def _send(self, command: str, payload: dict) -> str:

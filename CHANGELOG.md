@@ -17,7 +17,7 @@
 ### 📝 代码质量
 
 - 全量英文注释中文化，技术术语保留英文并加括号。
-- Docker 环境变量 `MOSS_PROCESS_KILL_GRACE_SECONDS` 和 `ANGEVOICE_ENGINE_PROCESS_KILL_GRACE_SECONDS` 默认值从 2 调整为 5。
+- kill 模式下进程终止宽限期从 2 秒提升至最少 5 秒，确保 CUDA 上下文有充足时间销毁，降低 GPU 显存泄漏风险（环境变量 `MOSS_PROCESS_KILL_GRACE_SECONDS` / `ANGEVOICE_ENGINE_PROCESS_KILL_GRACE_SECONDS` 仍可自定义，但 kill 路径下限为 5 秒）。
 
 ## [2.6.601] - 2026-05-25
 

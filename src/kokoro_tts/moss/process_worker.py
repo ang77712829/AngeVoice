@@ -51,6 +51,18 @@ class MossProcessClient:
         # 但不杀进程。worker 在每次新命令开始时重置为 0。
         self._cancel_flag = self._ctx.Value("b", 0)
 
+    def soft_cancel(self) -> None:
+        """通知 worker 子进程在帧间隙停止推理，不杀进程。
+
+        主进程调用此方法后，worker 在当前帧推理完成后检查共享内存标志
+        并停止生成后续帧，进程和已加载的模型保持存活。
+        """
+        try:
+            self._cancel_flag.value = 1
+        except Exception:
+            if self.logger:
+                self.logger.debug("设置 cancel_flag 失败", exc_info=True)
+
     @property
     def alive(self) -> bool:
         process = self._process
@@ -206,13 +218,16 @@ class MossProcessClient:
                         self.logger.debug("丢弃过期 MOSS worker 流式消息：%s", result.request_id)
                     continue
                 deadline = time.monotonic() + idle_timeout
-                # 收到属于当前请求的帧，清除 drain 状态。
-                drain_deadline = None
+                # done 消息时清除 drain 状态，确保 cancel 后 drain 窗口持续到最后一帧排空。
+                if result.kind == "done":
+                    drain_deadline = None
+                    return
+                # 收到当前请求的帧，但未 done，保持 drain 状态继续排空。
+                # drain_deadline 仅在 done 时清除，由 drain 超时兜底保护。
                 if result.kind == "event":
                     yield result.payload
                     continue
-                if result.kind == "done":
-                    return
+                drain_deadline = None
                 if result.kind == "error":
                     raise RuntimeError(str(result.payload))
                 raise RuntimeError(f"MOSS worker returned unexpected stream message: {result.kind}")
