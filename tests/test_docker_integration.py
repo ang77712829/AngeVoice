@@ -225,7 +225,7 @@ class TestWebSocketStructure:
         from fastapi.testclient import TestClient
 
         mock_engine.synthesize_stream.return_value = iter([
-            {"type": "error", "message": "Unsupported format: mp3"},
+            {"type": "error", "message": "不支持的流式格式：mp3"},
         ])
 
         with TestClient(app_with_mock) as client:

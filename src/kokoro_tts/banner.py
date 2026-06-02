@@ -7,6 +7,7 @@ import platform
 from pathlib import Path
 
 from . import __version__
+from .config_ids import MOSS_CPU_MODEL_IDS, MOSS_CUDA_MODEL_IDS, MOSS_GENERIC_MODEL_IDS
 from .kokoro_assets import default_moss_model_dir
 
 
@@ -25,6 +26,22 @@ def _safe(value) -> str:
     return text if text else "-"
 
 
+def _public_model_id(value) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in MOSS_GENERIC_MODEL_IDS or raw in MOSS_CPU_MODEL_IDS or raw in MOSS_CUDA_MODEL_IDS:
+        return "moss"
+    return raw or "-"
+
+
+def _public_model_list(values) -> str:
+    result: list[str] = []
+    for value in values or []:
+        public_id = _public_model_id(value)
+        if public_id != "-" and public_id not in result:
+            result.append(public_id)
+    return ",".join(result) if result else "-"
+
+
 def format_startup_banner(config) -> str:
     """生成服务启动时打印的项目信息。"""
 
@@ -40,8 +57,8 @@ def format_startup_banner(config) -> str:
         "-" * 72,
         f">> Python       : {platform.python_version()}",
         f">> Listen       : {_safe(getattr(config, 'host', '-'))}:{_safe(getattr(config, 'port', '-'))}",
-        f">> DefaultModel : {_safe(getattr(config, 'default_model', '-'))}",
-        f">> Enabled      : {','.join(getattr(config, 'enabled_models', []) or [])}",
+        f">> DefaultModel : {_public_model_id(getattr(config, 'default_model', '-'))}",
+        f">> Enabled      : {_public_model_list(getattr(config, 'enabled_models', []))}",
         f">> ModelsRoot   : {_safe(os.environ.get('ANGEVOICE_MODELS_ROOT', '/app/models'))}",
         f">> KokoroDir    : {_safe(model_dir)}",
         f">> MossDir      : {_safe(moss_model_dir)}",

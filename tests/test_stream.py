@@ -147,7 +147,7 @@ class TestSynthesizeStream:
         results = list(engine.synthesize_stream("你好", fmt="mp3"))
         assert len(results) == 1
         assert results[0]["type"] == "error"
-        assert "Unsupported format" in results[0]["message"]
+        assert "不支持的流式格式" in results[0]["message"]
 
     def test_stream_yields_segments(self):
         from kokoro_tts.engine import TTSEngine

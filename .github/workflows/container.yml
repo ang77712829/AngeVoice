@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Push manually built images to GHCR + Docker Hub'
+        description: 'Push manually built images to Docker Hub + GHCR'
         required: false
         default: 'false'
         type: choice
@@ -108,8 +108,8 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
+            ang77712829/${{ matrix.image }}
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}
           tags: |
             type=raw,value=latest,enable=${{ steps.publish.outputs.release == 'true' }}
             type=raw,value=${{ steps.version.outputs.v_version }},enable=${{ steps.publish.outputs.release == 'true' }}
@@ -130,7 +130,7 @@ jobs:
 
       - name: Explain branch build mode
         if: steps.publish.outputs.enabled != 'true'
-        run: echo "Branch push built images without publishing. Tag v* or manual dispatch pushes to GHCR + Docker Hub."
+        run: echo "Branch push built images without publishing. Tag v* or manual dispatch pushes to Docker Hub + GHCR."
 
   release-assets:
     name: Build fnOS package and source archive

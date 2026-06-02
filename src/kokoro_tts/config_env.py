@@ -133,11 +133,13 @@ INT_ENV: dict[str, IntEnvSpec] = {
     "KOKORO_MAX_QUEUE_LENGTH": IntEnvSpec("max_queue_length", 0),
     "KOKORO_WS_MAX_CONNECTIONS": IntEnvSpec("websocket_max_connections", 0),
     "KOKORO_WS_MAX_MESSAGE_BYTES": IntEnvSpec("websocket_max_message_bytes", 1024),
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_EXIT_CODE": IntEnvSpec("restart_after_idle_unload_exit_code", 0, 255),
 }
 
 FLOAT_ENV: dict[str, FloatEnvSpec] = {
     "KOKORO_DEFAULT_SPEED": FloatEnvSpec("default_speed"),
     "KOKORO_REQUEST_TIMEOUT_SECONDS": FloatEnvSpec("request_timeout_seconds", 1.0),
+    "ANGEVOICE_WEBSOCKET_STREAM_IDLE_TIMEOUT_SECONDS": FloatEnvSpec("websocket_stream_idle_timeout_seconds", 5.0, 3600.0),
     "KOKORO_STREAM_CHUNK_SECONDS": FloatEnvSpec("stream_chunk_seconds", 0.05, 2.0),
     "KOKORO_STREAM_PREBUFFER_SECONDS": FloatEnvSpec("stream_prebuffer_seconds", 0.0, 3.0),
     "ANGEVOICE_MODEL_SWITCH_TIMEOUT_SECONDS": FloatEnvSpec("model_switch_timeout_seconds", 1.0),
@@ -149,7 +151,7 @@ FLOAT_ENV: dict[str, FloatEnvSpec] = {
     "ZIPVOICE_FEAT_SCALE": FloatEnvSpec("zipvoice_feat_scale", 0.001, 10.0),
     "ZIPVOICE_CUDA_MAX_DURATION": FloatEnvSpec("zipvoice_cuda_max_duration", 1.0, 120.0),
     "MOSS_STREAM_CHUNK_SECONDS": FloatEnvSpec("moss_stream_chunk_seconds", 0.05, 2.0),
-    "MOSS_STREAM_PREBUFFER_SECONDS": FloatEnvSpec("moss_stream_prebuffer_seconds", 0.0, 3.0),
+    "MOSS_STREAM_PREBUFFER_SECONDS": FloatEnvSpec("moss_stream_prebuffer_seconds", 0.0, 12.0),
     "MOSS_MAX_CLIP_RATIO": FloatEnvSpec("moss_max_clip_ratio", 0.0, 1.0),
     "MOSS_OUTPUT_TARGET_PEAK": FloatEnvSpec("moss_output_target_peak", 0.1, 1.0),
     "MOSS_OUTPUT_GAIN": FloatEnvSpec("moss_output_gain", 0.1, 2.0),
@@ -160,6 +162,8 @@ FLOAT_ENV: dict[str, FloatEnvSpec] = {
     "MOSS_STREAM_CHUNK_MIN_FLOOR": FloatEnvSpec("moss_stream_chunk_min_floor", 0.01),
     "MOSS_PROCESS_KILL_GRACE_SECONDS": FloatEnvSpec("moss_process_kill_grace_seconds", 0.1, 30.0),
     "ANGEVOICE_ENGINE_PROCESS_KILL_GRACE_SECONDS": FloatEnvSpec("engine_process_kill_grace_seconds", 0.1, 30.0),
+    "ANGEVOICE_ENGINE_PROCESS_STREAM_DRAIN_SECONDS": FloatEnvSpec("engine_process_stream_drain_seconds", 0.1, 60.0),
+    "ANGEVOICE_ENGINE_PROCESS_STREAM_IDLE_TIMEOUT_SECONDS": FloatEnvSpec("engine_process_stream_idle_timeout_seconds", 5.0, 3600.0),
     "MOSS_OUTPUT_EDGE_FADE_MS": FloatEnvSpec("moss_output_edge_fade_ms", 0.0, 20.0),
     "MOSS_TRIM_SILENCE_DB": FloatEnvSpec("moss_trim_silence_db", -90.0, -10.0),
     "MOSS_MAX_SILENCE_MS": FloatEnvSpec("moss_max_silence_ms", 0.0, 5000.0),
@@ -174,6 +178,8 @@ FLOAT_ENV: dict[str, FloatEnvSpec] = {
     "ANGEVOICE_UPDATE_CHECK_CACHE_SECONDS": FloatEnvSpec("update_check_cache_seconds", 0.0, 604800.0),
     "ANGEVOICE_IDLE_TIMEOUT_SECONDS": FloatEnvSpec("model_idle_timeout_seconds", 0.0),
     "ANGEVOICE_IDLE_CHECK_INTERVAL": FloatEnvSpec("model_idle_check_interval", 5.0),
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_DELAY_SECONDS": FloatEnvSpec("restart_after_idle_unload_delay_seconds", 0.0, 3600.0),
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_COOLDOWN_SECONDS": FloatEnvSpec("restart_after_idle_unload_cooldown_seconds", 0.0, 86400.0),
 }
 
 BOOL_ENV: dict[str, str] = {
@@ -214,6 +220,7 @@ BOOL_ENV: dict[str, str] = {
     "KOKORO_TRUST_PROXY_HEADERS": "trust_proxy_headers",
     "KOKORO_PUBLIC_STATUS_ENDPOINTS": "public_status_endpoints",
     "ANGEVOICE_UPDATE_CHECK_ENABLED": "update_check_enabled",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD": "restart_after_idle_unload_enabled",
 }
 
 

@@ -10,13 +10,13 @@
 
 ## 一键安装（推荐普通用户）
 
-服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、Docker/Compose、GitHub、GHCR、Docker Hub 与本机 Docker registry mirror。检测到 NVIDIA GPU 时默认推荐通用 `gpu` 画像；`legacy-gpu` 仅用于 `gpu` 无法启动或 CUDA/cuDNN 不兼容的环境。
+服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、Docker/Compose、GitHub、Docker Hub 与本机 Docker registry mirror。检测到 NVIDIA GPU 时默认推荐通用 `gpu` 画像；`legacy-gpu` 仅用于 `gpu` 无法启动或 CUDA/cuDNN 不兼容的环境。
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/scripts/install.sh)
 ```
 
-如果你在国内网络访问 GitHub 或 GHCR 较慢，可以先下载源码包后执行本地脚本：
+如果你在国内网络访问 GitHub 或 Docker Hub 较慢，可以先下载源码包后执行本地脚本：
 
 ```bash
 git clone https://github.com/ang77712829/AngeVoice.git
@@ -95,7 +95,7 @@ docker compose -f <compose文件> up -d --no-deps --force-recreate xiaozhi-esp32
 带智控台的小智全模块请优先让脚本导入数据库预设。脚本会写入：
 
 - `ai_model_provider`：让智控台“新增模型”的接口类型出现 `angevoice` / `angevoice_stream` / `angevoice_clone`。
-- `ai_model_config`：让“模型配置 → 语音合成”出现 AngeVoice Kokoro、MOSS CPU/CUDA、MOSS clone 等预设。
+- `ai_model_config`：让“模型配置 → 语音合成”出现 AngeVoice Kokoro、MOSS、ZipVoice 与克隆相关预设。
 
 智控台/API 模式下不要把 `selected_module` / `TTS` 本地配置写进 `data/.config.yaml`，否则小智后端会报“既包含智控台配置又包含本地配置”。脚本检测到 `manager-api:` 时会默认跳过本地配置写入，只保留数据库预设。
 
@@ -107,11 +107,22 @@ bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/x
   --prompt-audio ./reference.wav
 ```
 
-MOSS clone 的 `prompt_audio_path` 必须使用小智容器内路径，例如：
+ZipVoice 克隆流式示例：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh) \
+  --mode zipvoice-stream \
+  --prompt-audio ./reference.wav \
+  --prompt-text "参考音频实际朗读文本"
+```
+
+克隆模式的 `prompt_audio_path` 必须使用小智容器内路径，例如：
 
 ```text
 /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
 ```
+
+ZipVoice 还必须填写 `prompt_text`，并且内容要和参考音频实际朗读文本一致。
 
 不要填写宿主机路径，例如 `/vol*/.../xiaozhi-server/data/angevoice_prompts/`。
 
@@ -153,7 +164,7 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 | 服务治理 | 请求 ID、`/health`、`/stats`、`/requests`、超时、并发限制、LRU 缓存 |
 | Docker 画像 | CPU、GPU、老架构 GPU 三套 Compose 画像 |
 | CLI | 推荐 `angevoice`，旧命令 `kokoro-tts` 继续兼容 |
-| 空闲超时释放显存 | 默认 10 分钟无人使用后卸载所有已加载模型（包括当前模型），释放显存/内存并降低 NAS 功耗 |
+| 空闲资源回收 | 默认 10 分钟无人使用后卸载所有已加载模型；可在后台开启“空闲后彻底清理”，让容器在卸载后自动重启一次以释放底层运行时残留 |
 
 ## 快速开始
 
@@ -196,12 +207,12 @@ cd docker/legacy-gpu && sudo docker compose up -d
 
 ### 国内镜像加速
 
-Docker Compose 默认使用 GHCR（`ghcr.io`）拉取镜像。国内网络访问 GHCR 较慢时，可通过 Docker 镜像站加速：
+Docker Compose 默认使用 Docker Hub（`ang77712829/angevoice-*:latest`）拉取镜像。国内网络访问 Docker Hub 较慢时，可通过 Docker 镜像站加速：
 
 ```bash
-# 方案 1：临时使用镜像站拉取（替换 ghcr.io 为镜像站地址）
-docker pull docker.1ms.run/ghcr.io/ang77712829/angevoice-gpu:latest
-docker tag docker.1ms.run/ghcr.io/ang77712829/angevoice-gpu:latest ghcr.io/ang77712829/angevoice-gpu:latest
+# 方案 1：临时使用镜像站拉取（替换 registry-1.docker.io 为镜像站地址）
+docker pull docker.1ms.run/ang77712829/angevoice-gpu:latest
+docker tag docker.1ms.run/ang77712829/angevoice-gpu:latest ang77712829/angevoice-gpu:latest
 
 # 方案 2：配置 Docker daemon 全局镜像加速（推荐）
 # 编辑 /etc/docker/daemon.json，添加：
@@ -420,13 +431,16 @@ environment:
 | `MOSS_APPLY_ANGEVOICE_RULES` | `auto` | MOSS 文本规则：中文为主走完整中文规则，中英文/技术文本保守处理，减少版本号、API、英文缩写读坏 |
 | `MOSS_MIXED_ENGLISH_POLICY` | `translate` | MOSS 中英文混排策略；默认把常见英文词组转成自然中文，减少长停顿、怪声和尾部漂移 |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | CUDA 自检失败时回退 CPU |
-| `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启以降低首包等待；如出现电流音/卡顿可改为 `false` 走质量优先整块生成后分包 |
-| `MOSS_STREAM_PREBUFFER_SECONDS` | `0.75` | MOSS 浏览器流式播放预缓冲，减少老显卡长文本 underflow/断续 |
+| `MOSS_REALTIME_STREAMING_DECODE` | `true` | 是否启用 MOSS 官方逐帧实时解码；默认开启以保持低延迟流式体验，若特定设备出现边界噪声或显存压力，可在后台关闭 |
+| `MOSS_STREAM_PREBUFFER_SECONDS` | `3.0` | MOSS 浏览器流式播放预缓冲，减少老显卡长文本 underflow/断续 |
 | `MOSS_STREAM_QUEUE_MAX_ITEMS` | `8` | MOSS 流式队列深度，避免短抖动直接造成播放断流 |
 | `KOKORO_PROCESS_ISOLATION_ENABLED` | 程序默认 `false`；Docker/fnOS 模板为 `true` | Kokoro 是否在可销毁 Worker 中运行；正式部署默认开启以便释放 RAM/VRAM |
 | `MOSS_PROCESS_ISOLATION_ENABLED` | 程序默认 `false`；Docker/fnOS 模板为 `true` | 是否启用 MOSS 进程级隔离；正式部署模板默认启用，使推理超时后可终止 worker 并自动恢复 |
 | `MOSS_PROCESS_ISOLATION_PROVIDERS` | 程序默认 `cuda`；Docker/fnOS 模板为 `cpu,cuda` | 哪些 provider 走隔离子进程，逗号分隔 |
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | MOSS 超时后终止 worker 的宽限秒数 |
+| `ANGEVOICE_WEBSOCKET_STREAM_IDLE_TIMEOUT_SECONDS` | `120` | WebSocket 流式等待下一帧音频的空闲窗口，避免 MOSS 长文本首帧或分段等待时误断开 |
+| `ANGEVOICE_ENGINE_PROCESS_STREAM_DRAIN_SECONDS` | `30` | 隔离 Worker 取消后等待旧请求自然排空的窗口 |
+| `ANGEVOICE_ENGINE_PROCESS_STREAM_IDLE_TIMEOUT_SECONDS` | `120` | 隔离 Worker 流式请求等待下一帧的空闲窗口，避免慢帧被误判为卡死 |
 | `ZIPVOICE_PROCESS_ISOLATION_ENABLED` | 程序默认 `false`；Docker/fnOS 模板为 `true` | ZipVoice 是否在可销毁 Worker 中运行；NAS/GPU 长驻部署建议保持开启 |
 | `ANGEVOICE_ENGINE_PROCESS_KILL_GRACE_SECONDS` | `2` | Kokoro/ZipVoice Worker 优雅退出等待秒数，超时后终止以释放资源 |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | 拒绝静音、NaN/Inf 或明显 clipping 的 MOSS 自检输出 |
@@ -437,6 +451,10 @@ environment:
 | `MOSS_MAX_SILENCE_MS` | `480` | MOSS 最终音频中连续静音压缩上限，减少 1 秒以上卡顿感 |
 | `ANGEVOICE_IDLE_TIMEOUT_SECONDS` | `600` | 空闲超时自动卸载所有已加载模型（秒），0=禁用 |
 | `ANGEVOICE_IDLE_CHECK_INTERVAL` | `30` | 空闲检查间隔（秒） |
+| `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD` | `false` | 空闲卸载后彻底清理开关；开启后仅在模型因空闲卸载成功且服务完全空闲时退出进程，需 Docker/服务管理器自动拉起 |
+| `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_DELAY_SECONDS` | `3` | 空闲卸载成功后等待多久再退出；等待期间有新请求会取消本次退出 |
+| `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_COOLDOWN_SECONDS` | `1800` | 彻底清理触发冷却时间，防止异常环境中频繁重启 |
+| `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_EXIT_CODE` | `75` | 主动清理退出码，用于日志和运维区分 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.25` | 音频播放余量低阈值（秒），低于此值每次解码 1 帧以尽快出声 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.65` | 音频播放余量中阈值（秒），低于此值每次解码 2 帧 |
 | `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.20` | 音频播放余量高阈值（秒），低于此值每次解码 4 帧，高于此值每次解码 8 帧 |
@@ -472,6 +490,7 @@ environment:
 
 - AngeVoice 不是独立训练的新模型，音质、许可证和语言能力受上游模型影响。
 - Kokoro、MOSS-TTS-Nano 与 ZipVoice 的 Docker/fnOS 正式模板均默认启用可终止的隔离 Worker；默认启动不预载模型，首次生成会显示唤醒/加载提示。手动关闭隔离后，显存可尝试释放，但主机 RAM 不保证恢复到空闲基线。
+- “空闲后彻底清理”默认关闭；只有在空闲卸载成功后才会触发退出，请确认容器使用 `restart: unless-stopped`、`restart: always` 或等效服务管理策略。
 - MOSS 的公开产品名称始终为 `MOSS-TTS-Nano`，旧 `moss-nano-cpu` / `moss-nano-cuda` 仅为兼容输入别名。
 - 长文本依赖分段合成，极长文本建议走批量/任务队列工作流。
 - GPU 场景不建议多 worker 同时加载模型，容易造成显存占用翻倍。
@@ -520,4 +539,3 @@ N=50 BASE_URL=http://127.0.0.1:8101 ./scripts/loop_test.sh
 AngeVoice 以 [Apache License 2.0](LICENSE) 开源；项目版权声明见 [NOTICE](NOTICE)。核心模型与运行时集成来自 [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M)、[MOSS-TTS-Nano](https://github.com/OpenMOSS/MOSS-TTS-Nano) 与 [ZipVoice](https://github.com/k2-fsa/ZipVoice)，三项核心上游均按其 Apache License 2.0 条款使用。其他依赖和运行时下载资产仍遵循各自许可证。
 
 详见 [NOTICE](NOTICE)、[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)。
-

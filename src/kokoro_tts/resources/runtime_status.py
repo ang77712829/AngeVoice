@@ -1,14 +1,18 @@
-"""Runtime resource snapshots and controlled release operations."""
+"""运行时资源快照和受控释放操作。"""
 
 from __future__ import annotations
 
 import gc
 import os
-import resource
 import time
 from typing import TYPE_CHECKING
 
 from ..contracts import RuntimeResourceStatus
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows 无 resource 模块
+    resource = None
 
 if TYPE_CHECKING:
     from ..service_state import ServiceState
@@ -28,6 +32,8 @@ class RuntimeResourceService:
         except (OSError, ValueError, IndexError):
             pass
         try:
+            if resource is None or not hasattr(os, "uname"):
+                return None
             value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
             return value * (1 if os.uname().sysname == "Darwin" else 1024)
         except Exception:
@@ -35,9 +41,10 @@ class RuntimeResourceService:
 
     def snapshot(self) -> dict:
         stats = self.state.snapshot_stats()
+        active_statuses = {"queued", "running", "streaming", "loading", "processing", "cancelling"}
         active = [
             value for value in self.state.active_requests.values()
-            if value.get("status") in {"queued", "running", "cancelling"}
+            if str(value.get("status", "")).lower() in active_statuses
         ]
         return RuntimeResourceStatus(
             rss_bytes=self.rss_bytes(),
@@ -49,6 +56,7 @@ class RuntimeResourceService:
             models=self.state.model_manager.list_models(),
             current_model=self.state.model_manager.current_model_id,
             active_requests=len(active),
+            restart=self.state.idle_restart_snapshot(),
             sampled_at=time.time(),
         ).as_dict()
 
@@ -56,6 +64,7 @@ class RuntimeResourceService:
         before = self.snapshot()
         cleared = self.state.cache_clear() if clear_cache else 0
         unloaded = self.state.model_manager.unload_inactive(force=False, include_current=include_current) if unload_models else []
+        restart = self.state.handle_model_unload_completed(unloaded, reason="manual") if unloaded else self.state.idle_restart_snapshot()
         collected = gc.collect()
         after = self.snapshot()
         return {
@@ -63,6 +72,7 @@ class RuntimeResourceService:
             "cleared_cache_items": cleared,
             "unloaded_models": unloaded,
             "gc_collected": collected,
+            "restart": restart,
             "before": before,
             "after": after,
         }

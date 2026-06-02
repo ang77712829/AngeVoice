@@ -1,26 +1,26 @@
-# License and Attribution Compliance
+# 许可证与署名合规
 
-AngeVoice framework code is released under the Apache License 2.0. See `../LICENSE`; the project copyright notice is recorded in `../NOTICE`.
+AngeVoice 框架代码按 Apache License 2.0 发布，许可证见 `../LICENSE`，项目版权与署名信息记录在 `../NOTICE`。
 
-The three core model/runtime integrations used by AngeVoice — Kokoro, MOSS-TTS-Nano and ZipVoice — are also supplied upstream under Apache License 2.0 terms. This alignment simplifies public distribution, while upstream attribution and any bundled license notices must still be preserved. Other dependencies and runtime-downloaded assets remain subject to their own licenses.
+AngeVoice 使用的三个核心模型/运行时集成 Kokoro、MOSS-TTS-Nano 与 ZipVoice，上游同样按 Apache License 2.0 提供。许可证兼容降低了公开分发复杂度，但仍必须保留上游署名和随包许可证声明。其他依赖以及运行时下载的资产仍以各自上游许可证为准。
 
-## Core upstream integrations
+## 核心上游集成
 
-| Component | Upstream source | License | Use in AngeVoice |
+| 组件 | 上游来源 | 许可证 | 在 AngeVoice 中的用途 |
 | --- | --- | --- | --- |
-| Kokoro / Kokoro-82M v1.1 Chinese | `hexgrad/Kokoro-82M-v1.1-zh` | Apache License 2.0 | Default Chinese TTS model integration |
-| MOSS-TTS-Nano | `OpenMOSS/MOSS-TTS-Nano` | Apache License 2.0 | CPU/CUDA synthesis and reference-audio cloning runtime |
-| ZipVoice / ZipVoice-Distill | `k2-fsa/ZipVoice` | Apache License 2.0 | Zero-shot voice cloning and vendored inference source |
+| Kokoro / Kokoro-82M v1.1 Chinese | `hexgrad/Kokoro-82M-v1.1-zh` | Apache License 2.0 | 默认中文 TTS 模型集成 |
+| MOSS-TTS-Nano | `OpenMOSS/MOSS-TTS-Nano` | Apache License 2.0 | CPU/CUDA 合成与参考音频克隆运行时 |
+| ZipVoice / ZipVoice-Distill | `k2-fsa/ZipVoice` | Apache License 2.0 | 零样本音色克隆与随包推理源码 |
 
-The repository preserves the vendored ZipVoice upstream license at `../vendor/ZipVoice/LICENSE`. AngeVoice does not claim ownership of third-party model weights, voices, tokenizer assets, training data or upstream runtime code.
+仓库在 `../vendor/ZipVoice/LICENSE` 保留了随包 ZipVoice 的上游许可证。AngeVoice 不声明拥有第三方模型权重、音色、分词资产、训练数据或上游运行时代码的所有权。
 
-## Other runtime assets
+## 其他运行时资产
 
-ZipVoice may retrieve the Vocos `charactr/vocos-mel-24khz` vocoder assets at runtime. These assets are recorded in `../THIRD_PARTY_NOTICES.md` and remain under their upstream MIT terms.
+ZipVoice 可能在运行时获取 Vocos `charactr/vocos-mel-24khz` 声码器资产。这些资产记录在 `../THIRD_PARTY_NOTICES.md`，仍遵循其上游 MIT 条款。
 
-## Docker image redistribution
+## Docker 镜像再分发
 
-Dockerfiles copy AngeVoice legal material into the image and preserve bundled/downloaded upstream license material where supplied. Redistributors of prebuilt images or derived packages should retain:
+Dockerfile 会将 AngeVoice 法务材料复制到镜像中，并在可用时保留随包或下载得到的上游许可证材料。分发预构建镜像或派生包时应保留：
 
 ```text
 /app/LICENSE
@@ -30,18 +30,18 @@ Dockerfiles copy AngeVoice legal material into the image and preserve bundled/do
 /app/licenses/
 ```
 
-## Release checklist
+## 发布检查清单
 
-Before publishing a source release, wheel, Docker image or fnOS/FPK package:
+发布源码包、wheel、Docker 镜像或 fnOS/FPK 包前，请确认：
 
-1. Keep the AngeVoice Apache License 2.0 `LICENSE` file.
-2. Keep the AngeVoice copyright/attribution `NOTICE` file.
-3. Keep `THIRD_PARTY_NOTICES.md` and `ACKNOWLEDGEMENTS.md`.
-4. Preserve upstream license files included by bundled or downloaded third-party projects.
-5. Keep Kokoro, MOSS-TTS-Nano and ZipVoice attribution visible in public documentation.
-6. Do not claim ownership of third-party model assets or remove license terms for non-Apache dependencies such as Vocos.
+1. 保留 AngeVoice 的 Apache License 2.0 `LICENSE` 文件。
+2. 保留 AngeVoice 版权与署名 `NOTICE` 文件。
+3. 保留 `THIRD_PARTY_NOTICES.md` 与 `ACKNOWLEDGEMENTS.md`。
+4. 保留随包或运行时下载第三方项目附带的上游许可证文件。
+5. 在公开文档中保留 Kokoro、MOSS-TTS-Nano 与 ZipVoice 署名。
+6. 不声明拥有第三方模型资产，也不移除 Vocos 等非 Apache 依赖的许可证条款。
 
-## Related files
+## 相关文件
 
 - `../LICENSE`
 - `../NOTICE`

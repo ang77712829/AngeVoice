@@ -1,4 +1,4 @@
-"""Unified non-streaming synthesis orchestration."""
+"""统一的非流式合成编排服务。"""
 
 from __future__ import annotations
 

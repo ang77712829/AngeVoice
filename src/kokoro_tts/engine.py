@@ -465,8 +465,8 @@ class TTSEngine:
             except concurrent.futures.TimeoutError:
                 future.cancel()
                 raise RuntimeError(
-                    f"Kokoro inference timed out ({timeout}s). "
-                    "Synthesis may be stuck due to GPU memory or model issues."
+                    f"Kokoro 推理超时（{timeout}s）。"
+                    "合成可能因 GPU 显存或模型状态异常而卡住。"
                 )
 
     def synthesize_file(self, text: str, output_path: str, voice: str = "zm_010", speed: float = 1.0) -> str:
@@ -591,7 +591,7 @@ class TTSEngine:
 
     def synthesize_stream(self, text, voice="zm_010", speed=1.0, fmt="pcm_s16le"):
         if fmt not in self.SUPPORTED_STREAM_FORMATS:
-            yield {"type": "error", "message": f"Unsupported format: {fmt}"}
+            yield {"type": "error", "message": f"不支持的流式格式：{fmt}"}
             return
         try:
             self._validate_request(text=text, voice=voice, speed=speed)

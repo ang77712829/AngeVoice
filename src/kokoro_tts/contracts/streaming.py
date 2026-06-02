@@ -1,4 +1,4 @@
-"""Model-neutral streaming request, event and cancellation contracts."""
+"""模型无关的流式请求、事件和取消契约。"""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class StreamingRequest:
 
 @dataclass(frozen=True)
 class StreamingResult:
-    """Stable event envelope emitted through the WebSocket transport."""
+    """通过 WebSocket 传输的稳定事件封装。"""
 
     type: str
     payload: dict[str, Any] = field(default_factory=dict)
@@ -47,7 +47,7 @@ class StreamingResult:
 
 @dataclass(frozen=True)
 class CancellationContext:
-    """Transport-independent cancellation signal available to any adapter."""
+    """任意适配器都可读取的传输无关取消信号。"""
 
     request_id: str = ""
     is_cancelled: Callable[[], bool] | None = None

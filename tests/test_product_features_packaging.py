@@ -165,6 +165,9 @@ def test_studio_recording_and_profile_delete_are_capability_driven():
     assert "updateSelectedVoiceProfileMetadata" in js
     assert "/v1/reference-audio/${encodeURIComponent(profileEngineId())}/recommended-prompts" in js
     assert "isZipVoice" not in js
+    assert "const engineId = profileEngineId();" in js
+    assert "profileEngineId() !== engineId" in js
+    assert js.count("state.voices = state.zipvoiceProfiles.map(profile => profile.voice_id);") >= 2
 
 
 def test_update_checker_reports_new_release_without_auto_update():
@@ -183,7 +186,7 @@ def test_update_checker_reports_new_release_without_auto_update():
 
 def test_v26601_version_and_fnos_wizards_expose_verified_profile_modes_and_safe_default_warning():
     from kokoro_tts import __version__
-    assert __version__ == "2.6.602"
+    assert __version__ == "2.6.610"
     root = Path(__file__).resolve().parents[1]
     install = json.loads((root / "packaging/fnos/AngeVoice/wizard/install").read_text(encoding="utf-8"))
     text = json.dumps(install, ensure_ascii=False)
@@ -217,4 +220,3 @@ def test_v26601_fnos_uses_verified_compose_profiles_and_release_workflow_uploads
     assert "gh release upload" in workflow
     assert "scripts/build_source_release_zip.py" in workflow
     assert (root / "scripts/build_source_release_zip.py").exists()
-

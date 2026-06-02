@@ -51,6 +51,7 @@ _WORKER_ENV_EXPORTS = {
     "KOKORO_BATCH_CONCURRENCY": "batch_concurrency",
     "KOKORO_DEFAULT_SPEED": "default_speed",
     "KOKORO_REQUEST_TIMEOUT_SECONDS": "request_timeout_seconds",
+    "ANGEVOICE_WEBSOCKET_STREAM_IDLE_TIMEOUT_SECONDS": "websocket_stream_idle_timeout_seconds",
     "KOKORO_STREAM_BINARY_ENABLED": "stream_binary_enabled",
     "KOKORO_CACHE_ENABLED": "cache_enabled",
     "KOKORO_QUEUE_STATUS_ENABLED": "queue_status_enabled",
@@ -93,6 +94,10 @@ _WORKER_ENV_EXPORTS = {
     "ANGEVOICE_IDLE_TIMEOUT_SECONDS": "model_idle_timeout_seconds",
     "ANGEVOICE_IDLE_CHECK_INTERVAL": "model_idle_check_interval",
     "ANGEVOICE_IDLE_UNLOAD_CURRENT": "model_idle_unload_current",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD": "restart_after_idle_unload_enabled",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_DELAY_SECONDS": "restart_after_idle_unload_delay_seconds",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_COOLDOWN_SECONDS": "restart_after_idle_unload_cooldown_seconds",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_EXIT_CODE": "restart_after_idle_unload_exit_code",
     "MOSS_EXECUTION_PROVIDER": "moss_execution_provider",
     "MOSS_CPU_THREADS": "moss_cpu_threads",
     "ZIPVOICE_CPU_THREADS": "zipvoice_cpu_threads",
@@ -137,6 +142,8 @@ _WORKER_ENV_EXPORTS = {
     "MOSS_PROCESS_ISOLATION_PROVIDERS": "moss_process_isolation_providers",
     "MOSS_PROCESS_KILL_GRACE_SECONDS": "moss_process_kill_grace_seconds",
     "ANGEVOICE_ENGINE_PROCESS_KILL_GRACE_SECONDS": "engine_process_kill_grace_seconds",
+    "ANGEVOICE_ENGINE_PROCESS_STREAM_DRAIN_SECONDS": "engine_process_stream_drain_seconds",
+    "ANGEVOICE_ENGINE_PROCESS_STREAM_IDLE_TIMEOUT_SECONDS": "engine_process_stream_idle_timeout_seconds",
     "MOSS_OUTPUT_DECLICK_ENABLED": "moss_output_declick_enabled",
     "MOSS_OUTPUT_EDGE_FADE_MS": "moss_output_edge_fade_ms",
     "MOSS_AUDIO_POLISH_ENABLED": "moss_audio_polish_enabled",
@@ -265,7 +272,7 @@ def create_app(config: Optional[TTSConfig] = None, engine: Optional[TTSEngine] =
             from fastapi.staticfiles import StaticFiles
             app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
         except Exception:
-            logger.debug("Static file serving is unavailable", exc_info=True)
+            logger.debug("静态文件服务不可用", exc_info=True)
 
     templates = None
     try:

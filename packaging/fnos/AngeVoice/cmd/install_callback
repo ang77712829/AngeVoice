@@ -14,6 +14,20 @@ fail() {
   exit 1
 }
 
+cleanup_legacy_routing_files() {
+  local item
+  for item in \
+    "${TRIM_PKGVAR}/docker-compose.yaml" \
+    "${TRIM_PKGVAR}/docker-compose.yml" \
+    "${TRIM_PKGVAR}/docker/.env" \
+    "${TRIM_PKGVAR}/app/docker/.env" \
+    "${TRIM_PKGVAR}/cmd/_mode_env.sh"; do
+    if [ -e "$item" ]; then
+      rm -f "$item" || fail "清理旧版临时路由文件失败：${item}"
+    fi
+  done
+}
+
 PORT="${wizard_http_port:-8101}"
 PROFILE="${COMPOSE_PROFILES:-cpu}"
 MODEL_SOURCE="${wizard_model_source:-modelscope}"
@@ -31,6 +45,7 @@ fi
 
 mkdir -p "${TRIM_PKGVAR}/models" "${TRIM_PKGVAR}/outputs" "${TRIM_PKGVAR}/prompts" \
   "${TRIM_PKGVAR}/credentials" "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/logs"
+cleanup_legacy_routing_files
 log "配置完成：profile=${PROFILE}, port=${PORT}, model_source=${MODEL_SOURCE}"
 log "首次可使用 admin / admin123 登录；公网暴露前请在后台立即改密。"
 exit 0

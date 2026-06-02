@@ -299,7 +299,7 @@ MOSS_OUTPUT_DECLICK_ENABLED=true
 MOSS_OUTPUT_EDGE_FADE_MS=1.5
 ```
 
-`MOSS_REALTIME_STREAMING_DECODE=true` 会更早推送小音频块，但在部分参考音频、CUDA/ONNX 组合和小喇叭播放链路上容易放大 chunk 边界不连续，表现为“刺”“噗”“电流音”。默认开启逐帧实时解码以降低首包等待、改善 Web/小智体感；若个别设备出现噪声、卡顿或边界不连续，可改为 false 走质量优先整块生成。
+`MOSS_REALTIME_STREAMING_DECODE=true` 会更早推送小音频块，但在部分参考音频、CUDA/ONNX 组合和播放链路上可能出现短音频、提前结束、边界噪声或卡顿。默认保持 `true`，沿用官方逐帧流式路径以保证低延迟体验；只有在特定设备出现边界噪声、显存压力或播放不稳定时才建议关闭。
 
 
 如果日志显示 `requested=cuda actual=cpu`，或出现 `CUBLAS_STATUS_ALLOC_FAILED` / `BFCArena::AllocateRawInternal`，说明 CUDA provider 初始化失败。优先检查显存是否被其他容器占用：
@@ -318,11 +318,14 @@ KOKORO_PROCESS_ISOLATION_ENABLED=true
 MOSS_PROCESS_ISOLATION_ENABLED=true
 MOSS_PROCESS_ISOLATION_PROVIDERS=cpu,cuda
 ZIPVOICE_PROCESS_ISOLATION_ENABLED=true
-ANGEVOICE_ENGINE_PROCESS_KILL_GRACE_SECONDS=2
+ANGEVOICE_ENGINE_PROCESS_KILL_GRACE_SECONDS=5
+ANGEVOICE_WEBSOCKET_STREAM_IDLE_TIMEOUT_SECONDS=120
+ANGEVOICE_ENGINE_PROCESS_STREAM_DRAIN_SECONDS=30
+ANGEVOICE_ENGINE_PROCESS_STREAM_IDLE_TIMEOUT_SECONDS=120
 ANGEVOICE_STARTUP_PRELOAD_ENABLED=false
 ```
 
-开启隔离后，模型由可销毁 Worker 承载；空闲释放、模型切换、流式取消或超时终止 Worker 后，下次请求会自动重新唤醒。管理后台允许关闭 Kokoro / ZipVoice 隔离用于兼容性调试，但页面会提示线程内运行不保证主机 RAM 完整回收。若希望开机即热启动，可开启启动预载；预载同样通过 Worker 完成，不将模型载入 API 主进程。
+开启隔离后，模型由可销毁 Worker 承载；空闲释放、模型切换、流式取消或超时终止 Worker 后，下次请求会自动重新唤醒。管理后台允许关闭 Kokoro / ZipVoice 隔离用于兼容性调试，但页面会提示线程内运行不保证主机 RAM 完整回收。若希望开机即热启动，可开启启动预载；预载同样通过 Worker 完成，不将模型载入 API 主进程。若卸载后仍有少量显存或底层运行时资源残留，可在后台开启“空闲后彻底清理”；该功能默认关闭，只在空闲卸载成功且服务完全空闲后退出进程，并依赖 Docker/服务管理器自动拉起。
 
 ## 7. 输出音频没有持久化
 

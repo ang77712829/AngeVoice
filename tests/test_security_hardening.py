@@ -1,10 +1,12 @@
-"""Security and concurrency regression tests."""
+"""安全与并发回归测试。"""
 
 from __future__ import annotations
 
 import base64
 import os
+import sys
 import time
+import types
 
 import pytest
 from pathlib import Path
@@ -41,7 +43,7 @@ def test_api_key_rotation_uses_durable_file_without_process_env_leak(monkeypatch
     rotated = rotate_api_key(cfg)
     assert rotated.startswith("av_")
     assert os.environ["KOKORO_API_KEY"] == "bootstrap-from-operator"
-    # A separate worker/config instance resolves the persisted rotated key.
+    # 单独的 worker/config 实例应读取持久化后的新密钥。
     other_worker = TTSConfig(api_key="bootstrap-from-operator", api_key_file=cfg.api_key_file)
     assert effective_api_key(other_worker) == rotated
 
@@ -52,7 +54,10 @@ def test_admin_voice_upload_rejects_symlink_target_and_writes_regular_file(tmp_p
     voices_dir.mkdir(parents=True)
     outside = tmp_path / "outside.pt"
     outside.write_bytes(b"outside")
-    (voices_dir / "evil.pt").symlink_to(outside)
+    try:
+        (voices_dir / "evil.pt").symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"当前平台无法创建符号链接：{exc}")
     cfg = TTSConfig(model_dir=model_dir, admin_enabled=True, voice_upload_enabled=True)
     client = TestClient(create_app(config=cfg, engine=_fake_engine()))
     rejected = client.post("/admin/voices/upload", headers=_basic(), files={"file": ("evil.pt", b"malicious", "application/octet-stream")})
@@ -151,6 +156,28 @@ def test_websocket_binary_audio_frame_without_data_is_reported_not_crashed():
     assert sent["type"] == "error"
     assert sent["request_id"] == "req-frame"
     assert session.saw_stream_error is True
+
+
+def test_websocket_disconnect_after_terminal_frame_keeps_done_status():
+    """终止帧后的正常断开不应覆盖已完成状态。"""
+    import asyncio
+    from kokoro_tts.routes.ws import TtsWebSocketSession
+
+    state = MagicMock()
+    state.cfg = TTSConfig(request_timeout_seconds=2)
+    state.new_request_id.return_value = "req-terminal-close"
+    state.is_cancelled.return_value = False
+    session = TtsWebSocketSession(websocket=MagicMock(), state=state)
+    session.saw_stream_terminal = True
+
+    asyncio.run(session._mark_client_cancelled())
+    session._finish(time.perf_counter())
+
+    state.request_cancel.assert_not_called()
+    assert session.cancelled_by_client is False
+    assert session.cancel_event.is_set() is False
+    state.finish_request.assert_called_once()
+    assert state.finish_request.call_args.args[1] == "done"
 
 
 def test_request_snapshot_returns_recent_copy_and_pruning_works_outside_callers():
@@ -269,7 +296,7 @@ def test_websocket_invalid_query_token_is_rejected_without_processing_request():
 
 
 def test_websocket_preauth_does_not_reject_when_api_key_is_not_configured():
-    """A supplied query token must not create an auth requirement on an open service."""
+    """开放服务收到查询 token 时不应临时制造鉴权要求。"""
     engine = _fake_engine()
     engine.synthesize_stream.return_value = iter([{"type": "done", "total_segments": 0, "total_audio_chunks": 0}])
     cfg = TTSConfig(api_key=None)
@@ -282,7 +309,7 @@ def test_websocket_preauth_does_not_reject_when_api_key_is_not_configured():
 
 
 def test_websocket_preauth_uses_persisted_key_even_when_cfg_api_key_is_none(tmp_path):
-    """Pre-auth resolves the effective persisted key instead of reading cfg.api_key only."""
+    """预认证应读取实际持久化密钥，而不是只看 cfg.api_key。"""
     engine = _fake_engine()
     engine.synthesize_stream.return_value = iter([{"type": "done", "total_segments": 0, "total_audio_chunks": 0}])
     key_file = tmp_path / ".angevoice-api-key"
@@ -329,11 +356,780 @@ def test_external_bind_without_api_key_warns_but_remains_supported(caplog):
     cfg = TTSConfig(host="0.0.0.0", api_key=None)
     with caplog.at_level("WARNING"):
         cfg.validate_security()
-    assert "API authentication is disabled" in caplog.text
+    assert "未启用 API 鉴权" in caplog.text
 
 
 def test_loopback_bind_without_api_key_does_not_warn(caplog):
     cfg = TTSConfig(host="127.0.0.1", api_key=None)
     with caplog.at_level("WARNING"):
         cfg.validate_security()
-    assert "API authentication is disabled" not in caplog.text
+    assert "未启用 API 鉴权" not in caplog.text
+
+def test_websocket_producer_drains_after_cancel_without_sending_old_audio(monkeypatch):
+    from unittest.mock import MagicMock
+    from kokoro_tts.routes.ws import TtsWebSocketSession
+
+    state = MagicMock()
+    state.cfg = TTSConfig(request_timeout_seconds=2)
+    state.new_request_id.return_value = "req-drain-cancel"
+    state.is_cancelled.return_value = False
+    consumed = []
+
+    def frames(_request, *, cancel_check=None):
+        assert cancel_check is not None
+        for idx in range(3):
+            consumed.append(idx)
+            yield {"type": "audio", "index": idx}
+
+    state.streaming.iter_frames.side_effect = frames
+    session = TtsWebSocketSession(websocket=MagicMock(), state=state)
+    session.cancel_event.set()
+    session.loop = MagicMock()
+    session.loop.is_closed.return_value = True
+    monkeypatch.setattr(session, "_thread_put", MagicMock(return_value=True))
+
+    session._producer(MagicMock())
+
+    assert consumed == [0, 1, 2]
+    session._thread_put.assert_not_called()
+
+
+
+def test_status_auth_flags_use_persisted_api_key(tmp_path):
+    """状态接口应按实际有效密钥展示鉴权状态。"""
+    key_file = tmp_path / ".angevoice-api-key"
+    key_file.write_text("persisted-token\n", encoding="utf-8")
+    cfg = TTSConfig(api_key=None, api_key_file=key_file, public_status_endpoints=False)
+    app = create_app(config=cfg, engine=_fake_engine())
+    client = TestClient(app)
+
+    health = client.get("/health").json()
+    assert health["auth_required"] is True
+    assert health["catalog_protected"] is True
+    assert client.get("/v1/models").status_code == 401
+    assert client.get("/v1/models", headers={"Authorization": "Bearer persisted-token"}).status_code == 200
+
+
+def test_health_reports_idle_for_lazy_wakeable_model_without_idle_timer():
+    """懒加载且可唤醒的模型不应被健康检查误报为 loading。"""
+    engine = _fake_engine()
+    engine.is_loaded = False
+    engine.metadata.return_value = {"id": "kokoro", "loaded": False, "voice_clone_supported": False}
+    cfg = TTSConfig(model_idle_timeout_seconds=0)
+    app = create_app(config=cfg, engine=engine)
+    client = TestClient(app)
+
+    assert client.get("/health").json()["status"] == "idle"
+
+
+def test_health_uses_lightweight_snapshot_without_engine_metadata():
+    """健康检查不应读取可能阻塞的运行时元数据。"""
+    cfg = TTSConfig(enabled_models=["moss"], default_model="moss", moss_cuda_enabled=True, model_idle_timeout_seconds=0)
+    app = create_app(config=cfg)
+    state = app.state.angevoice
+    engine = MagicMock()
+    engine.is_loaded = True
+    engine.is_healthy = True
+    engine.metadata.side_effect = AssertionError("健康检查不应读取 metadata")
+    state.model_manager._engines["moss"] = engine
+    state.model_manager._current_model_id = "moss"
+    client = TestClient(app)
+
+    payload = client.get("/health").json()
+
+    assert payload["status"] in {"ok", "idle"}
+    engine.metadata.assert_not_called()
+
+
+def test_health_lightweight_snapshot_keeps_kokoro_voices(tmp_path):
+    """健康检查轻量快照仍应返回 Kokoro 本地音色。"""
+    voices_dir = tmp_path / "voices"
+    voices_dir.mkdir()
+    (voices_dir / "zm_010.pt").write_bytes(b"PK\x03\x04" + b"v" * 700)
+    cfg = TTSConfig(enabled_models=["kokoro"], default_model="kokoro", model_dir=tmp_path, model_idle_timeout_seconds=0)
+    app = create_app(config=cfg)
+    state = app.state.angevoice
+    engine = MagicMock()
+    engine.is_loaded = True
+    engine.is_healthy = True
+    engine.metadata.side_effect = AssertionError("健康检查不应读取 metadata")
+    state.model_manager._engines["kokoro"] = engine
+    state.model_manager._current_model_id = "kokoro"
+    client = TestClient(app)
+
+    payload = client.get("/health").json()
+
+    assert payload["voices"] == ["zm_010"]
+    assert payload["model"]["default_voice"] == "zm_010"
+    engine.metadata.assert_not_called()
+
+
+def test_stats_uses_lightweight_snapshot_without_engine_metadata():
+    """统计轮询不应等待正在合成的 worker 元数据请求。"""
+    from kokoro_tts.config_ids import moss_voice_catalog
+
+    cfg = TTSConfig(enabled_models=["moss"], default_model="moss", moss_cuda_enabled=True, model_idle_timeout_seconds=0)
+    app = create_app(config=cfg)
+    state = app.state.angevoice
+    engine = MagicMock()
+    engine.is_loaded = True
+    engine.is_healthy = True
+    engine.metadata.side_effect = AssertionError("统计轮询不应读取 metadata")
+    state.model_manager._engines["moss"] = engine
+    state.model_manager._current_model_id = "moss"
+    client = TestClient(app)
+
+    payload = client.get("/stats").json()
+
+    assert payload["models"]["current"]["voices"] == moss_voice_catalog(cfg.moss_default_voice)
+    assert payload["models"]["current"]["default_voice"] == cfg.moss_default_voice
+    engine.metadata.assert_not_called()
+
+
+def test_health_exposes_moss_builtin_voice_catalog_without_loading_metadata():
+    """健康检查应返回 MOSS 内置音色目录，避免 Studio 只显示默认音色。"""
+    from kokoro_tts.config_ids import moss_voice_catalog
+
+    cfg = TTSConfig(enabled_models=["moss"], default_model="moss", moss_cuda_enabled=True, model_idle_timeout_seconds=0)
+    app = create_app(config=cfg)
+    state = app.state.angevoice
+    engine = MagicMock()
+    engine.is_loaded = True
+    engine.is_healthy = True
+    engine.metadata.side_effect = AssertionError("健康检查不应读取 metadata")
+    state.model_manager._engines["moss"] = engine
+    state.model_manager._current_model_id = "moss"
+    client = TestClient(app)
+
+    payload = client.get("/health").json()
+
+    assert payload["voices"] == moss_voice_catalog(cfg.moss_default_voice)
+    assert payload["model"]["default_voice"] == cfg.moss_default_voice
+    engine.metadata.assert_not_called()
+
+
+def test_vram_usage_accepts_torch_total_memory(monkeypatch):
+    """显存统计兼容 PyTorch 的 total_memory 属性。"""
+    from kokoro_tts.routes import status as status_routes
+
+    props = types.SimpleNamespace(total_memory=8 * 1024 * 1024 * 1024)
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(
+            is_available=lambda: True,
+            current_device=lambda: 0,
+            get_device_properties=lambda _device: props,
+            memory_allocated=lambda _device: 1024,
+            memory_reserved=lambda _device: 2048,
+            get_device_name=lambda _device: "测试 GPU",
+        )
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    payload = status_routes._get_vram_usage()
+
+    assert payload["available"] is True
+    assert payload["total_bytes"] == props.total_memory
+    assert payload["reserved_bytes"] == 2048
+
+
+def test_openai_speech_rejects_oversized_body_before_synthesis():
+    """OpenAI 兼容入口也必须在业务解析前执行请求体大小限制。"""
+    engine = _fake_engine()
+    cfg = TTSConfig(tts_request_max_bytes=128)
+    app = create_app(config=cfg, engine=engine)
+    client = TestClient(app)
+
+    response = client.post("/v1/audio/speech", json={"text": "你" * 256, "voice": "zm_010"})
+    assert response.status_code == 413
+    engine.synthesize.assert_not_called()
+
+
+def test_engine_process_stream_drain_timeout_can_be_configured(monkeypatch):
+    """worker 流取消排空窗口应支持环境变量配置。"""
+    from kokoro_tts.config_env import apply_env
+
+    monkeypatch.setenv("ANGEVOICE_ENGINE_PROCESS_STREAM_DRAIN_SECONDS", "12.5")
+    cfg = TTSConfig()
+    apply_env(cfg)
+    assert cfg.engine_process_stream_drain_seconds == 12.5
+
+
+def test_default_moss_cancel_drain_window_handles_slow_frames():
+    """默认 MOSS 取消排空窗口应覆盖较慢首帧，避免频繁 kill+重载。"""
+    cfg = TTSConfig()
+    assert cfg.engine_process_stream_drain_seconds == 30.0
+
+
+def test_moss_isolated_cancel_restart_cycles_keep_loaded_client():
+    """模拟长文本停止后立刻再次合成，已加载的 MOSS client 不应被反复重载。"""
+    from kokoro_tts.moss_engine_streaming import MossStreamingMixin
+
+    class FakeProcessClient:
+        is_loaded = True
+        alive = True
+
+        def __init__(self):
+            self.stream_calls = 0
+            self.events_seen: list[int] = []
+
+        def stream(self, payload, *, timeout, cancel_check=None):
+            self.stream_calls += 1
+            assert cancel_check is not None
+            if cancel_check():
+                return
+            for idx in range(64):
+                self.events_seen.append(idx)
+                yield {"type": "audio", "index": idx, "data": ""}
+
+    class FakeMoss(MossStreamingMixin):
+        engine_id = "moss-nano-cuda"
+
+        def __init__(self):
+            self.config = TTSConfig(request_timeout_seconds=30, engine_process_stream_drain_seconds=30.0)
+            self._process_client = FakeProcessClient()
+            self.load_calls = 0
+            self.failures: list[str] = []
+
+        def load(self):
+            self.load_calls += 1
+            return self
+
+        def _mark_process_failure(self, *, timeout, reason):
+            self.failures.append(reason)
+
+    engine = FakeMoss()
+    for _ in range(5):
+        events = list(engine._synthesize_stream_process_isolated(
+            text="这是一段用于模拟长文本的内容。" * 200,
+            voice="Junhao",
+            speed=1.0,
+            fmt="pcm_s16le",
+            prompt_audio_path=None,
+            cancel_check=lambda: True,
+        ))
+        assert events == []
+
+    assert engine.load_calls == 0
+    assert engine.failures == []
+    assert engine._process_client.stream_calls == 5
+    assert len(engine._process_client.events_seen) == 0
+
+
+def test_moss_isolated_stream_reports_missing_protocol_done():
+    """MOSS 隔离流缺少协议完成帧时，应明确返回错误帧。"""
+    from kokoro_tts.moss_engine_streaming import MossStreamingMixin
+
+    class FakeProcessClient:
+        is_loaded = True
+        alive = True
+
+        def stream(self, payload, *, timeout, cancel_check=None):
+            yield {"type": "started", "segments": 2}
+            yield {"type": "audio", "index": 0, "data": "AA==", "sample_rate": 48000, "channels": 2}
+            yield {"type": "audio", "index": 1, "data": "AA==", "sample_rate": 48000, "channels": 2}
+
+    class FakeMoss(MossStreamingMixin):
+        engine_id = "moss-nano-cuda"
+
+        def __init__(self):
+            self.config = TTSConfig(request_timeout_seconds=30, engine_process_stream_idle_timeout_seconds=30)
+            self._process_client = FakeProcessClient()
+
+        def load(self):
+            return self
+
+        def _mark_process_failure(self, *, timeout, reason):
+            raise AssertionError("缺少完成帧不应被记录为 worker 故障")
+
+    frames = list(FakeMoss()._synthesize_stream_process_isolated(
+        text="长文本" * 200,
+        voice="Junhao",
+        speed=1.0,
+        fmt="pcm_s16le",
+        prompt_audio_path=None,
+        cancel_check=lambda: False,
+    ))
+
+    assert frames[-1]["type"] == "segment_error"
+    assert frames[-1]["index"] == 2
+    assert "未收到完成帧" in frames[-1]["message"]
+
+
+def test_engine_process_cancel_drains_without_killing_worker(monkeypatch):
+    """取消命中后应排空到 done，不应杀 worker 或继续向调用方返回旧音频。"""
+    import threading
+    from kokoro_tts.workers.process_worker import EngineProcessClient
+
+    class Flag:
+        value = 0
+
+    class ResultQueue:
+        def __init__(self):
+            self.items = [
+                ("req-current", "event", {"type": "audio", "index": 0}),
+                ("req-current", "done", None),
+            ]
+
+        def get(self, timeout=None):
+            if not self.items:
+                raise AssertionError("测试队列不应被继续读取")
+            return self.items.pop(0)
+
+    cfg = TTSConfig(engine_process_stream_drain_seconds=30.0, request_timeout_seconds=30)
+    client = EngineProcessClient.__new__(EngineProcessClient)
+    client.config = cfg
+    client.engine_id = "moss"
+    client.logger = MagicMock()
+    client._request_lock = threading.RLock()
+    client._cancel_flag = Flag()
+    client._send = MagicMock(return_value="req-current")
+    client._require_result_queue = MagicMock(return_value=ResultQueue())
+    client._raise_if_worker_exited = MagicMock()
+    client.close = MagicMock()
+
+    events = list(client.stream({"text": "长文本" * 200}, timeout=30, cancel_check=lambda: True))
+
+    assert events == []
+    assert client._cancel_flag.value == 1
+    assert client._require_result_queue.call_count >= 1
+    client.close.assert_not_called()
+
+
+def test_engine_process_stream_drains_late_protocol_done_after_queue_done():
+    """队列 done 先到时，父进程会短暂等待迟到的协议完成帧。"""
+    import queue
+    import threading
+    from kokoro_tts.workers.process_worker import EngineProcessClient
+
+    class Flag:
+        value = 0
+
+    class ResultQueue:
+        def __init__(self):
+            self.items = [
+                ("req-current", "event", {"type": "audio", "index": 0}),
+                ("req-current", "done", None),
+                ("req-current", "event", {"type": "done", "total_audio_chunks": 1}),
+            ]
+
+        def get(self, timeout=None):
+            if not self.items:
+                raise queue.Empty()
+            return self.items.pop(0)
+
+    client = EngineProcessClient.__new__(EngineProcessClient)
+    client.config = TTSConfig(engine_process_stream_drain_seconds=1.0, request_timeout_seconds=30)
+    client.engine_id = "moss"
+    client.logger = MagicMock()
+    client._request_lock = threading.RLock()
+    client._cancel_flag = Flag()
+    client._send = MagicMock(return_value="req-current")
+    client._require_result_queue = MagicMock(return_value=ResultQueue())
+    client._raise_if_worker_exited = MagicMock()
+    client.close = MagicMock()
+
+    events = list(client.stream({"text": "长文本" * 200}, timeout=30, cancel_check=lambda: False))
+
+    assert events == [
+        {"type": "audio", "index": 0},
+        {"type": "done", "total_audio_chunks": 1},
+    ]
+    client.close.assert_not_called()
+
+
+def test_moss_stream_chunk_seconds_respects_config_bounds():
+    """MOSS 长文本流式块不应绕过配置上限放大到超大帧。"""
+    from kokoro_tts.moss_engine_streaming import MossStreamingMixin
+
+    class DummyMossStream(MossStreamingMixin):
+        pass
+
+    dummy = DummyMossStream()
+    dummy.config = TTSConfig(moss_stream_chunk_seconds=0.4)
+    assert dummy._stream_chunk_seconds_for_text() == 0.4
+
+    dummy.config = TTSConfig(moss_stream_chunk_seconds=10.0)
+    assert dummy._stream_chunk_seconds_for_text() == 2.0
+
+    dummy.config = TTSConfig(moss_stream_chunk_seconds=0.01)
+    assert dummy._stream_chunk_seconds_for_text() == 0.05
+
+
+def test_moss_metadata_uses_cached_vram_without_refresh(monkeypatch):
+    """健康检查读取 MOSS 元数据时不应主动刷新 CUDA 显存。"""
+    from kokoro_tts.moss_engine import MossNanoEngine
+
+    engine = MossNanoEngine(TTSConfig(moss_vram_guard_enabled=True), execution_provider="cuda", process_isolation=True)
+    refresh = MagicMock()
+    monkeypatch.setattr(engine, "_refresh_vram_guard", refresh)
+
+    metadata = engine.metadata()
+
+    assert metadata["vram"]["source"] == "not-checked"
+    refresh.assert_not_called()
+
+
+
+def test_engine_process_generator_close_sets_soft_cancel_flag():
+    """调用方提前关闭流生成器时，应设置软取消标志而不是杀 worker。"""
+    import threading
+    from kokoro_tts.workers.process_worker import EngineProcessClient
+
+    class Flag:
+        value = 0
+
+    class ResultQueue:
+        def __init__(self):
+            self.items = [("req-current", "event", {"type": "audio", "index": 0})]
+
+        def get(self, timeout=None):
+            if not self.items:
+                raise AssertionError("生成器关闭后不应继续读取队列")
+            return self.items.pop(0)
+
+    client = EngineProcessClient.__new__(EngineProcessClient)
+    client.config = TTSConfig(request_timeout_seconds=30)
+    client.engine_id = "moss"
+    client.logger = MagicMock()
+    client._request_lock = threading.RLock()
+    client._cancel_flag = Flag()
+    client._send = MagicMock(return_value="req-current")
+    client._require_result_queue = MagicMock(return_value=ResultQueue())
+    client._raise_if_worker_exited = MagicMock()
+    client.close = MagicMock()
+
+    stream = client.stream({"text": "长文本" * 200}, timeout=30, cancel_check=lambda: False)
+    assert next(stream) == {"type": "audio", "index": 0}
+    stream.close()
+
+    assert client._cancel_flag.value == 1
+    client.close.assert_not_called()
+
+
+def test_worker_stream_injects_generation_scoped_cancel_check(monkeypatch):
+    """子进程收到带代次保护的取消检查，只取消当前流式请求。"""
+    import queue
+    from kokoro_tts.workers import process_worker
+
+    class Flag:
+        value = 1
+
+    class FakeEngine:
+        def __init__(self):
+            self.saw_cancel_check = False
+            self.cancel_check_value = None
+
+        def load(self):
+            return self
+
+        def unload(self):
+            return None
+
+        def synthesize_stream(self, **kwargs):
+            cancel_check = kwargs.get("cancel_check")
+            self.saw_cancel_check = callable(cancel_check)
+            self.cancel_check_value = bool(cancel_check and cancel_check())
+            if self.cancel_check_value:
+                return
+            yield {"type": "audio", "index": 0}
+
+    engine = FakeEngine()
+    monkeypatch.setattr(process_worker, "create_worker_engine", lambda *args, **kwargs: engine)
+    command_queue = queue.Queue()
+    result_queue = queue.Queue()
+    command_queue.put(("req-stream", "synthesize_stream", {"text": "长文本", "_cancel_generation": 2}))
+    command_queue.put(("req-stop", "shutdown", {}))
+
+    process_worker._worker_main(TTSConfig(), "moss", "cuda", command_queue, result_queue, Flag)
+
+    assert engine.saw_cancel_check is True
+    assert engine.cancel_check_value is False
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "audio", "index": 0})
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "done", "total_audio_chunks": 1})
+    assert result_queue.get_nowait() == ("req-stream", "done", None)
+    assert result_queue.get_nowait() == ("req-stop", "result", {"ok": True})
+
+
+def test_worker_stream_skips_cancel_check_for_legacy_engine(monkeypatch):
+    """旧式 Kokoro 流式引擎不支持 cancel_check 时不应被额外参数打断。"""
+    import queue
+    from kokoro_tts.workers import process_worker
+
+    class Flag:
+        value = 0
+
+    class FakeEngine:
+        def __init__(self):
+            self.text = ""
+
+        def load(self):
+            return self
+
+        def unload(self):
+            return None
+
+        def synthesize_stream(self, text):
+            self.text = text
+            yield {"type": "audio", "index": 0}
+
+    engine = FakeEngine()
+    monkeypatch.setattr(process_worker, "create_worker_engine", lambda *args, **kwargs: engine)
+    command_queue = queue.Queue()
+    result_queue = queue.Queue()
+    command_queue.put(("req-stream", "synthesize_stream", {"text": "你好", "_cancel_generation": 1}))
+    command_queue.put(("req-stop", "shutdown", {}))
+
+    process_worker._worker_main(TTSConfig(), "kokoro", "cuda", command_queue, result_queue, Flag)
+
+    assert engine.text == "你好"
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "audio", "index": 0})
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "done", "total_audio_chunks": 1})
+    assert result_queue.get_nowait() == ("req-stream", "done", None)
+    assert result_queue.get_nowait() == ("req-stop", "result", {"ok": True})
+
+
+def test_websocket_cancel_wait_keeps_short_safety_grace():
+    """WebSocket 收尾只保留短宽限，避免旧长文本长期占住会话。"""
+    import asyncio
+    from kokoro_tts.routes.ws import TtsWebSocketSession
+
+    async def run_case():
+        state = MagicMock()
+        state.cfg = TTSConfig(engine_process_stream_drain_seconds=0.2, request_timeout_seconds=10)
+        state.new_request_id.return_value = "req-ws-drain-window"
+        session = TtsWebSocketSession(websocket=MagicMock(), state=state)
+        finished = False
+
+        async def producer():
+            nonlocal finished
+            await asyncio.sleep(0.3)
+            finished = True
+
+        session.producer_task = asyncio.create_task(producer())
+        await session._cancel_background_tasks()
+        return finished, session.producer_task.cancelled()
+
+    finished, cancelled = asyncio.run(run_case())
+    assert finished is True
+    assert cancelled is False
+
+
+def test_websocket_stream_wait_uses_stream_idle_timeout_not_request_timeout():
+    """流式连接等待 MOSS 首帧时不应被普通请求超时过早关闭。"""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from kokoro_tts.routes.ws import TtsWebSocketSession
+
+    async def run_case():
+        state = MagicMock()
+        state.cfg = TTSConfig(request_timeout_seconds=1, websocket_stream_idle_timeout_seconds=5)
+        state.new_request_id.return_value = "req-ws-idle"
+        websocket = MagicMock()
+        websocket.send_json = AsyncMock()
+        session = TtsWebSocketSession(websocket=websocket, state=state)
+
+        async def finish_later():
+            await asyncio.sleep(1.2)
+            await session.queue.put({"type": "done", "total_segments": 0, "total_audio_chunks": 0})
+            await session.queue.put(session.done_marker)
+
+        task = asyncio.create_task(finish_later())
+        await session._send_loop(binary=False)
+        await task
+        return websocket.send_json.await_args_list, session.saw_stream_error
+
+    calls, saw_error = asyncio.run(run_case())
+    assert saw_error is False
+    assert any(call.args and call.args[0].get("type") == "progress" for call in calls)
+
+
+def test_engine_process_stream_idle_timeout_has_stable_floor():
+    """子进程流式无帧等待窗口应使用独立流式配置，避免慢首帧误杀 worker。"""
+    import queue
+    import threading
+    from unittest.mock import MagicMock
+    from kokoro_tts.workers.process_worker import EngineProcessClient
+
+    class Flag:
+        value = 0
+
+    class ResultQueue:
+        def __init__(self):
+            self.timeouts: list[float] = []
+            self.items = [("req-current", "done", None)]
+
+        def get(self, timeout=None):
+            self.timeouts.append(float(timeout or 0))
+            if not self.items:
+                raise queue.Empty()
+            return self.items.pop(0)
+
+    queue_obj = ResultQueue()
+    client = EngineProcessClient.__new__(EngineProcessClient)
+    client.config = TTSConfig(request_timeout_seconds=1, engine_process_stream_idle_timeout_seconds=20)
+    client.engine_id = "moss"
+    client.logger = MagicMock()
+    client._request_lock = threading.RLock()
+    client._cancel_flag = Flag()
+    client._send = MagicMock(return_value="req-current")
+    client._require_result_queue = MagicMock(return_value=queue_obj)
+    client._raise_if_worker_exited = MagicMock()
+    client.close = MagicMock()
+
+    assert list(client.stream({"text": "长文本"}, timeout=1, cancel_check=lambda: False)) == []
+    assert queue_obj.timeouts
+    assert queue_obj.timeouts[0] <= 0.2
+    client.close.assert_not_called()
+
+
+def test_websocket_done_marker_without_terminal_reports_truncated_stream():
+    """生产者没有发送终止帧时，WebSocket 必须把部分音频标记为错误。"""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from kokoro_tts.routes.ws import TtsWebSocketSession
+
+    async def run_case():
+        state = MagicMock()
+        state.cfg = TTSConfig(request_timeout_seconds=1, websocket_stream_idle_timeout_seconds=5)
+        state.new_request_id.return_value = "req-terminal"
+        state.is_cancelled.return_value = False
+        websocket = MagicMock()
+        websocket.send_json = AsyncMock()
+        session = TtsWebSocketSession(websocket=websocket, state=state)
+        await session.queue.put({"type": "started", "segments": 23})
+        await session.queue.put({"type": "audio", "index": 35, "data": "AA==", "sample_rate": 48000, "channels": 2})
+        await session.queue.put(session.done_marker)
+        await session._send_loop(binary=False)
+        return websocket.send_json.await_args_list, session.saw_stream_error
+
+    calls, saw_error = asyncio.run(run_case())
+    frames = [call.args[0] for call in calls]
+    assert saw_error is True
+    assert frames[-1]["type"] == "error"
+    assert "未收到完成帧" in frames[-1]["message"]
+
+
+def test_streaming_service_reports_missing_terminal_frame():
+    """统一流式服务发现底层迭代器提前结束时，应输出错误帧。"""
+    from kokoro_tts.services.streaming_service import StreamingService
+
+    class FakeManager:
+        current_model_id = "moss"
+
+        def normalize_model_id(self, model_id):
+            return model_id or "moss"
+
+        def borrow(self, _model_id):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def synthesize_stream(self, *_args, **_kwargs):
+            yield {"type": "started", "segments": 1}
+            yield {"type": "audio", "index": 0, "data": "AA==", "sample_rate": 48000, "channels": 2}
+
+    state = MagicMock()
+    state.cfg = TTSConfig()
+    state.model_manager = FakeManager()
+    state.voice_profiles.resolve_condition.return_value = MagicMock()
+    state.parameter_schema.parse.return_value = {}
+    service = StreamingService(state)
+    request = service.build_request(
+        text="测试长文本",
+        model_id="moss",
+        voice="Junhao",
+        speed=1.0,
+        audio_format="pcm_s16le",
+        binary=False,
+        request_id="req-stream-missing-done",
+    )
+
+    frames = list(service.iter_frames(request, cancel_check=lambda: False))
+
+    assert frames[-1]["type"] == "segment_error"
+    assert "未收到完成帧" in frames[-1]["message"]
+
+
+
+def test_worker_stream_keeps_queue_done_separate_from_protocol_frames(monkeypatch):
+    """worker 会转发协议完成帧，队列级 done 只用于释放父进程等待。"""
+    import queue
+    from kokoro_tts.workers import process_worker
+
+    class Flag:
+        value = 0
+
+    class FakeEngine:
+        def load(self):
+            return self
+
+        def unload(self):
+            return None
+
+        def synthesize_stream(self, **kwargs):
+            yield {"type": "audio", "index": 0}
+            yield {"type": "audio", "index": 1}
+            yield {"type": "done", "total_segments": 2, "total_audio_chunks": 2}
+
+    monkeypatch.setattr(process_worker, "create_worker_engine", lambda *args, **kwargs: FakeEngine())
+    command_queue = queue.Queue()
+    result_queue = queue.Queue()
+    command_queue.put(("req-stream", "synthesize_stream", {"text": "长文本"}))
+    command_queue.put(("req-stop", "shutdown", {}))
+
+    process_worker._worker_main(TTSConfig(), "moss", "cuda", command_queue, result_queue, Flag)
+
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "audio", "index": 0})
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "audio", "index": 1})
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "done", "total_segments": 2, "total_audio_chunks": 2})
+    assert result_queue.get_nowait() == ("req-stream", "done", None)
+
+
+def test_worker_stream_adds_protocol_done_when_child_iterator_finishes(monkeypatch):
+    """子进程模型迭代器自然结束但缺少协议 done 时，worker 补齐协议完成帧。"""
+    import queue
+    from kokoro_tts.workers import process_worker
+
+    class Flag:
+        value = 0
+
+    class FakeEngine:
+        def load(self):
+            return self
+
+        def unload(self):
+            return None
+
+        def synthesize_stream(self, **kwargs):
+            yield {"type": "started", "segments": 2}
+            yield {"type": "audio", "index": 0}
+            yield {"type": "audio", "index": 1}
+
+    monkeypatch.setattr(process_worker, "create_worker_engine", lambda *args, **kwargs: FakeEngine())
+    command_queue = queue.Queue()
+    result_queue = queue.Queue()
+    command_queue.put(("req-stream", "synthesize_stream", {"text": "长文本"}))
+    command_queue.put(("req-stop", "shutdown", {}))
+
+    process_worker._worker_main(TTSConfig(), "moss", "cuda", command_queue, result_queue, Flag)
+
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "started", "segments": 2})
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "audio", "index": 0})
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "audio", "index": 1})
+    assert result_queue.get_nowait() == ("req-stream", "event", {"type": "done", "total_audio_chunks": 2, "total_segments": 2})
+    assert result_queue.get_nowait() == ("req-stream", "done", None)
+
+
+def test_moss_default_prebuffer_keeps_realtime_feel():
+    """MOSS 默认预缓冲保持主线实时体验。"""
+    cfg = TTSConfig()
+    assert cfg.moss_stream_prebuffer_seconds == 0.75
+
+
+def test_moss_realtime_streaming_decode_defaults_to_realtime_mode():
+    """MOSS 默认保持逐帧实时解码，避免回退改动影响原有流式体验。"""
+    assert TTSConfig().moss_realtime_streaming_decode is True

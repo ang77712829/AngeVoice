@@ -1,7 +1,8 @@
-"""Runtime resilience, deployment-path, and admin-configuration regressions."""
+"""运行时韧性、部署路径和管理配置回归测试。"""
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -149,7 +150,8 @@ def test_runtime_config_write_uses_private_atomic_target_without_stale_tmp(tmp_p
     cfg = TTSConfig(runtime_config_file=path)
     save_runtime_config_values(cfg, {"cache_max_items": 8})
     assert path.exists()
-    assert path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o777 == 0o600
     assert not list(tmp_path.glob("*.tmp"))
 
 
@@ -162,3 +164,127 @@ def test_formal_docker_template_enables_safe_entry_guardrails_by_default():
         assert "KOKORO_MAX_QUEUE_LENGTH=50" in content
         assert "KOKORO_WS_MAX_CONNECTIONS=16" in content
         assert "KOKORO_WS_MAX_MESSAGE_BYTES=33554432" in content
+
+
+def test_idle_unload_restart_hook_exits_only_when_service_is_fully_idle(tmp_path):
+    from kokoro_tts.service_state import ServiceState
+
+    cfg = TTSConfig(
+        model_idle_timeout_seconds=0,
+        restart_after_idle_unload_enabled=True,
+        restart_after_idle_unload_delay_seconds=0.01,
+        restart_after_idle_unload_cooldown_seconds=0,
+        restart_after_idle_unload_exit_code=75,
+        runtime_config_file=tmp_path / "runtime-config.json",
+    )
+    state = ServiceState(cfg)
+    exited = threading.Event()
+    exit_codes: list[int] = []
+
+    def fake_exit(code: int) -> None:
+        exit_codes.append(code)
+        exited.set()
+
+    state._process_exit = fake_exit
+    state.handle_idle_unload_completed(["moss"])
+    assert exited.wait(timeout=1)
+    assert exit_codes == [75]
+
+
+def test_manual_resource_release_can_schedule_container_restart(tmp_path):
+    from kokoro_tts.service_state import ServiceState
+
+    cfg = TTSConfig(
+        model_idle_timeout_seconds=0,
+        restart_after_idle_unload_enabled=True,
+        restart_after_idle_unload_delay_seconds=0.05,
+        restart_after_idle_unload_cooldown_seconds=0,
+        runtime_config_file=tmp_path / "runtime-config.json",
+    )
+    state = ServiceState(cfg)
+    state.model_manager.unload_inactive = MagicMock(return_value=["moss"])
+    exited = threading.Event()
+    state._process_exit = lambda code: exited.set()
+
+    result = state.release_resources(unload_models=True)
+
+    assert result["unloaded_models"] == ["moss"]
+    assert result["restart"]["scheduled"] is True
+    assert result["restart"]["reason"] == "manual"
+    assert result["after"]["restart"]["scheduled"] is True
+    assert exited.wait(timeout=1)
+
+
+def test_manual_resource_release_does_not_restart_while_request_is_active(tmp_path):
+    from kokoro_tts.service_state import ServiceState
+
+    cfg = TTSConfig(
+        model_idle_timeout_seconds=0,
+        restart_after_idle_unload_enabled=True,
+        restart_after_idle_unload_delay_seconds=0.01,
+        restart_after_idle_unload_cooldown_seconds=0,
+        runtime_config_file=tmp_path / "runtime-config.json",
+    )
+    state = ServiceState(cfg)
+    state.model_manager.unload_inactive = MagicMock(return_value=["moss"])
+    state.mark_request("active", "running")
+    exited = threading.Event()
+    state._process_exit = lambda code: exited.set()
+
+    result = state.release_resources(unload_models=True)
+    time.sleep(0.05)
+
+    assert result["restart"]["scheduled"] is False
+    assert exited.is_set() is False
+
+
+def test_health_reports_restarting_when_unload_restart_is_scheduled(tmp_path):
+    from fastapi.testclient import TestClient
+    from kokoro_tts.server import create_app
+
+    cfg = TTSConfig(
+        model_idle_timeout_seconds=0,
+        restart_after_idle_unload_enabled=True,
+        restart_after_idle_unload_delay_seconds=60,
+        runtime_config_file=tmp_path / "runtime-config.json",
+    )
+    app = create_app(config=cfg)
+    state = app.state.angevoice
+    state.handle_model_unload_completed(["moss"], reason="manual")
+
+    payload = TestClient(app).get("/health").json()
+
+    assert payload["status"] == "restarting"
+    assert payload["restart"]["scheduled"] is True
+    assert payload["restart"]["reason"] == "manual"
+
+
+def test_idle_unload_restart_hook_is_cancelled_when_new_connection_arrives(tmp_path):
+    from kokoro_tts.service_state import ServiceState
+
+    cfg = TTSConfig(
+        model_idle_timeout_seconds=0,
+        restart_after_idle_unload_enabled=True,
+        restart_after_idle_unload_delay_seconds=0.02,
+        restart_after_idle_unload_cooldown_seconds=0,
+        runtime_config_file=tmp_path / "runtime-config.json",
+    )
+    state = ServiceState(cfg)
+    exited = threading.Event()
+    state._process_exit = lambda code: exited.set()
+    state._websocket_connections = 1
+    state.handle_idle_unload_completed(["moss"])
+    time.sleep(0.08)
+    assert not exited.is_set()
+    assert state.idle_restart_snapshot()["scheduled"] is False
+
+
+def test_admin_schema_exposes_idle_unload_cleanup_switch():
+    schema = schema_payload()
+    fields = {item["key"]: item for item in schema["fields"]}
+    field = fields["restart_after_idle_unload_enabled"]
+    assert field["group"] == "service"
+    assert field["type"] == "bool"
+    assert field["default"] is False
+    assert "Docker" in field["help"]
+    assert fields["restart_after_idle_unload_delay_seconds"]["advanced"] is True

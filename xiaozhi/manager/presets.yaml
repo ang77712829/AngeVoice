@@ -40,7 +40,7 @@ presets:
       api_url: ws://host.docker.internal:8101/ws/v1/tts
       http_url: http://host.docker.internal:8101
       api_key: ""
-      model: moss-nano-cpu
+      model: moss
       voice: Junhao
       format: pcm_s16le
       output_dir: tmp/
@@ -54,7 +54,7 @@ presets:
       api_url: ws://host.docker.internal:8101/ws/v1/tts
       http_url: http://host.docker.internal:8101
       api_key: ""
-      model: moss-nano-cpu
+      model: moss
       voice: Junhao
       format: pcm_s16le
       prompt_audio_path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
@@ -69,9 +69,42 @@ presets:
     config:
       api_url: http://host.docker.internal:8101
       api_key: ""
-      model: moss-nano-cpu
+      model: moss
       voice: Junhao
       response_format: wav
       prompt_audio_path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
       output_dir: tmp/
       tts_timeout: 300
+
+  - id: AngeVoiceZipVoiceCloneStream
+    name: AngeVoice ZipVoice 克隆流式
+    type: angevoice_stream
+    description: 使用 reference.wav 和 prompt_text 进行 ZipVoice 克隆，分句流式输出。
+    config:
+      api_url: ws://host.docker.internal:8101/ws/v1/tts
+      http_url: http://host.docker.internal:8101
+      api_key: ""
+      model: zipvoice
+      voice: xiaozhi_zipvoice
+      format: pcm_s16le
+      prompt_audio_path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
+      prompt_audio_filename: reference.wav
+      prompt_text: 请改成参考音频实际朗读文本。
+      output_dir: tmp/
+      tts_timeout: 360
+
+  - id: AngeVoiceZipVoiceClone
+    name: AngeVoice ZipVoice 克隆非流式
+    type: angevoice_clone
+    description: 使用 /api/tts multipart 上传 ZipVoice 参考音频和参考文本，返回完整音频文件。
+    config:
+      api_url: http://host.docker.internal:8101
+      api_key: ""
+      model: zipvoice
+      voice: xiaozhi_zipvoice
+      response_format: wav
+      prompt_audio_path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
+      prompt_audio_filename: reference.wav
+      prompt_text: 请改成参考音频实际朗读文本。
+      output_dir: tmp/
+      tts_timeout: 360

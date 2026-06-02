@@ -1,4 +1,4 @@
-"""Regression checks for v2.6.601 worker lifecycle and packaging hardening."""
+"""v2.6.601 worker 生命周期与打包加固回归测试。"""
 
 from __future__ import annotations
 
@@ -33,21 +33,21 @@ def test_generic_worker_distinguishes_idle_from_unexpected_loaded_exit():
             return False
 
     client = EngineProcessClient(config=TTSConfig(), engine_id="kokoro")
-    assert client.is_healthy is True  # never loaded / intentionally idle
+    assert client.is_healthy is True  # 未加载时表示主动空闲，不算异常退出。
     client._process = DeadProcess()
     client._loaded = True
     assert client.is_healthy is False
     with pytest.raises(RuntimeError):
         client._raise_if_worker_exited()
     assert client.is_healthy is False
-    assert "code 9" in client.last_exit_reason
+    assert "退出码：9" in client.last_exit_reason
 
 
 def test_moss_worker_uses_single_flight_lock_and_fresh_queue_generation():
     client = MossProcessClient(config=TTSConfig(), provider="cpu", engine_id="moss")
     assert isinstance(client._request_lock, type(threading.RLock()))
     assert client._command_queue is None and client._result_queue is None
-    source = (ROOT / "src/kokoro_tts/moss/process_worker.py").read_text(encoding="utf-8")
+    source = (ROOT / "src/kokoro_tts/workers/process_worker.py").read_text(encoding="utf-8")
     assert "with self._request_lock:" in source
     assert "self._command_queue = self._ctx.Queue()" in source
     assert "self._result_queue = self._ctx.Queue()" in source

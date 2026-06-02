@@ -1,4 +1,4 @@
-"""Architecture contracts, services, policy, and route-boundary tests."""
+"""架构契约、服务、策略与路由边界测试。"""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def test_voice_profile_service_is_single_owner_for_profile_adapter(tmp_path):
         )
         assert request.condition.kind is VoiceConditionKind.SAVED_PROFILE
         assert request.condition.prompt_text == "参考文本"
-        assert request.condition.prompt_audio_path.endswith("/voice_a/reference.wav")
+        assert Path(request.condition.prompt_audio_path).as_posix().endswith("/voice_a/reference.wav")
     finally:
         manager.stop_idle_timer()
 
@@ -91,7 +91,7 @@ def test_streaming_service_passes_resolved_profile_and_schema_controls_to_adapte
             audio_format="pcm_s16le", binary=False, engine_params={"zipvoice_num_steps": 12}, request_id="req1",
         )
         frames = list(state.streaming.iter_frames(request, cancel_check=lambda: False))
-        assert fake.received[0].endswith("/voice_ws/reference.wav")
+        assert Path(fake.received[0]).as_posix().endswith("/voice_ws/reference.wav")
         assert fake.received[1:] == ("对应参考文本", 12, True)
         assert frames[0]["model"] == "zipvoice"
         assert frames[0]["request_id"] == "req1"

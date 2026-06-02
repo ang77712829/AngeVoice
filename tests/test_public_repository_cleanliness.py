@@ -41,8 +41,10 @@ def test_runtime_templates_use_latest_images_and_fnos_uses_verified_profile_rout
     for path in image_files:
         text = path.read_text(encoding="utf-8")
         assert ":2.6.602" not in text
+        assert "ghcr.io/ang77712829/angevoice-" not in text
+        assert "ang77712829/angevoice-" in text
         for line in text.splitlines():
-            if "angevoice-" in line and "ghcr.io/" in line:
+            if "image:" in line and "ang77712829/angevoice-" in line:
                 assert ":latest" in line, f"{path.relative_to(ROOT)}: {line}"
     compose = (ROOT / "packaging/fnos/AngeVoice/app/docker/docker-compose.yaml").read_text(encoding="utf-8")
     assert compose.count("profiles:") == 3
@@ -51,3 +53,51 @@ def test_runtime_templates_use_latest_images_and_fnos_uses_verified_profile_rout
     assert "COMPOSE_PROFILES" in install and "wizard_run_mode" not in install
     assert not (ROOT / "packaging/fnos/AngeVoice/app/docker/.env").exists()
 
+
+def test_fnos_upgrade_cleans_only_legacy_routing_files():
+    cleanup_files = [
+        "${TRIM_PKGVAR}/docker-compose.yaml",
+        "${TRIM_PKGVAR}/docker-compose.yml",
+        "${TRIM_PKGVAR}/docker/.env",
+        "${TRIM_PKGVAR}/app/docker/.env",
+        "${TRIM_PKGVAR}/cmd/_mode_env.sh",
+    ]
+    for rel in ["cmd/install_callback", "cmd/upgrade_callback"]:
+        text = (ROOT / "packaging/fnos/AngeVoice" / rel).read_text(encoding="utf-8")
+        for item in cleanup_files:
+            assert item in text
+        assert "${TRIM_PKGVAR}/models" in text
+        assert "${TRIM_PKGVAR}/credentials" in text
+        assert "rm -rf" not in text
+
+
+def test_xiaozhi_release_assets_include_zipvoice_clone_presets():
+    script = (ROOT / "xiaozhi/scripts/install-xiaozhi-adapter.sh").read_text(encoding="utf-8")
+    manager = (ROOT / "xiaozhi/manager/presets.yaml").read_text(encoding="utf-8")
+    clone_adapter = (ROOT / "xiaozhi/adapters/angevoice_clone.py").read_text(encoding="utf-8")
+    stream_adapter = (ROOT / "xiaozhi/adapters/angevoice_stream.py").read_text(encoding="utf-8")
+    examples = [
+        ROOT / "xiaozhi/examples/config-zipvoice-clone.yaml",
+        ROOT / "xiaozhi/examples/config-zipvoice-stream.yaml",
+    ]
+    assert "zipvoice|zipvoice-stream|zipvoice-clone|zipvoice-clone-stream" in script
+    assert "TTS_AngeVoiceZipVoiceClone" in script
+    assert "TTS_AngeVoiceZipVoiceCloneStream" in script
+    assert "prompt_text" in script and "PROMPT_TEXT" in script
+    assert "AngeVoice ZipVoice 克隆非流式" in manager
+    assert "AngeVoice ZipVoice 克隆流式" in manager
+    assert "model: zipvoice" in manager
+    assert "prompt_text" in clone_adapter and "prompt_text" in stream_adapter
+    for path in examples:
+        text = path.read_text(encoding="utf-8")
+        assert "model: zipvoice" in text
+        assert "prompt_audio_path" in text
+        assert "prompt_text" in text
+
+
+def test_reader_adapter_docs_use_public_model_ids_and_zipvoice_prompt_text():
+    text = (ROOT / "docs/ANGE_READER_BACKEND_ADAPTER.md").read_text(encoding="utf-8")
+    assert "model=moss-nano" not in text
+    assert "`kokoro`、`moss`" in text
+    assert "ZipVoice 临时克隆" in text
+    assert "`prompt_text`" in text

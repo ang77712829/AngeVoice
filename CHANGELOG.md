@@ -1,4 +1,38 @@
-# Changelog
+# 更新日志
+
+## [2.6.610] - 2026-06-03
+
+### 🐛 MOSS 稳定性修复
+
+- 修复 MOSS 隔离 worker 将队列结束信号误当作合成完成的问题；流式合成现在必须收到引擎协议 `done` 才算完成，缺失时会明确报错并丢弃截断结果。
+- 修复 WebSocket 正常收到 `done` 后仍触发取消信号的问题；完成路径会先等待 producer 释放 worker 锁，只有超出短宽限才进入取消清理。
+- 修复 MOSS WebSocket 长文本停止后旧请求占用流式锁，导致下一次合成卡住或重新加载的问题；取消时改为软取消、快速释放连接，并使用请求代次隔离取消信号，避免旧请求的延迟取消误伤新合成。
+- 修复 MOSS 长文本首帧或分段之间短暂无音频时被普通请求超时误判断开的问题；新增 WebSocket 与隔离 Worker 的流式空闲等待窗口，并发送轻量进度帧保活。
+- 保留 request_id 过滤，避免停止后旧请求残留帧污染下一次合成；MOSS 子进程不再把共享取消标志注入模型内部，只在输出帧之间截断，避免长文本流被误判取消。
+- 修复流式生产者提前结束但缺少 `done` 终止帧时前端只停留在“已接收音频块”并静默断开的情况；现在会明确报错，不再把截断结果伪装成合成完成。
+- 将 MOSS 默认浏览器预缓冲提升到 `3.0s`，并允许后台/环境变量调到 `12s`，减少长文本分段间隔造成的播放中途断续；逐帧流式默认保持开启，延续主线低延迟体验。
+
+### ♻️ 空闲资源回收
+
+- 新增“空闲卸载后彻底清理”可选功能：模型因空闲自动卸载后，若服务没有活跃请求、WebSocket 连接或已加载模型，可按配置退出进程，由 Docker/服务管理器自动拉起，帮助释放 CUDA/ONNX Runtime 底层残留资源。
+- 手动释放模型和空闲自动卸载现在共用安全重启排程；只有无活跃请求、无 WebSocket、无已加载模型时才安排退出，`/health` 与资源诊断会返回 `restarting` 状态。
+- 新增后台配置项与 ENV：`ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD`、`ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_DELAY_SECONDS`、`ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_COOLDOWN_SECONDS`、`ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_EXIT_CODE`。默认关闭，不影响常规体验。
+
+### 🔧 配置与接口硬化
+
+- 状态接口统一使用实际生效 API Key 判断鉴权状态，修复持久化 key 场景下前端误判无需鉴权的问题。
+- OpenAI 兼容 `/v1/audio/speech` 在 JSON 解析前执行请求体大小限制，避免超大请求提前占用内存。
+- `/health` 在懒加载可唤醒状态下返回 `idle`，不再把未预加载但可用的服务误报为 `loading`。
+- 新增 `ANGEVOICE_WEBSOCKET_STREAM_IDLE_TIMEOUT_SECONDS`、`ANGEVOICE_ENGINE_PROCESS_STREAM_DRAIN_SECONDS`、`ANGEVOICE_ENGINE_PROCESS_STREAM_IDLE_TIMEOUT_SECONDS`，用于长文本流式等待和取消排空。
+- Docker Compose 与 fnOS 默认镜像切换为 Docker Hub `ang77712829/angevoice-*:latest`，GitHub Actions 仍同步发布 GHCR 作为备用仓库。
+- MOSS 未加载或刚切换时也会公开完整预设音色目录，避免 Web 端只显示 `Junhao`。
+- 小智新安装脚本、示例和智控台预设统一使用公开模型 ID `moss`，并补齐 ZipVoice 克隆流式/非流式预设；旧 `moss-nano-cpu` / `moss-nano-cuda` 仍作为兼容输入保留。
+- fnOS 升级流程会清理旧版临时 profile/compose 路由文件，同时保留模型、音色、输出、凭据和后台运行配置目录。
+
+### 📝 文档与质量
+
+- 版本号更新到 `2.6.610`，同步中英文 README、API/架构/部署/运行时/排障文档、Docker/fnOS 环境模板与 manifest。
+- 拆分部分高复杂度配置与路由辅助逻辑，新增 MOSS 停止循环、长文本流式等待、空闲彻底清理的回归测试。
 
 ## [2.6.602] - 2026-05-26
 

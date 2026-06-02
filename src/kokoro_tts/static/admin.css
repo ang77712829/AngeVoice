@@ -216,7 +216,7 @@
 }
 
 .config-field span,
-.config-toggle span {
+.config-toggle b {
   color: var(--text);
   font-size: 13px;
   font-weight: 820;
@@ -233,9 +233,11 @@
   color: var(--text);
 }
 
-.config-field small {
+.config-field small,
+.config-toggle small {
   color: var(--muted);
   font-size: 12px;
+  font-weight: 520;
   line-height: 1.35;
 }
 
@@ -245,6 +247,11 @@
   align-items: center;
   gap: 10px;
   padding: 12px;
+}
+
+.config-toggle-copy {
+  display: grid;
+  gap: 4px;
 }
 
 .config-toggle input {

@@ -63,14 +63,12 @@ angevoice_clone    AngeVoice 克隆非流式
 ```text
 AngeVoice Kokoro 非流式
 AngeVoice Kokoro 流式
-AngeVoice MOSS CPU 非流式
-AngeVoice MOSS CUDA 非流式
-AngeVoice MOSS CPU 流式
-AngeVoice MOSS CUDA 流式
-AngeVoice MOSS CPU 克隆非流式
-AngeVoice MOSS CUDA 克隆非流式
-AngeVoice MOSS CPU 克隆流式
-AngeVoice MOSS CUDA 克隆流式
+AngeVoice MOSS 非流式
+AngeVoice MOSS 流式
+AngeVoice MOSS 克隆非流式
+AngeVoice MOSS 克隆流式
+AngeVoice ZipVoice 克隆非流式
+AngeVoice ZipVoice 克隆流式
 ```
 
 其中 `config_json.type` 对应适配器：
@@ -80,6 +78,15 @@ angevoice        -> angevoice.py
 angevoice_stream -> angevoice_stream.py
 angevoice_clone  -> angevoice_clone.py
 ```
+
+ZipVoice 预设使用公开模型 ID `zipvoice`，并且必须同时填写：
+
+```text
+prompt_audio_path：小智容器内参考音频路径
+prompt_text：参考音频实际朗读文本
+```
+
+如果 `prompt_text` 仍是占位文本，ZipVoice 可以发起请求，但音色相似度和稳定性会明显下降；请在智控台保存前改成真实参考文本。
 
 ## 为什么要重建容器？
 

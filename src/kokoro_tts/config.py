@@ -108,6 +108,9 @@ class TTSConfig:
     queue_status_enabled: bool = True
     metrics_enabled: bool = True
     request_timeout_seconds: float = 300.0
+    # 流式合成允许更长的无音频帧等待窗口。MOSS 长文本在首帧或分段之间
+    # 可能需要数秒到数十秒，不能直接复用普通 HTTP 请求超时。
+    websocket_stream_idle_timeout_seconds: float = 120.0
 
     batch_enabled: bool = True
     batch_max_items: int = 20
@@ -190,6 +193,10 @@ class TTSConfig:
     kokoro_process_isolation_enabled: bool = False
     zipvoice_process_isolation_enabled: bool = False
     engine_process_kill_grace_seconds: float = 2.0
+    engine_process_stream_drain_seconds: float = 30.0
+    # 子进程流式输出的无帧等待窗口。用于区分“模型正在跑慢帧”
+    # 与“worker 真正卡死”，避免 MOSS 长文本被过早判定超时。
+    engine_process_stream_idle_timeout_seconds: float = 120.0
     moss_output_declick_enabled: bool = True
     moss_output_edge_fade_ms: float = 1.5
     moss_audio_polish_enabled: bool = True
@@ -250,6 +257,12 @@ class TTSConfig:
     model_idle_timeout_seconds: float = 600
     model_idle_check_interval: float = 30
     model_idle_unload_current: bool = True
+    # 卸载后彻底清理：默认关闭。开启后只在模型因空闲卸载成功后，
+    # 且服务已经完全空闲时退出当前进程，交给 Docker/服务管理器拉起。
+    restart_after_idle_unload_enabled: bool = False
+    restart_after_idle_unload_delay_seconds: float = 3.0
+    restart_after_idle_unload_cooldown_seconds: float = 1800.0
+    restart_after_idle_unload_exit_code: int = 75
 
     @property
     def model_path(self) -> str:
@@ -304,20 +317,35 @@ class TTSConfig:
         return list(self._voices_cache)
 
     def validate_security(self) -> None:
-        """启动前拒绝不安全的后台/鉴权组合。"""
+        """启动前归一化运行时配置，并拒绝不安全的组合。"""
+        self._validate_auth_and_admin_security()
+        self._validate_feature_dependencies()
+        self._normalize_model_source()
+        self._normalize_execution_providers()
+        self._normalize_enabled_models()
+        self._normalize_default_model()
+        self._normalize_moss_text_options()
+        self._normalize_text_policy()
+
+    def _validate_auth_and_admin_security(self) -> None:
         api_key = (self.api_key or "").strip()
         normalized_key = api_key.lower()
         if api_key and normalized_key in PLACEHOLDER_API_KEYS:
             raise ValueError("KOKORO_API_KEY is still a placeholder; set a real secret or leave it empty")
         from .config_api_key import effective_api_key
+
         externally_bound = str(self.host or "").strip().lower() not in {"127.0.0.1", "localhost", "::1"}
         if externally_bound and not effective_api_key(self):
             logger.warning(
-                "API authentication is disabled while the service is bound to %s; "
-                "set KOKORO_API_KEY=auto or a strong key before exposing this service outside a trusted network",
+                "服务绑定到 %s 但未启用 API 鉴权；"
+                "在可信网络外暴露前，请设置 KOKORO_API_KEY=auto 或强密钥",
                 self.host,
             )
-        admin_username = (os.environ.get("ANGEVOICE_ADMIN_USERNAME") or os.environ.get("KOKORO_ADMIN_USERNAME") or "admin").strip()
+        admin_username = (
+            os.environ.get("ANGEVOICE_ADMIN_USERNAME")
+            or os.environ.get("KOKORO_ADMIN_USERNAME")
+            or "admin"
+        ).strip()
         admin_password = (
             os.environ.get("ANGEVOICE_ADMIN_PASSWORD")
             or os.environ.get("KOKORO_ADMIN_PASSWORD")
@@ -328,16 +356,26 @@ class TTSConfig:
         first_entry_default = admin_username == "admin" and admin_password == "admin123"
         if self.admin_enabled and not persisted_admin and first_entry_default:
             logger.warning("管理后台当前使用首次默认凭据 admin/admin123；公网暴露前必须在安全页修改密码")
-        if self.admin_enabled and not persisted_admin and admin_password.lower() in PLACEHOLDER_ADMIN_PASSWORDS and not first_entry_default:
+        if (
+            self.admin_enabled
+            and not persisted_admin
+            and admin_password.lower() in PLACEHOLDER_ADMIN_PASSWORDS
+            and not first_entry_default
+        ):
             raise ValueError("ANGEVOICE_ADMIN_PASSWORD is still a placeholder; use the documented first-entry default or set a strong password")
+
+    def _validate_feature_dependencies(self) -> None:
         if self.voice_upload_enabled and not self.admin_enabled:
             raise ValueError("KOKORO_VOICE_UPLOAD_ENABLED=true requires KOKORO_ADMIN_ENABLED=true")
         if not self.enabled_models:
             raise ValueError("ANGEVOICE_ENABLED_MODELS cannot be empty")
-        self.enabled_models = [str(item).strip().lower() for item in self.enabled_models if str(item).strip()]
+
+    def _normalize_model_source(self) -> None:
         self.model_source = str(self.model_source or "auto").strip().lower()
         if self.model_source not in {"auto", "huggingface", "modelscope", "offline"}:
             raise ValueError("ANGEVOICE_MODEL_SOURCE must be auto, huggingface, modelscope, or offline")
+
+    def _normalize_execution_providers(self) -> None:
         self.moss_execution_provider = str(self.moss_execution_provider or "cpu").strip().lower()
         if self.moss_execution_provider not in {"cpu", "cuda"}:
             raise ValueError("MOSS_EXECUTION_PROVIDER must be cpu or cuda")
@@ -347,8 +385,14 @@ class TTSConfig:
         if self.zipvoice_execution_provider == "cuda" and not self.zipvoice_cuda_enabled:
             logger.warning("ZIPVOICE_EXECUTION_PROVIDER=cuda ignored because ZIPVOICE_CUDA_ENABLED=false")
             self.zipvoice_execution_provider = "cpu"
+        if not self.moss_cuda_enabled and self.moss_execution_provider == "cuda":
+            logger.warning("MOSS_EXECUTION_PROVIDER=cuda ignored because MOSS_CUDA_ENABLED=false")
+            self.moss_execution_provider = "cpu"
+
+    def _normalize_enabled_models(self) -> None:
+        normalized_models = [str(item).strip().lower() for item in self.enabled_models if str(item).strip()]
         filtered_models: list[str] = []
-        for item in self.enabled_models:
+        for item in normalized_models:
             provider = "cpu" if not self.moss_cuda_enabled and item in MOSS_GENERIC_MODEL_IDS else self.moss_execution_provider
             normalized_item = normalize_config_model_id(item, provider)
             if not self.moss_cuda_enabled and normalized_item == "moss-nano-cuda":
@@ -357,10 +401,8 @@ class TTSConfig:
             if normalized_item not in filtered_models:
                 filtered_models.append(normalized_item)
         self.enabled_models = filtered_models or ["kokoro"]
-        if not self.moss_cuda_enabled:
-            if self.moss_execution_provider == "cuda":
-                logger.warning("MOSS_EXECUTION_PROVIDER=cuda ignored because MOSS_CUDA_ENABLED=false")
-                self.moss_execution_provider = "cpu"
+
+    def _normalize_default_model(self) -> None:
         default_provider = (
             "cpu"
             if not self.moss_cuda_enabled and str(self.default_model or "").strip().lower() in MOSS_GENERIC_MODEL_IDS
@@ -374,6 +416,8 @@ class TTSConfig:
         if self.default_model not in self.enabled_models:
             logger.warning("Default model %s is not enabled; using %s", self.default_model, self.enabled_models[0])
             self.default_model = self.enabled_models[0]
+
+    def _normalize_moss_text_options(self) -> None:
         self.moss_sample_mode = str(self.moss_sample_mode or "fixed").strip().lower()
         if self.moss_sample_mode not in {"greedy", "fixed", "full"}:
             raise ValueError("MOSS_SAMPLE_MODE must be greedy, fixed, or full")
@@ -395,6 +439,8 @@ class TTSConfig:
             self.moss_mixed_english_policy = "translate"
         else:
             raise ValueError("MOSS_MIXED_ENGLISH_POLICY must be translate, preserve, or spell")
+
+    def _normalize_text_policy(self) -> None:
         self.text_single_newline_policy = str(self.text_single_newline_policy or "auto").strip().lower()
         if self.text_single_newline_policy not in {"auto", "preserve", "space"}:
             raise ValueError("ANGEVOICE_SINGLE_NEWLINE_POLICY must be auto, preserve, or space")

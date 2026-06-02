@@ -90,30 +90,23 @@ else
     skip "WebSocket stream" "websocat not installed"
 fi
 
-section "5. Optional MOSS CPU HTTP Audio"
+section "5. Optional MOSS HTTP Audio"
 MODELS_JSON=$(curl_json "${BASE_URL}/v1/models")
-if echo "$MODELS_JSON" | jq -e '.models[]? | select(.id == "moss-nano-cpu" and .available == true)' >/dev/null 2>&1; then
-    MOSS_WAV="/tmp/av_e2e_moss_cpu.wav"
-    check_audio_file "MOSS CPU audio" "$(speech_request "moss-nano-cpu" "MOSS CPU合成测试。" "Junhao" "$MOSS_WAV")" "$MOSS_WAV" || true
+if echo "$MODELS_JSON" | jq -e '.models[]? | select(.id == "moss" and .available == true)' >/dev/null 2>&1; then
+    MOSS_WAV="/tmp/av_e2e_moss.wav"
+    MOSS_PROVIDER=$(echo "$MODELS_JSON" | jq -r '.models[]? | select(.id == "moss") | (.actual_provider // .requested_provider // .provider // "unknown")' 2>/dev/null | head -n 1)
+    check_audio_file "MOSS audio (${MOSS_PROVIDER})" "$(speech_request "moss" "MOSS合成测试。" "Junhao" "$MOSS_WAV")" "$MOSS_WAV" || true
 else
-    skip "MOSS CPU audio" "moss-nano-cpu is not enabled/available"
+    skip "MOSS audio" "moss is not enabled/available"
 fi
 
-section "6. Optional MOSS CUDA HTTP Audio"
-if echo "$MODELS_JSON" | jq -e '.models[]? | select(.id == "moss-nano-cuda" and .available == true)' >/dev/null 2>&1; then
-    CUDA_WAV="/tmp/av_e2e_moss_cuda.wav"
-    check_audio_file "MOSS CUDA audio" "$(speech_request "moss-nano-cuda" "MOSS CUDA合成测试。" "Junhao" "$CUDA_WAV")" "$CUDA_WAV" || true
-else
-    skip "MOSS CUDA audio" "moss-nano-cuda is not enabled/available"
-fi
-
-section "7. Cancel / Abort Recovery"
+section "6. Cancel / Abort Recovery"
 timeout 2 curl -s -o /tmp/av_e2e_cancel.wav --max-time 10 "${BASE_URL}/v1/audio/speech" -H "Content-Type: application/json" "${AUTH_ARGS[@]}" -d '{"model":"kokoro","input":"这段文字很长需要大量计算，我们会在中途取消它以测试取消功能是否正常工作。让我们继续添加更多文字来确保合成时间足够长以便能够成功取消。再来一些中文内容填充。","voice":"af_xiaobei","speed":0.3}' >/dev/null 2>&1 || true
 sleep 1
 HEALTH_AFTER=$(curl -s -w '%{http_code}' -o /dev/null "${AUTH_ARGS[@]}" "${BASE_URL}/health" --max-time 5)
 [[ "$HEALTH_AFTER" == "200" ]] && pass "Cancel/abort did not break health endpoint" || fail "Cancel recovery" "Health after cancel: HTTP $HEALTH_AFTER"
 
-section "8. Optional Idle Unload + Reload"
+section "7. Optional Idle Unload + Reload"
 IDLE_TIMEOUT=$(jq -r '.model.idle_timeout_seconds // .model.model_idle_timeout_seconds // .model_idle_timeout_seconds // 0' /tmp/av_health.json 2>/dev/null || echo "0")
 CHECK_INTERVAL=$(jq -r '.model.idle_check_interval // .model.model_idle_check_interval // .model_idle_check_interval // 30' /tmp/av_health.json 2>/dev/null || echo "30")
 if [[ "$IDLE_TIMEOUT" =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk "BEGIN {exit !($IDLE_TIMEOUT > 0 && $IDLE_TIMEOUT <= 60)}"; then
@@ -129,7 +122,7 @@ else
     skip "Idle unload + reload" "timeout disabled or too long for e2e; set ANGEVOICE_IDLE_TIMEOUT_SECONDS<=60 in test env"
 fi
 
-section "9. Loop Stress Test ($LOOPS iterations)"
+section "8. Loop Stress Test ($LOOPS iterations)"
 STRESS_PASS=0; STRESS_FAIL=0
 for i in $(seq 1 "$LOOPS"); do
     OUT="/tmp/av_e2e_stress_${i}.wav"

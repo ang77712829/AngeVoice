@@ -2,6 +2,10 @@
 
 旧的 ``kokoro_tts.moss_engine.MossNanoEngine`` 对外路径保持不变；本包承载
 可单测、可复用的 MOSS 运行时、文本、流式、prompt 和音频后处理逻辑。
+
+.. note::
+    ``MossProcessClient`` / ``MossProcessTimeoutError`` 已移除。
+    MOSS 现在统一使用 ``workers.process_worker.EngineProcessClient``。
 """
 
 from .postprocess import (
@@ -26,7 +30,6 @@ from .runtime import (
     ensure_import_path,
     temp_output_path,
 )
-from .process_worker import MossProcessClient, MossProcessTimeoutError
 from .streaming import (
     StreamBudgetThresholds,
     merge_codec_audio,
@@ -42,8 +45,6 @@ __all__ = [
     "compress_long_silence",
     "clamp_pause_seconds",
     "analyze_silence",
-    "MossProcessClient",
-    "MossProcessTimeoutError",
     "VramSnapshot",
     "StreamBudgetThresholds",
     "analyze_waveform",

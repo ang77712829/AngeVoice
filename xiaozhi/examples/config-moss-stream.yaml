@@ -10,7 +10,7 @@ TTS:
     api_url: ws://host.docker.internal:8101/ws/v1/tts
     http_url: http://host.docker.internal:8101
     api_key: ""
-    model: moss-nano-cpu
+    model: moss
     voice: Junhao
     format: pcm_s16le
     output_dir: tmp/

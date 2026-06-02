@@ -35,6 +35,17 @@ bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/x
   --prompt-audio ./reference.wav
 ```
 
+ZipVoice 克隆模式：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh) \
+  --mode zipvoice-stream \
+  --prompt-audio ./reference.wav \
+  --prompt-text "参考音频实际朗读文本"
+```
+
+ZipVoice 要求 AngeVoice 侧启用 `zipvoice`，并且参考文本必须和参考音频实际朗读内容一致。
+
 ## 5. 智控台用户
 
 如果你用了智控台，请在智控台里新增模型，参考：

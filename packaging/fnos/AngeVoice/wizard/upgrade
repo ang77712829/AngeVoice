@@ -1,7 +1,7 @@
 [
   {
     "stepTitle": "升级配置确认",
-    "description": "AngeVoice 支持 Kokoro、MOSS-TTS-Nano、ZipVoice。模型不包含在 FPK 内，首次启动会下载到持久化目录，升级不会覆盖模型、音色、输出、API Key、凭据或配置。 升级后请确认所选运行模式与镜像状态。",
+    "description": "AngeVoice 支持 Kokoro、MOSS-TTS-Nano、ZipVoice。模型不包含在 FPK 内，首次启动会下载到持久化目录。升级会清理旧版临时路由文件，但不会覆盖模型、音色、输出、API Key、凭据或后台运行配置。升级后请确认所选运行模式与镜像状态。",
     "items": [
       {
         "type": "text",

@@ -223,7 +223,7 @@ function fieldInput(field, value) {
   if (field.type === 'bool') {
     return `<label class="config-toggle">
       <input data-config-field="${key}" type="checkbox" ${value ? 'checked' : ''}>
-      <span>${escapeHtml(field.label)} ${fieldBadge(field)}</span>
+      <span class="config-toggle-copy"><b>${escapeHtml(field.label)} ${fieldBadge(field)}</b>${field.help ? `<small>${escapeHtml(field.help)}</small>` : ''}</span>
     </label>`;
   }
   if (field.type === 'choice') {

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Iterator
 from fastapi import HTTPException
 
 from .config import TTSConfig
+from .config_ids import moss_voice_catalog
 from .engine import TTSEngine
 from .moss_engine import MossNanoEngine
 from .engines import EngineRegistry, EngineSpec
@@ -40,6 +41,7 @@ class EngineManager:
         self._last_used: dict[str, float] = {}
         self._active_counts: dict[str, int] = {}
         self._pending_rebuild: set[str] = set()
+        self._idle_unload_callback = None
         if initial_engine is not None:
             self._engines["kokoro"] = initial_engine
             self._current_model_id = "kokoro"
@@ -59,6 +61,11 @@ class EngineManager:
             existing = self._engines.get("zipvoice")
             if existing is not None and hasattr(existing, "profiles") and service.supports_profiles("zipvoice"):
                 existing.profiles = service.store_for("zipvoice")
+
+    def set_idle_unload_callback(self, callback) -> None:
+        """注册空闲卸载完成后的轻量回调。"""
+        with self._lock:
+            self._idle_unload_callback = callback
 
     def _touch_model(self, model_id: str) -> None:
         with self._lock:
@@ -118,6 +125,14 @@ class EngineManager:
                     logger.info("空闲卸载：模型 %s 闲置 %.0fs 后已释放", model_id, idle_for)
         if unloaded:
             logger.info("空闲卸载完成：%s", ", ".join(unloaded))
+            callback = None
+            with self._lock:
+                callback = self._idle_unload_callback
+            if callable(callback):
+                try:
+                    callback(list(unloaded))
+                except Exception:
+                    logger.warning("空闲卸载回调失败", exc_info=True)
 
     def stop_idle_timer(self) -> None:
         self._idle_timer_stop.set()
@@ -137,15 +152,15 @@ class EngineManager:
         """仅返回适合公共 UI/目录 API 的产品级模型。"""
         return self.registry.list_specs(self.cfg)
 
-    def list_models(self) -> list[dict]:
+    def list_models(self, *, include_runtime_metadata: bool = True) -> list[dict]:
         specs = self.list_specs()
         with self._lock:
-            return [self._model_snapshot(spec) for spec in specs]
+            return [self._model_snapshot(spec, include_runtime_metadata=include_runtime_metadata) for spec in specs]
 
-    def current_snapshot(self) -> dict:
+    def current_snapshot(self, *, include_runtime_metadata: bool = True) -> dict:
         spec = self._spec_for(self._current_model_id)
         with self._lock:
-            return self._model_snapshot(spec)
+            return self._model_snapshot(spec, include_runtime_metadata=include_runtime_metadata)
 
     def switch_model(self, model_id: str, *, unload_previous: bool | None = None, load: bool = True) -> dict[str, Any]:
         resolution = self.resolve_model_id(model_id)
@@ -419,13 +434,13 @@ class EngineManager:
                 return spec
         return EngineSpec(model_id, model_id, "unknown", "unknown")
 
-    def _model_snapshot(self, spec: EngineSpec) -> dict[str, Any]:
+    def _model_snapshot(self, spec: EngineSpec, *, include_runtime_metadata: bool = True) -> dict[str, Any]:
         engine = self._engines.get(spec.id)
         loaded = bool(getattr(engine, "is_loaded", False)) if engine is not None else False
         healthy = bool(getattr(engine, "is_healthy", True)) if engine is not None else True
         # 在空闲/手动卸载后保持最后的运行时/提供者指标可观察。
         # 产品引擎的 metadata() 无副作用，不会重新加载权重。
-        runtime = self._engine_metadata(engine) if engine is not None else {}
+        runtime = self._engine_metadata(engine) if include_runtime_metadata and engine is not None else {}
         active_count = self._active_count(spec.id)
         idle_timeout = float(getattr(self.cfg, "model_idle_timeout_seconds", 0) or 0)
         idle_unloaded = bool(engine is not None and not loaded and idle_timeout > 0 and spec.id in self._last_used)
@@ -473,8 +488,12 @@ class EngineManager:
 
     def _static_capabilities(self, spec: EngineSpec) -> dict[str, Any]:
         capabilities = self.registry.capabilities_for(spec, self.cfg).as_dict()
+        if spec.id == "kokoro":
+            capabilities["default_voice"] = self.cfg.default_voice
+            capabilities["voices"] = self.cfg.get_voices()
         if spec.id == "moss":
             capabilities["default_voice"] = self.cfg.moss_default_voice
+            capabilities["voices"] = moss_voice_catalog(self.cfg.moss_default_voice)
         if spec.id == "zipvoice":
             capabilities["default_voice"] = ""
         return capabilities

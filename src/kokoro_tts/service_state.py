@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -40,6 +41,12 @@ class ServiceState:
         self.tts_semaphore = asyncio.Semaphore(max(1, int(cfg.max_concurrent_requests)))
         self._websocket_connections = 0
         self._websocket_connection_lock = asyncio.Lock()
+        self._idle_restart_lock = threading.Lock()
+        self._idle_restart_scheduled = False
+        self._last_idle_restart_plan_at = 0.0
+        self._idle_restart_reason = ""
+        self._idle_restart_models: list[str] = []
+        self._process_exit = os._exit
         self.tts_cache: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
         self._cache_bytes = 0
         self.cache_lock = threading.Lock()
@@ -68,6 +75,92 @@ class ServiceState:
         self.runtime_resources = RuntimeResourceService(self)
         self.synthesis = SynthesisService(self)
         self.streaming = StreamingService(self)
+        self.model_manager.set_idle_unload_callback(self.handle_idle_unload_completed)
+
+
+    def idle_restart_snapshot(self) -> dict:
+        """返回空闲卸载后彻底清理的运行状态。"""
+        with self._idle_restart_lock:
+            return {
+                "enabled": bool(getattr(self.cfg, "restart_after_idle_unload_enabled", False)),
+                "scheduled": bool(self._idle_restart_scheduled),
+                "last_plan_at": self._last_idle_restart_plan_at or None,
+                "delay_seconds": float(getattr(self.cfg, "restart_after_idle_unload_delay_seconds", 3.0) or 0.0),
+                "cooldown_seconds": float(getattr(self.cfg, "restart_after_idle_unload_cooldown_seconds", 1800.0) or 0.0),
+                "exit_code": int(getattr(self.cfg, "restart_after_idle_unload_exit_code", 75) or 0),
+                "reason": self._idle_restart_reason,
+                "models": list(self._idle_restart_models),
+            }
+
+    def handle_idle_unload_completed(self, unloaded_models: list[str]) -> None:
+        """模型因空闲卸载完成后，按配置安排一次彻底清理。"""
+        self.handle_model_unload_completed(unloaded_models, reason="idle")
+
+    def handle_model_unload_completed(self, unloaded_models: list[str], *, reason: str = "manual") -> dict:
+        """模型卸载完成后，在服务真正空闲时安排容器级重启。"""
+        if not unloaded_models or not bool(getattr(self.cfg, "restart_after_idle_unload_enabled", False)):
+            return self.idle_restart_snapshot()
+        if not self._idle_restart_safe():
+            logger.info("模型释放后暂不彻底清理：服务仍有活跃请求、连接或已加载模型")
+            return self.idle_restart_snapshot()
+        self._schedule_idle_restart(unloaded_models, reason=reason)
+        return self.idle_restart_snapshot()
+
+    def _idle_restart_safe(self) -> bool:
+        """确认当前没有用户请求、WebSocket 连接或已加载模型。"""
+        if self.active_websocket_connections > 0:
+            return False
+        with self.request_lock:
+            active_statuses = {"queued", "running", "streaming", "loading", "processing", "cancelling"}
+            if any(str(item.get("status", "")).lower() in active_statuses for item in self.active_requests.values()):
+                return False
+        try:
+            models = self.model_manager.list_models()
+        except Exception:
+            logger.debug("读取模型快照失败，取消本次空闲彻底清理", exc_info=True)
+            return False
+        return not any(bool(model.get("loaded")) for model in models)
+
+    def _schedule_idle_restart(self, unloaded_models: list[str], *, reason: str) -> None:
+        delay = max(0.0, float(getattr(self.cfg, "restart_after_idle_unload_delay_seconds", 3.0) or 0.0))
+        cooldown = max(0.0, float(getattr(self.cfg, "restart_after_idle_unload_cooldown_seconds", 1800.0) or 0.0))
+        now = time.monotonic()
+        with self._idle_restart_lock:
+            if self._idle_restart_scheduled:
+                return
+            if cooldown > 0 and self._last_idle_restart_plan_at and now - self._last_idle_restart_plan_at < cooldown:
+                logger.info("空闲彻底清理仍在冷却期，跳过本次退出计划")
+                return
+            self._idle_restart_scheduled = True
+            self._last_idle_restart_plan_at = now
+            self._idle_restart_reason = str(reason or "manual")
+            self._idle_restart_models = list(unloaded_models)
+        logger.warning(
+            "模型 %s 已释放（原因：%s），%.1fs 后将退出进程以彻底释放运行时资源",
+            ", ".join(unloaded_models),
+            self._idle_restart_reason,
+            delay,
+        )
+        timer = threading.Timer(delay, self._perform_idle_restart, args=(list(unloaded_models), self._idle_restart_reason))
+        timer.daemon = True
+        timer.start()
+
+    def _perform_idle_restart(self, unloaded_models: list[str], reason: str) -> None:
+        if not self._idle_restart_safe():
+            with self._idle_restart_lock:
+                self._idle_restart_scheduled = False
+                self._idle_restart_reason = ""
+                self._idle_restart_models = []
+            logger.info("空闲彻底清理已取消：退出前检测到新请求、连接或已加载模型")
+            return
+        exit_code = int(getattr(self.cfg, "restart_after_idle_unload_exit_code", 75) or 0)
+        logger.warning(
+            "模型 %s 释放后服务仍为空闲（原因：%s），正在退出进程以交给容器或服务管理器自动拉起（exit_code=%d）",
+            ", ".join(unloaded_models),
+            reason,
+            exit_code,
+        )
+        self._process_exit(exit_code)
 
     def inc_stat(self, name: str, delta=1) -> None:
         with self.stats_lock:

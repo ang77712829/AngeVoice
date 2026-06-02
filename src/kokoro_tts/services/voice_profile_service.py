@@ -1,4 +1,4 @@
-"""Unified saved-voice profile ownership and voice-condition resolution."""
+"""统一管理已保存音色档案和音色条件解析。"""
 
 from __future__ import annotations
 
@@ -11,11 +11,10 @@ from ..zipvoice.profiles import ZipVoiceProfileStore
 
 
 class VoiceProfileService:
-    """Own all persisted reference profiles exposed by product engines.
+    """集中管理各产品模型暴露的持久化参考音色。
 
-    ZipVoice is the first profile-backed adapter.  The mapping is deliberately
-    service-owned so another adapter can register a store without adding route
-    branches or a second copy of profile-resolution rules.
+    ZipVoice 是第一个支持保存音色的适配器。这里把映射放在服务层，
+    方便后续模型注册自己的存储实现，而不需要在路由里增加分支。
     """
 
     def __init__(self, cfg):
@@ -26,10 +25,10 @@ class VoiceProfileService:
         self.register_store("zipvoice", ZipVoiceProfileStore(cfg), requires_reference=True)
 
     def register_store(self, engine_id: str, store: Any, *, requires_reference: bool = False) -> None:
-        """Register a profile-capable adapter without adding public-route branches."""
+        """注册支持保存音色的适配器。"""
         engine = str(engine_id or "").strip().lower()
         if not engine:
-            raise ValueError("engine_id is required")
+            raise ValueError("engine_id 不能为空")
         self._stores[engine] = store
         if requires_reference:
             self._requires_reference.add(engine)
@@ -37,10 +36,10 @@ class VoiceProfileService:
             self._requires_reference.discard(engine)
 
     def register_recommended_prompts(self, engine_id: str, prompts: list[str] | tuple[str, ...]) -> None:
-        """Register optional UI recording prompts for a profile-capable adapter."""
+        """注册可选的 UI 录音提示文本。"""
         engine = str(engine_id or "").strip().lower()
         if not self.supports_profiles(engine):
-            raise ValueError(f"Engine does not support saved voice profiles: {engine_id}")
+            raise ValueError(f"模型不支持保存音色：{engine_id}")
         self._recommended_prompts[engine] = tuple(str(item).strip() for item in prompts if str(item).strip())
 
     def recommended_prompts(self, engine_id: str) -> list[str]:
@@ -57,7 +56,7 @@ class VoiceProfileService:
     def store_for(self, engine_id: str):
         store = self._stores.get(str(engine_id or "").strip().lower())
         if store is None:
-            raise ValueError(f"Engine does not support saved voice profiles: {engine_id}")
+            raise ValueError(f"模型不支持保存音色：{engine_id}")
         return store
 
     def list(self, engine_id: str) -> list[dict[str, Any]]:

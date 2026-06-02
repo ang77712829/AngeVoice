@@ -334,7 +334,7 @@ run_compose() {
   log "推荐/选择画像：$profile"
   log "启动目录：$INSTALL_DIR/$compose_dir"
   cd "$INSTALL_DIR/$compose_dir"
-  if [[ "$GHCR_OK" == "yes" ]]; then
+  if [[ "$DOCKERHUB_OK" == "yes" || -n "$REGISTRY_MIRRORS" ]]; then
     if docker compose pull; then
       docker compose up -d
     else
@@ -342,7 +342,7 @@ run_compose() {
       docker compose up -d --build
     fi
   else
-    warn "GHCR 不可达，跳过 pull，直接本地构建。"
+    warn "Docker Hub 不可达且未检测到 registry mirror，跳过 pull，直接本地构建。"
     docker compose up -d --build
   fi
 }

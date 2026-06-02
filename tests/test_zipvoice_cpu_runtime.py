@@ -6,6 +6,8 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from kokoro_tts.config import TTSConfig
 from kokoro_tts.engine_manager import EngineManager
 from kokoro_tts.engines.registry import EngineRegistry
@@ -110,7 +112,7 @@ def test_saved_profile_is_resolved_for_zipvoice_synthesis_and_cache_clear_is_obs
         assert output == b"generated-audio" and mime == "audio/wav"
         kwargs = fake.synthesize.call_args.kwargs
         assert kwargs["prompt_text"] == "参考文本"
-        assert kwargs["prompt_audio_path"].endswith("/voice_001/reference.wav")
+        assert Path(kwargs["prompt_audio_path"]).as_posix().endswith("/voice_001/reference.wav")
         assert state.cache_size() == 1
         released = state.release_resources(clear_cache=True, unload_models=False)
         assert released["cleared_cache_items"] == 1
@@ -121,10 +123,11 @@ def test_saved_profile_is_resolved_for_zipvoice_synthesis_and_cache_clear_is_obs
 
 
 def test_vendored_zipvoice_inference_common_does_not_import_training_only_tensorboard(monkeypatch):
-    """ONNX CPU inference must import without installing the training UI stack."""
+    """ONNX CPU 推理不应依赖训练界面栈。"""
     import builtins
     import importlib.util
 
+    pytest.importorskip("torch")
     common_path = Path(__file__).parents[1] / "vendor" / "ZipVoice" / "zipvoice" / "utils" / "common.py"
     original_import = builtins.__import__
 
@@ -420,7 +423,7 @@ def test_zipvoice_websocket_segmented_stream_uses_saved_profile_context(tmp_path
             frames = [ws.receive_json(), ws.receive_json(), ws.receive_json()]
     assert [frame["type"] for frame in frames] == ["started", "audio", "done"]
     assert stream_engine.kwargs["prompt_text"] == "这是对应的参考文本。"
-    assert stream_engine.kwargs["prompt_audio_path"].endswith("/voice_ws/reference.wav")
+    assert Path(stream_engine.kwargs["prompt_audio_path"]).as_posix().endswith("/voice_ws/reference.wav")
 
 
 
@@ -539,7 +542,7 @@ def test_zipvoice_saved_profile_wins_over_stale_uploaded_reference_and_prompt_te
             "stale-audio-id",
             "页面残留的临时参考文本",
         )
-        assert resolved[0].endswith("/voice_saved/reference.wav")
+        assert Path(resolved[0]).as_posix().endswith("/voice_saved/reference.wav")
         assert resolved[1].startswith("profile:voice_saved:")
         assert resolved[2] == "保存音色自己的参考文本"
         assert resolved[3]

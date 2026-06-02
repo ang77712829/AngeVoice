@@ -1,4 +1,4 @@
-"""Model-neutral synthesis request, parameter, result and voice-condition contracts."""
+"""模型无关的合成请求、参数、结果和音色条件契约。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 
 
 class VoiceConditionKind(str, Enum):
-    """How an engine receives voice identity or reference conditioning."""
+    """模型接收音色身份或参考条件的方式。"""
 
     PRESET = "preset"
     UPLOADED_REFERENCE = "uploaded_reference"
@@ -17,11 +17,11 @@ class VoiceConditionKind(str, Enum):
 
 @dataclass(frozen=True)
 class VoiceCondition:
-    """Resolved voice input shared by every adapter.
+    """所有适配器共享的已解析音色输入。
 
-    Routes do not need to know whether a selected voice is a preset, a saved
-    reference profile, or a browser/uploaded recording.  New engines register
-    capabilities and a profile store rather than adding route branches.
+    路由层不需要知道用户选择的是内置音色、已保存参考音色，
+    还是浏览器上传的临时录音。新模型通过能力声明和档案存储接入，
+    避免继续增加路由分支。
     """
 
     kind: VoiceConditionKind = VoiceConditionKind.PRESET
@@ -63,7 +63,7 @@ class VoiceCondition:
 
 @dataclass(frozen=True)
 class GenerationParameters:
-    """Engine-validated generation controls carried independently from routes."""
+    """由模型参数 schema 校验后的生成控制项。"""
 
     values: dict[str, Any] = field(default_factory=dict)
 
@@ -73,7 +73,7 @@ class GenerationParameters:
 
 @dataclass(frozen=True)
 class SynthesisRequest:
-    """Validated internal request used for all non-streaming synthesis."""
+    """非流式合成使用的已校验内部请求。"""
 
     text: str
     model_id: str
@@ -87,7 +87,7 @@ class SynthesisRequest:
 
     @property
     def engine_params(self) -> dict[str, Any]:
-        """Legacy service-facing alias while adapters migrate to ``generation``."""
+        """兼容旧服务调用方的参数别名。"""
         return self.generation.as_dict()
 
     def cache_controls(self) -> dict[str, Any]:
@@ -96,7 +96,7 @@ class SynthesisRequest:
 
 @dataclass(frozen=True)
 class SynthesisResult:
-    """Model-neutral synthesized audio result envelope for service adapters."""
+    """服务适配器使用的模型无关合成结果封装。"""
 
     audio_bytes: bytes
     media_type: str

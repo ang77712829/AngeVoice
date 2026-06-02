@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build the AngeVoice fnOS/FPK package from one Compose file with verified profile routing.
-# The package version comes from pyproject.toml; runtime image defaults use :latest.
+# 从单一 Compose 文件构建 AngeVoice fnOS/FPK 包，并校验 profile 路由。
+# 包版本来自 pyproject.toml；运行镜像固定使用 :latest。
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG="$ROOT/packaging/fnos/AngeVoice"
@@ -14,7 +14,7 @@ PYV
 OUT="${1:-$ROOT/dist/AngeVoice_v${VERSION}.fpk}"
 mkdir -p "$(dirname "$OUT")"
 [[ -f "$PKG/manifest" && -f "$PKG/LICENSE" && -f "$PKG/NOTICE" && -f "$PKG/app/docker/docker-compose.yaml" && -f "$PKG/app/docker/angevoice.env" ]] || {
-  echo "fnOS packaging tree incomplete" >&2
+  echo "fnOS 打包目录不完整" >&2
   exit 1
 }
 python3 - "$PKG" <<'PYVALIDATE'
@@ -32,9 +32,9 @@ json.loads((p / 'config/resource').read_text(encoding='utf-8'))
 json.loads((p / 'config/privilege').read_text(encoding='utf-8'))
 compose = (p / 'app/docker/docker-compose.yaml').read_text(encoding='utf-8')
 for profile, service, image in (
-    ('cpu', 'angevoice-cpu', 'ghcr.io/ang77712829/angevoice-cpu:latest'),
-    ('gpu', 'angevoice-gpu', 'ghcr.io/ang77712829/angevoice-gpu:latest'),
-    ('legacy-gpu', 'angevoice-legacy-gpu', 'ghcr.io/ang77712829/angevoice-legacy-gpu:latest'),
+    ('cpu', 'angevoice-cpu', 'ang77712829/angevoice-cpu:latest'),
+    ('gpu', 'angevoice-gpu', 'ang77712829/angevoice-gpu:latest'),
+    ('legacy-gpu', 'angevoice-legacy-gpu', 'ang77712829/angevoice-legacy-gpu:latest'),
 ):
     assert f'  {service}:' in compose
     assert f'profiles: ["{profile}"]' in compose
@@ -75,5 +75,5 @@ done
 tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -czf "$OUT" -C "$STAGE/root" .
 tar -tzf "$OUT" > "$OUT.contents.txt"
 sha256sum "$OUT" > "$OUT.sha256"
-echo "Built AngeVoice v${VERSION} fnOS/FPK package: $OUT"
-echo "Packaging contract: one Compose file + COMPOSE_PROFILES routed cpu/gpu/legacy-gpu services with :latest images."
+echo "已构建 AngeVoice v${VERSION} fnOS/FPK 包：$OUT"
+echo "打包约束：单一 Compose 文件 + COMPOSE_PROFILES 路由 cpu/gpu/legacy-gpu 服务，镜像固定 :latest。"

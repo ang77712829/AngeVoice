@@ -10,7 +10,7 @@ English | [中文](README.md) | [Documentation index](docs/README.md)
 
 ## One-command install (recommended)
 
-After Docker and Docker Compose V2 are installed, run the interactive installer. It detects CPU/GPU, Docker/Compose, GitHub, GHCR, Docker Hub, and local Docker registry mirrors. When an NVIDIA GPU is found, it recommends the standard `gpu` profile first; `legacy-gpu` is a compatibility profile for hosts where `gpu` cannot start or CUDA/cuDNN is incompatible.
+After Docker and Docker Compose V2 are installed, run the interactive installer. It detects CPU/GPU, Docker/Compose, GitHub, Docker Hub, and local Docker registry mirrors. When an NVIDIA GPU is found, it recommends the standard `gpu` profile first; `legacy-gpu` is a compatibility profile for hosts where `gpu` cannot start or CUDA/cuDNN is incompatible.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/scripts/install.sh)
@@ -101,7 +101,7 @@ Good fits:
 | Service controls | Request IDs, `/health`, `/stats`, `/requests`, timeout, concurrency guard, LRU cache |
 | Docker profiles | CPU, GPU, and Legacy GPU Compose profiles |
 | CLI | Recommended command: `angevoice`; legacy `kokoro-tts` remains supported |
-| Idle timeout release | Defaults to unloading all loaded models after 10 minutes of inactivity, including the current model, to reduce NAS power/VRAM usage |
+| Idle resource release | Defaults to unloading all loaded models after 10 minutes of inactivity; an optional admin switch can exit after idle unload so Docker/service managers restart the container and reclaim low-level runtime leftovers |
 
 ## Quick start
 
@@ -144,12 +144,12 @@ cd docker/legacy-gpu && sudo docker compose up -d
 
 ### China Mirror Acceleration
 
-Docker Compose pulls images from GHCR (`ghcr.io`) by default. If GHCR is slow from mainland China, use a Docker mirror proxy:
+Docker Compose pulls Docker Hub images (`ang77712829/angevoice-*:latest`) by default. If Docker Hub is slow from mainland China, use a Docker mirror proxy:
 
 ```bash
-# Option 1: Pull via mirror, then retag (replace ghcr.io with mirror host)
-docker pull docker.1ms.run/ghcr.io/ang77712829/angevoice-gpu:latest
-docker tag docker.1ms.run/ghcr.io/ang77712829/angevoice-gpu:latest ghcr.io/ang77712829/angevoice-gpu:latest
+# Option 1: Pull via mirror, then retag
+docker pull docker.1ms.run/ang77712829/angevoice-gpu:latest
+docker tag docker.1ms.run/ang77712829/angevoice-gpu:latest ang77712829/angevoice-gpu:latest
 
 # Option 2: Configure Docker daemon global mirror (recommended)
 # Edit /etc/docker/daemon.json and add:
@@ -359,23 +359,30 @@ environment:
 | `MOSS_PROMPT_CACHE_MAX_ITEMS` | `8` | Encoded prompt-audio cache size |
 | `MOSS_APPLY_ANGEVOICE_RULES` | `auto` | Text rules for MOSS: full Chinese normalization for Chinese-major text, conservative cleanup for mixed English/technical text |
 | `MOSS_MIXED_ENGLISH_POLICY` | `translate` | Translate common mixed-English phrases into natural Chinese for MOSS; set `preserve` to keep original English |
-| `MOSS_REALTIME_STREAMING_DECODE` | `true` | Enable official MOSS frame-level realtime decoding; set `false` to prefer full-block quality if artifacts or stutter appear |
+| `MOSS_REALTIME_STREAMING_DECODE` | `true` | Enable official MOSS frame-level realtime decoding. It is enabled by default for low-latency streaming; disable it from the admin console only if a specific device shows boundary noise, memory pressure, or playback instability |
 | `MOSS_OUTPUT_TARGET_PEAK` | `0.86` | MOSS target output peak, balancing dynamics and clipping protection |
 | `MOSS_OUTPUT_GAIN` | `0.94` | Gentle MOSS postprocess gain to avoid overly quiet output while preserving dynamics |
 | `MOSS_OUTPUT_DECLICK_ENABLED` | `true` | Remove isolated transient clicks/pops and reduce electrical artifacts |
 | `MOSS_OUTPUT_EDGE_FADE_MS` | `1.5` | Short fade-in/out at MOSS segment edges to reduce splice pops without smearing consonants |
 | `MOSS_MAX_SILENCE_MS` | `480` | Maximum continuous silence kept in polished MOSS output to reduce long perceived stalls |
 | `MOSS_AUTO_FALLBACK_CPU` | `true` | Fall back to CPU when CUDA self-test fails |
-| `MOSS_STREAM_PREBUFFER_SECONDS` | `0.75` | Browser prebuffer for MOSS streaming, reducing underflow on NAS/older GPUs |
+| `MOSS_STREAM_PREBUFFER_SECONDS` | `3.0` | Browser prebuffer for MOSS streaming, reducing underflow on NAS/older GPUs |
 | `MOSS_STREAM_QUEUE_MAX_ITEMS` | `8` | MOSS streaming queue depth to absorb short decode/browser/network jitter |
 | `KOKORO_PROCESS_ISOLATION_ENABLED` | App default `false`; Docker/fnOS templates `true` | Run Kokoro in a killable worker so formal deployments can reclaim RAM/VRAM on release |
 | `MOSS_PROCESS_ISOLATION_ENABLED` | App default `false`; Docker/fnOS templates `true` | Enable killable MOSS process isolation; formal deployment templates enable it so a timed-out worker can be terminated and rebuilt |
 | `MOSS_PROCESS_ISOLATION_PROVIDERS` | App default `cuda`; Docker/fnOS templates `cpu,cuda` | Providers executed in an isolated worker process |
 | `MOSS_PROCESS_KILL_GRACE_SECONDS` | `2` | Grace seconds before force-killing a timed-out worker |
+| `ANGEVOICE_WEBSOCKET_STREAM_IDLE_TIMEOUT_SECONDS` | `120` | WebSocket streaming idle window while waiting for the next audio frame; prevents MOSS long-text first-frame or segment gaps from closing too early |
+| `ANGEVOICE_ENGINE_PROCESS_STREAM_DRAIN_SECONDS` | `30` | Isolated-worker drain window after stream cancellation |
+| `ANGEVOICE_ENGINE_PROCESS_STREAM_IDLE_TIMEOUT_SECONDS` | `120` | Isolated-worker streaming idle window while waiting for the next frame; avoids treating slow MOSS frames as worker hangs |
 | `MOSS_VRAM_SNAPSHOT_TTL_SECONDS` | `10` | Cache CUDA VRAM snapshots to avoid frequent torch/nvidia-smi probes during streaming |
 | `MOSS_QUALITY_GATE_ENABLED` | `true` | Reject silent, NaN/Inf, or heavily clipped MOSS self-test output |
 | `ANGEVOICE_IDLE_TIMEOUT_SECONDS` | `600` | Auto-unload all loaded models after N idle seconds; 0 = disabled |
 | `ANGEVOICE_IDLE_CHECK_INTERVAL` | `30` | Idle check interval (seconds) |
+| `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD` | `false` | Optional full cleanup after idle unload; exits only after an idle unload succeeds and the service is fully idle. Requires Docker or a service manager to restart the process |
+| `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_DELAY_SECONDS` | `3` | Delay before exiting after idle unload; a new request during the delay cancels the exit |
+| `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_COOLDOWN_SECONDS` | `1800` | Cooldown to avoid repeated restarts in abnormal environments |
+| `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_EXIT_CODE` | `75` | Exit code used for intentional full-cleanup exits |
 | `MOSS_STREAM_BUDGET_THRESHOLD_LOW` | `0.25` | Audio lead low threshold in seconds; below this decode 1 frame for faster first audio |
 | `MOSS_STREAM_BUDGET_THRESHOLD_MID` | `0.65` | Audio lead mid threshold; below this decode 2 frames |
 | `MOSS_STREAM_BUDGET_THRESHOLD_HIGH` | `1.20` | Audio lead high threshold; below this decode 4 frames, above this decode 8 frames |
@@ -400,6 +407,8 @@ See [`docs/SECURITY.md`](docs/SECURITY.md).
 ## Known limitations
 
 - AngeVoice does not train a new model; quality, license, and language capability follow upstream models.
+- Kokoro, MOSS-TTS-Nano and ZipVoice Docker/fnOS templates enable killable isolated workers by default. Startup preload is off, so the first request shows a wake/load state. If isolation is disabled, VRAM may be released on a best-effort basis but host RAM is not guaranteed to return to a cold-start baseline.
+- The optional full cleanup after idle unload is disabled by default. It only exits after an idle unload succeeds; use it with `restart: unless-stopped`, `restart: always`, or an equivalent service manager policy.
 - MOSS runtime provider status is reported separately from its product name. Legacy request IDs `moss-nano-cpu` / `moss-nano-cuda` remain accepted only for compatibility. Keep the standard `gpu` path evidence-based on the target host before long-running service.
 - Long-form text is synthesized segment by segment. Very long books should use a batch/task workflow.
 - For GPU deployments, avoid multiple workers loading the model at the same time unless you have enough VRAM.

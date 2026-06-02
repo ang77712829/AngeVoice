@@ -48,7 +48,7 @@ Content-Type: application/json
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `model` | string | 是 | `kokoro` 或 `moss-nano` |
+| `model` | string | 是 | `kokoro`、`moss`；如已保存 ZipVoice 音色，也可使用 `zipvoice` |
 | `input` | string | 是 | 待合成文本 |
 | `voice` | string | 是 | 音色 ID（见 `/v1/tts/capabilities`） |
 | `response_format` | string | 否 | `wav`（默认）、`mp3`、`pcm` |
@@ -111,13 +111,15 @@ POST /api/tts
 Content-Type: multipart/form-data
 
 text=要朗读的文本
-model=moss-nano
+model=moss
 voice=custom
 prompt_audio=@reference.wav
 response_encoding=base64
 ```
 
 克隆场景下 `prompt_audio` 传参考音频文件，服务端会自动提取说话人特征。
+
+ZipVoice 临时克隆还需要同时传入与参考录音完全对应的 `prompt_text`；更推荐先在 Studio 保存音色，再由阅读器使用保存后的音色 ID 调用 `zipvoice`。
 
 ---
 
@@ -158,5 +160,5 @@ Authorization: Bearer <your-api-key>
 |---|---|
 | 返回 401 | 检查 API Key 是否正确，Header 格式为 `Bearer <key>` |
 | 音频无声 | 检查 `response_format` 是否与播放器兼容；PCM 需指定采样率 |
-| 克隆音色不像 | 参考音频建议 5-15 秒、清晰无背景音 |
+| 克隆音色不像 | 参考音频应清晰、单人、无背景音；ZipVoice 官方建议少于 3 秒，MOSS 请遵循当前配置的参考音频上限 |
 | 流式播放卡顿 | 尝试降低文本长度或切换 Kokoro 模型 |

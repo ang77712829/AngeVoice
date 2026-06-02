@@ -5,5 +5,15 @@ PROFILE="${COMPOSE_PROFILES:-cpu}"
 case "$PROFILE" in cpu|gpu|legacy-gpu) ;; *) exit 1 ;; esac
 mkdir -p "${TRIM_PKGVAR}/models" "${TRIM_PKGVAR}/outputs" "${TRIM_PKGVAR}/prompts" \
   "${TRIM_PKGVAR}/credentials" "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/logs"
+for item in \
+  "${TRIM_PKGVAR}/docker-compose.yaml" \
+  "${TRIM_PKGVAR}/docker-compose.yml" \
+  "${TRIM_PKGVAR}/docker/.env" \
+  "${TRIM_PKGVAR}/app/docker/.env" \
+  "${TRIM_PKGVAR}/cmd/_mode_env.sh"; do
+  if [ -e "$item" ]; then
+    rm -f "$item"
+  fi
+done
 echo "[AngeVoice] 升级完成：profile=${PROFILE}；模型、音色、输出、凭据与运行配置目录均已保留。"
 exit 0

@@ -62,7 +62,7 @@ src/kokoro_tts/
 2. `security.py` 校验 WebSocket token 或 Authorization header。
 3. `service_state.py` 用同一个并发信号量保护推理。
 4. `engine_manager.py` 借用目标模型，当前模型不匹配且启用卸载策略时会先切换并卸载旧模型。
-5. 引擎生成 `started/audio/segment_error/done` 消息。Kokoro 保持上游 pipeline 的段落级推理，但在 WebSocket 发送前按固定时长切成小包；MOSS 默认启用 `MOSS_REALTIME_STREAMING_DECODE=true` 使用官方逐帧回调和 codec streaming decoder，以降低首包等待；如遇边界噪声或卡顿，可关闭该选项回退到整块生成后分包。
+5. 引擎生成 `started/audio/segment_error/done` 消息。Kokoro 保持上游 pipeline 的段落级推理，但在 WebSocket 发送前按固定时长切成小包；MOSS 默认使用官方逐帧回调和 codec streaming decoder（`MOSS_REALTIME_STREAMING_DECODE=true`），保持低延迟流式体验；若特定设备出现边界噪声或显存压力，可在后台关闭逐帧流式。
 6. 客户端发送 `cancel` 或 `stop` 后，服务停止后续段落推送。
 
 ## 状态对象
@@ -88,7 +88,7 @@ src/kokoro_tts/
 - `kokoro`：默认 Kokoro v1.1 中文引擎。
 - `moss`：MOSS-TTS-Nano 产品入口；OpenMOSS 官方 runtime 的 CPU/CUDA 由 Provider Policy 决定，旧 `moss-nano-cpu` / `moss-nano-cuda` 仅作为兼容输入 alias。
 
-正式 Docker/fnOS 模板中，Kokoro、MOSS-TTS-Nano 与 ZipVoice 均通过可销毁 Worker 加载推理运行时；API 主进程仅持有路由、配置、Voice Profile 元数据与状态。模型切换时只保留一个活跃热 Worker，空闲释放或取消/超时时退出 Worker，使操作系统回收其 RAM 与 VRAM。库级调用仍允许关闭隔离以保持兼容。MOSS CUDA 加载会先检查 ONNX Runtime provider，并在启用质量闸门时生成短音频，拒绝静音、NaN/Inf 或明显 clipping 的输出。
+正式 Docker/fnOS 模板中，Kokoro、MOSS-TTS-Nano 与 ZipVoice 均通过可销毁 Worker 加载推理运行时；API 主进程仅持有路由、配置、Voice Profile 元数据与状态。模型切换时只保留一个活跃热 Worker，空闲释放或取消/超时时退出 Worker，使操作系统回收其 RAM 与 VRAM。库级调用仍允许关闭隔离以保持兼容。MOSS CUDA 加载会先检查 ONNX Runtime provider，并在启用质量闸门时生成短音频，拒绝静音、NaN/Inf 或明显 clipping 的输出。MOSS 流式取消使用软取消和 request_id 过滤，避免停止后旧帧污染下一次合成；长文本首帧或分段间隙通过独立流式空闲窗口保活，避免被普通请求超时误断开。
 
 `MOSS_CUDA_ENABLED=false` 会禁止 `moss` 请求 CUDA provider，用于 CPU 镜像和 legacy-gpu 默认配置。标准 GPU 画像公开模型仍为 `kokoro,moss,zipvoice`，但允许 MOSS 使用 CUDA；`ANGEVOICE_DEFAULT_MODEL=kokoro`，因此 MOSS 只会在用户切换时加载。
 
@@ -96,7 +96,7 @@ MOSS capability metadata 会声明 `modes=["preset_voice","voice_clone"]` 和 `v
 
 MOSS 适配层不会直接改写上游仓库代码。AngeVoice 在适配层中做四件事：复用单个 MOSS executor 并用 runtime lock 保护官方 runtime；对 clone 参考音频做时长裁剪和 prompt code LRU 缓存；对输出做温和峰值保护，降低 8GB 显存环境下 clone OOM、爆音和削波的概率；保留可选进程级隔离能力，便于排查 CUDA/ONNX Runtime 底层卡死问题。
 
-进程级隔离在 Docker/fnOS 正式部署模板中对三种模型默认开启：MOSS 将 CPU 与 CUDA provider 放入现有隔离 Worker；Kokoro 与 ZipVoice 通过通用 `workers/process_worker.py` 子进程运行。非流式与流式请求在超时、取消或底层卡死后均可终止对应 Worker，并在下次请求按需重建。库级配置仍保留关闭隔离的能力，供嵌入式调用者自行权衡，但关闭后主机内存不保证在释放时完整归还。
+进程级隔离在 Docker/fnOS 正式部署模板中对三种模型默认开启：MOSS 将 CPU 与 CUDA provider 放入现有隔离 Worker；Kokoro 与 ZipVoice 通过通用 `workers/process_worker.py` 子进程运行。非流式与流式请求在超时、取消或底层卡死后均可终止对应 Worker，并在下次请求按需重建。库级配置仍保留关闭隔离的能力，供嵌入式调用者自行权衡，但关闭后主机内存不保证在释放时完整归还。可选的 `ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD=true` 只在模型因空闲卸载成功、且没有活跃请求/WebSocket/已加载模型时退出 API 进程，交给容器或服务管理器拉起，用于清理 CUDA/ONNX Runtime 底层残留。
 
 MOSS CUDA 依赖目标环境的 ONNX Runtime/CUDA/cuDNN 组合。Tesla P4 在通用 GPU Docker 画像中已通过 `onnxruntime-gpu==1.20.2` + `nvidia-cudnn-cu12==9.1.0.70` 探针测试；缺 cuDNN 9 时官方 runtime 会创建 CPU session，AngeVoice 会拒绝该 CUDA 加载并按配置回退 CPU。legacy-gpu 镜像通过 ONNX Runtime CUDA 11 feed 预装了 CUDA 11.8 兼容的 MOSS GPU 依赖，但默认只开放 MOSS CPU；它是通用 GPU 画像无法启动或不稳定时的兼容模式。
 

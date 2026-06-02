@@ -10,6 +10,7 @@ MODE=""
 MODEL=""
 API_KEY=""
 PROMPT_AUDIO=""
+PROMPT_TEXT=""
 
 PATCH_COMPOSE="ask"
 WRITE_CONFIG="ask"
@@ -35,10 +36,11 @@ AngeVoice 小智后端适配器安装脚本
   --xiaozhi-dir DIR       小智 compose 文件所在目录
   --angevoice-url URL     AngeVoice HTTP 地址
   --angevoice-ws URL      AngeVoice WebSocket 地址
-  --mode MODE             kokoro|kokoro-stream|moss|moss-stream|moss-clone|moss-clone-stream
-  --model MODEL           kokoro|moss-nano-cpu|moss-nano-cuda
+  --mode MODE             kokoro|kokoro-stream|moss|moss-stream|moss-clone|moss-clone-stream|zipvoice|zipvoice-stream
+  --model MODEL           kokoro|moss|zipvoice；旧 moss-nano-cpu / moss-nano-cuda 仍兼容
   --api-key KEY           AngeVoice API Key，未启用鉴权可留空
-  --prompt-audio FILE     MOSS clone 参考音频，会复制为 data/angevoice_prompts/reference.wav
+  --prompt-audio FILE     MOSS/ZipVoice 克隆参考音频，会复制为 data/angevoice_prompts/reference.wav
+  --prompt-text TEXT      ZipVoice 参考音频实际朗读文本
 
 安装控制：
   --adapters-only         只安装适配器，不 patch compose，不写配置，不导入智控台，不重启
@@ -55,7 +57,8 @@ AngeVoice 小智后端适配器安装脚本
 
 示例：
   bash install-xiaozhi-adapter.sh --xiaozhi-dir /vol3/1000/docker/xiaozhi-server
-  bash install-xiaozhi-adapter.sh --mode moss-clone-stream --model moss-nano-cuda --prompt-audio ./reference.wav
+  bash install-xiaozhi-adapter.sh --mode moss-clone-stream --model moss --prompt-audio ./reference.wav
+  bash install-xiaozhi-adapter.sh --mode zipvoice-stream --model zipvoice --prompt-audio ./reference.wav --prompt-text "参考音频实际朗读文本"
 USAGE
 }
 
@@ -68,6 +71,7 @@ while [[ $# -gt 0 ]]; do
     --model) MODEL="$2"; shift 2 ;;
     --api-key) API_KEY="$2"; shift 2 ;;
     --prompt-audio) PROMPT_AUDIO="$2"; shift 2 ;;
+    --prompt-text) PROMPT_TEXT="$2"; shift 2 ;;
     --adapters-only) PATCH_COMPOSE="false"; WRITE_CONFIG="false"; IMPORT_MANAGER_PRESETS="false"; RESTART="false"; shift ;;
     --no-compose) PATCH_COMPOSE="false"; shift ;;
     --no-config) WRITE_CONFIG="false"; shift ;;
@@ -404,6 +408,8 @@ choose_mode() {
     echo "  4) MOSS 预设音色非流式" >&2
     echo "  5) MOSS 克隆流式，高级玩法" >&2
     echo "  6) MOSS 克隆非流式" >&2
+    echo "  7) ZipVoice 克隆流式，需要参考音频和参考文本" >&2
+    echo "  8) ZipVoice 克隆非流式，需要参考音频和参考文本" >&2
 
     local choice
     choice="$(ask_line "输入编号" "1")"
@@ -415,6 +421,8 @@ choose_mode() {
       4) MODE="moss" ;;
       5) MODE="moss-clone-stream" ;;
       6) MODE="moss-clone" ;;
+      7) MODE="zipvoice-stream" ;;
+      8) MODE="zipvoice" ;;
       *) MODE="kokoro-stream" ;;
     esac
   else
@@ -430,11 +438,10 @@ recommend_model() {
       echo "kokoro"
       ;;
     moss*)
-      if [[ "$DETECTED_AV_MODELS" == *moss-nano-cuda* || "$DETECTED_AV_PROFILE" != "cpu" ]]; then
-        echo "moss-nano-cuda"
-      else
-        echo "moss-nano-cpu"
-      fi
+      echo "moss"
+      ;;
+    zipvoice*)
+      echo "zipvoice"
       ;;
   esac
 }
@@ -446,21 +453,11 @@ choose_model() {
 
   if [[ "$MODE" == moss* ]] && is_interactive; then
     echo >&2
-    echo "请选择 MOSS 模型：" >&2
-    echo "  1) moss-nano-cpu，兼容性最好" >&2
-    echo "  2) moss-nano-cuda，适合 AngeVoice GPU/legacy-gpu 容器" >&2
-
-    local default="1"
-    [[ "$MODEL" == "moss-nano-cuda" ]] && default="2"
-
-    local choice
-    choice="$(ask_line "输入编号" "$default")"
-
-    if [[ "$choice" == "2" ]]; then
-      MODEL="moss-nano-cuda"
-    else
-      MODEL="moss-nano-cpu"
-    fi
+    echo "MOSS 统一使用模型 ID：moss；CPU/CUDA 由 AngeVoice 当前部署画像和后台 Provider 策略决定。" >&2
+  fi
+  if [[ "$MODE" == zipvoice* ]] && is_interactive; then
+    echo >&2
+    echo "ZipVoice 统一使用模型 ID：zipvoice；需要参考音频和对应参考文本。" >&2
   fi
 
   return 0
@@ -510,7 +507,7 @@ volumes = [
     "      - ./angevoice-adapter/angevoice.py:/opt/xiaozhi-esp32-server/core/providers/tts/angevoice.py:ro\n",
     "      - ./angevoice-adapter/angevoice_stream.py:/opt/xiaozhi-esp32-server/core/providers/tts/angevoice_stream.py:ro\n",
     "      - ./angevoice-adapter/angevoice_clone.py:/opt/xiaozhi-esp32-server/core/providers/tts/angevoice_clone.py:ro\n",
-    "      # MOSS clone prompt audio directory\n",
+    "      # MOSS/ZipVoice 克隆参考音频目录\n",
     "      - ./data/angevoice_prompts:/opt/xiaozhi-esp32-server/data/angevoice_prompts:ro\n",
 ]
 
@@ -592,6 +589,9 @@ write_config() {
   local format="$5"
   local timeout="$6"
   local prompt="$7"
+  local prompt_text="${PROMPT_TEXT:-请改成参考音频实际朗读文本。}"
+  local prompt_text_yaml="${prompt_text//\\/\\\\}"
+  prompt_text_yaml="${prompt_text_yaml//\"/\\\"}"
 
   cat >> data/.config.yaml <<YAML
 
@@ -622,6 +622,12 @@ YAML
 YAML
   fi
 
+  if [[ "$model" == "zipvoice" ]]; then
+    cat >> data/.config.yaml <<YAML
+    prompt_text: "${prompt_text_yaml}"
+YAML
+  fi
+
   cat >> data/.config.yaml <<'YAML'
 # ===== AngeVoice Xiaozhi adapter end =====
 YAML
@@ -647,6 +653,12 @@ config_tuple() {
     moss-clone-stream)
       echo "AngeVoiceMossCloneStream|angevoice_stream|${MODEL}|Junhao|pcm_s16le|300|prompt"
       ;;
+    zipvoice|zipvoice-clone)
+      echo "AngeVoiceZipVoiceClone|angevoice_clone|${MODEL}|xiaozhi_zipvoice|wav|360|prompt"
+      ;;
+    zipvoice-stream|zipvoice-clone-stream)
+      echo "AngeVoiceZipVoiceCloneStream|angevoice_stream|${MODEL}|xiaozhi_zipvoice|pcm_s16le|360|prompt"
+      ;;
   esac
 }
 
@@ -654,14 +666,12 @@ selected_manager_id() {
   case "$MODE:$MODEL" in
     kokoro:*) echo "TTS_AngeVoiceKokoro" ;;
     kokoro-stream:*) echo "TTS_AngeVoiceKokoroStream" ;;
-    moss:moss-nano-cuda) echo "TTS_AngeVoiceMossCuda" ;;
-    moss:*) echo "TTS_AngeVoiceMossCpu" ;;
-    moss-stream:moss-nano-cuda) echo "TTS_AngeVoiceMossCudaStream" ;;
-    moss-stream:*) echo "TTS_AngeVoiceMossCpuStream" ;;
-    moss-clone:moss-nano-cuda) echo "TTS_AngeVoiceMossCudaClone" ;;
-    moss-clone:*) echo "TTS_AngeVoiceMossCpuClone" ;;
-    moss-clone-stream:moss-nano-cuda) echo "TTS_AngeVoiceMossCudaCloneStream" ;;
-    moss-clone-stream:*) echo "TTS_AngeVoiceMossCpuCloneStream" ;;
+    moss:*) echo "TTS_AngeVoiceMoss" ;;
+    moss-stream:*) echo "TTS_AngeVoiceMossStream" ;;
+    moss-clone:*) echo "TTS_AngeVoiceMossClone" ;;
+    moss-clone-stream:*) echo "TTS_AngeVoiceMossCloneStream" ;;
+    zipvoice:*|zipvoice-clone:*) echo "TTS_AngeVoiceZipVoiceClone" ;;
+    zipvoice-stream:*|zipvoice-clone-stream:*) echo "TTS_AngeVoiceZipVoiceCloneStream" ;;
     *) echo "TTS_AngeVoiceKokoroStream" ;;
   esac
 }
@@ -702,6 +712,7 @@ generate_manager_sql() {
   ANGEVOICE_HTTP="$ANGEVOICE_HTTP" \
   ANGEVOICE_WS="$ANGEVOICE_WS" \
   API_KEY="$API_KEY" \
+  PROMPT_TEXT="$PROMPT_TEXT" \
   SELECTED_ID="$selected_id" \
   MAKE_DEFAULT="$make_default" \
   python3 - "$out" <<'PY'
@@ -717,6 +728,7 @@ out = Path(sys.argv[1])
 http = os.environ["ANGEVOICE_HTTP"]
 ws = os.environ["ANGEVOICE_WS"]
 api_key = os.environ.get("API_KEY", "")
+zipvoice_prompt_text = os.environ.get("PROMPT_TEXT", "") or "请改成参考音频实际朗读文本。"
 selected_id = os.environ.get("SELECTED_ID", "TTS_AngeVoiceKokoroStream")
 make_default = os.environ.get("MAKE_DEFAULT", "false") == "true"
 
@@ -734,7 +746,7 @@ def provider_fields(kind: str):
     common = [
         {"key": "api_url", "label": "AngeVoice接口地址", "type": "string"},
         {"key": "api_key", "label": "API Key，可留空", "type": "string"},
-        {"key": "model", "label": "模型：kokoro / moss-nano-cpu / moss-nano-cuda", "type": "string"},
+        {"key": "model", "label": "模型：kokoro / moss / zipvoice", "type": "string"},
         {"key": "voice", "label": "音色", "type": "string"},
         {"key": "speed", "label": "语速", "type": "number"},
         {"key": "output_dir", "label": "输出目录", "type": "string"},
@@ -749,15 +761,17 @@ def provider_fields(kind: str):
             {"key": "voice", "label": "音色", "type": "string"},
             {"key": "format", "label": "音频格式，推荐pcm_s16le", "type": "string"},
             {"key": "speed", "label": "语速", "type": "number"},
-            {"key": "prompt_audio_path", "label": "MOSS克隆参考音频容器路径，可留空", "type": "string"},
+            {"key": "prompt_audio_path", "label": "克隆参考音频容器路径，可留空", "type": "string"},
             {"key": "prompt_audio_filename", "label": "参考音频文件名", "type": "string"},
+            {"key": "prompt_text", "label": "ZipVoice参考音频实际朗读文本", "type": "string"},
             {"key": "output_dir", "label": "输出目录", "type": "string"},
             {"key": "tts_timeout", "label": "超时时间秒", "type": "number"},
         ]
     if kind == "clone":
         return common + [
-            {"key": "prompt_audio_path", "label": "MOSS克隆参考音频容器路径", "type": "string"},
+            {"key": "prompt_audio_path", "label": "克隆参考音频容器路径", "type": "string"},
             {"key": "prompt_audio_filename", "label": "参考音频文件名", "type": "string"},
+            {"key": "prompt_text", "label": "ZipVoice参考音频实际朗读文本", "type": "string"},
             {"key": "response_format", "label": "返回格式，推荐wav", "type": "string"},
         ]
     return common + [{"key": "response_format", "label": "返回格式，推荐wav", "type": "string"}]
@@ -770,7 +784,7 @@ providers = [
 
 prompt_path = "/opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav"
 
-def cfg(t, model, voice="zm_010", fmt="wav", timeout=120, prompt=False):
+def cfg(t, model, voice="zm_010", fmt="wav", timeout=120, prompt=False, prompt_text=False):
     d = {
         "type": t,
         "api_url": http if t in {"angevoice", "angevoice_clone"} else ws,
@@ -787,19 +801,19 @@ def cfg(t, model, voice="zm_010", fmt="wav", timeout=120, prompt=False):
     if prompt:
         d["prompt_audio_path"] = prompt_path
         d["prompt_audio_filename"] = "reference.wav"
+    if prompt_text:
+        d["prompt_text"] = zipvoice_prompt_text
     return d
 
 configs = [
     ("TTS_AngeVoiceKokoro", "TTS", "AngeVoiceKokoro", "AngeVoice Kokoro 非流式", cfg("angevoice", "kokoro", "zm_010", "wav", 120), 910),
     ("TTS_AngeVoiceKokoroStream", "TTS", "AngeVoiceKokoroStream", "AngeVoice Kokoro 流式", cfg("angevoice_stream", "kokoro", "zm_010", "pcm_s16le", 180), 911),
-    ("TTS_AngeVoiceMossCpu", "TTS", "AngeVoiceMossCpu", "AngeVoice MOSS CPU 非流式", cfg("angevoice", "moss-nano-cpu", "Junhao", "wav", 180), 920),
-    ("TTS_AngeVoiceMossCuda", "TTS", "AngeVoiceMossCuda", "AngeVoice MOSS CUDA 非流式", cfg("angevoice", "moss-nano-cuda", "Junhao", "wav", 180), 921),
-    ("TTS_AngeVoiceMossCpuStream", "TTS", "AngeVoiceMossCpuStream", "AngeVoice MOSS CPU 流式", cfg("angevoice_stream", "moss-nano-cpu", "Junhao", "pcm_s16le", 240), 922),
-    ("TTS_AngeVoiceMossCudaStream", "TTS", "AngeVoiceMossCudaStream", "AngeVoice MOSS CUDA 流式", cfg("angevoice_stream", "moss-nano-cuda", "Junhao", "pcm_s16le", 240), 923),
-    ("TTS_AngeVoiceMossCpuClone", "TTS", "AngeVoiceMossCpuClone", "AngeVoice MOSS CPU 克隆非流式", cfg("angevoice_clone", "moss-nano-cpu", "Junhao", "wav", 300, True), 930),
-    ("TTS_AngeVoiceMossCudaClone", "TTS", "AngeVoiceMossCudaClone", "AngeVoice MOSS CUDA 克隆非流式", cfg("angevoice_clone", "moss-nano-cuda", "Junhao", "wav", 300, True), 931),
-    ("TTS_AngeVoiceMossCpuCloneStream", "TTS", "AngeVoiceMossCpuCloneStream", "AngeVoice MOSS CPU 克隆流式", cfg("angevoice_stream", "moss-nano-cpu", "Junhao", "pcm_s16le", 300, True), 932),
-    ("TTS_AngeVoiceMossCudaCloneStream", "TTS", "AngeVoiceMossCudaCloneStream", "AngeVoice MOSS CUDA 克隆流式", cfg("angevoice_stream", "moss-nano-cuda", "Junhao", "pcm_s16le", 300, True), 933),
+    ("TTS_AngeVoiceMoss", "TTS", "AngeVoiceMoss", "AngeVoice MOSS 非流式", cfg("angevoice", "moss", "Junhao", "wav", 180), 920),
+    ("TTS_AngeVoiceMossStream", "TTS", "AngeVoiceMossStream", "AngeVoice MOSS 流式", cfg("angevoice_stream", "moss", "Junhao", "pcm_s16le", 240), 921),
+    ("TTS_AngeVoiceMossClone", "TTS", "AngeVoiceMossClone", "AngeVoice MOSS 克隆非流式", cfg("angevoice_clone", "moss", "Junhao", "wav", 300, True), 930),
+    ("TTS_AngeVoiceMossCloneStream", "TTS", "AngeVoiceMossCloneStream", "AngeVoice MOSS 克隆流式", cfg("angevoice_stream", "moss", "Junhao", "pcm_s16le", 300, True), 931),
+    ("TTS_AngeVoiceZipVoiceClone", "TTS", "AngeVoiceZipVoiceClone", "AngeVoice ZipVoice 克隆非流式", cfg("angevoice_clone", "zipvoice", "xiaozhi_zipvoice", "wav", 360, True, True), 940),
+    ("TTS_AngeVoiceZipVoiceCloneStream", "TTS", "AngeVoiceZipVoiceCloneStream", "AngeVoice ZipVoice 克隆流式", cfg("angevoice_stream", "zipvoice", "xiaozhi_zipvoice", "pcm_s16le", 360, True, True), 941),
 ]
 
 lines = [
@@ -1079,7 +1093,7 @@ resolve_urls
 choose_mode
 
 case "$MODE" in
-  kokoro|kokoro-stream|moss|moss-stream|moss-clone|moss-clone-stream)
+  kokoro|kokoro-stream|moss|moss-stream|moss-clone|moss-clone-stream|zipvoice|zipvoice-stream|zipvoice-clone|zipvoice-clone-stream)
     ;;
   *)
     err "不支持的 mode: $MODE"
@@ -1090,7 +1104,10 @@ esac
 choose_model
 
 case "$MODEL" in
-  kokoro|moss-nano-cpu|moss-nano-cuda)
+  moss-nano-cpu|moss-nano-cuda)
+    MODEL="moss"
+    ;;
+  kokoro|moss|zipvoice)
     ;;
   *)
     err "不支持的 model: $MODEL"
@@ -1098,8 +1115,17 @@ case "$MODEL" in
     ;;
 esac
 
-if [[ "$MODE" == moss-clone* && -z "$PROMPT_AUDIO" ]] && is_interactive; then
-  PROMPT_AUDIO="$(ask_line "MOSS clone 参考音频路径；留空则稍后手动放入 data/angevoice_prompts/reference.wav" "")"
+if [[ ( "$MODE" == moss-clone* || "$MODE" == zipvoice* ) && -z "$PROMPT_AUDIO" ]] && is_interactive; then
+  PROMPT_AUDIO="$(ask_line "克隆参考音频路径；留空则稍后手动放入 data/angevoice_prompts/reference.wav" "")"
+fi
+
+if [[ "$MODE" == zipvoice* && -z "$PROMPT_TEXT" ]] && is_interactive; then
+  PROMPT_TEXT="$(ask_line "ZipVoice 参考音频实际朗读文本；留空则稍后在智控台修改" "")"
+fi
+
+if [[ "$MODE" == zipvoice* && -z "$PROMPT_TEXT" ]]; then
+  PROMPT_TEXT="请改成参考音频实际朗读文本。"
+  warn "ZipVoice 需要 prompt_text；已写入占位文本，请在智控台或 data/.config.yaml 中改成参考音频实际朗读文本。"
 fi
 
 if [[ "$PATCH_COMPOSE" == "ask" ]]; then
@@ -1178,7 +1204,7 @@ if [[ -n "$PROMPT_AUDIO" ]]; then
     cp "$PROMPT_AUDIO" data/angevoice_prompts/reference.wav
   fi
 
-  log "MOSS 克隆参考音频已复制到: data/angevoice_prompts/reference.wav"
+  log "克隆参考音频已复制到: data/angevoice_prompts/reference.wav"
 fi
 
 if [[ "$PATCH_COMPOSE" == "true" ]]; then
@@ -1261,19 +1287,20 @@ cat <<EOF
 智控台持久化：
   provider 表：ai_model_provider
   config 表：ai_model_config
-  已导入 CPU/CUDA、流式/非流式、MOSS clone 相关预设。
+  已导入 Kokoro、MOSS、ZipVoice、流式/非流式和克隆相关预设。
   智控台/API模式不会再写 selected_module/TTS 到 .config.yaml，避免启动冲突。
   脚本会自动重建 xiaozhi-esp32-server 容器，让新增适配器挂载立即生效。
   重建时会使用 --no-deps，并重连已有小智网络，避免 manager-api/db/redis 容器名解析失败。
   如果页面没刷新，请重新打开“模型配置 → 语音合成”。
 
-MOSS 克隆参考音频：
+克隆参考音频：
   宿主机：$XIAOZHI_DIR/data/angevoice_prompts/reference.wav
   容器内：/opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
 
-更换 MOSS 克隆声音：
+更换克隆声音：
   直接替换 reference.wav
   或把 prompt_audio_path 改成 /opt/xiaozhi-esp32-server/data/angevoice_prompts/你的音色.wav
   注意不要填写宿主机路径 /vol*/...，小智容器内必须使用 /opt/xiaozhi-esp32-server/... 路径
+  ZipVoice 还必须把 prompt_text 改成参考音频实际朗读文本
 
 EOF

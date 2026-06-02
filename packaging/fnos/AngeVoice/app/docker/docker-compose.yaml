@@ -6,7 +6,7 @@ name: angevoice-fnos
 services:
   angevoice-cpu:
     profiles: ["cpu"]
-    image: ghcr.io/ang77712829/angevoice-cpu:latest
+    image: ang77712829/angevoice-cpu:latest
     container_name: angevoice-cpu
     ports:
       - "${wizard_http_port:-8101}:8000"
@@ -48,7 +48,7 @@ services:
       - "${TRIM_PKGVAR}/config:/app/config"
       - "${TRIM_PKGVAR}/logs:/app/logs"
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request,json; d=json.loads(urllib.request.urlopen('http://localhost:8000/health').read()); assert d.get('status') in {'ok','idle','loading'}"]
+      test: ["CMD", "python3", "-c", "import urllib.request,json; d=json.loads(urllib.request.urlopen('http://localhost:8000/health').read()); assert d.get('status') in {'ok','idle','loading','restarting'}"]
       interval: 30s
       timeout: 10s
       retries: 6
@@ -57,7 +57,7 @@ services:
 
   angevoice-gpu:
     profiles: ["gpu"]
-    image: ghcr.io/ang77712829/angevoice-gpu:latest
+    image: ang77712829/angevoice-gpu:latest
     container_name: angevoice-gpu
     ports:
       - "${wizard_http_port:-8101}:8000"
@@ -111,7 +111,7 @@ services:
               count: all
               capabilities: ["gpu"]
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request,json; d=json.loads(urllib.request.urlopen('http://localhost:8000/health').read()); assert d.get('status') in {'ok','idle','loading'}"]
+      test: ["CMD", "python3", "-c", "import urllib.request,json; d=json.loads(urllib.request.urlopen('http://localhost:8000/health').read()); assert d.get('status') in {'ok','idle','loading','restarting'}"]
       interval: 30s
       timeout: 10s
       retries: 6
@@ -120,7 +120,7 @@ services:
 
   angevoice-legacy-gpu:
     profiles: ["legacy-gpu"]
-    image: ghcr.io/ang77712829/angevoice-legacy-gpu:latest
+    image: ang77712829/angevoice-legacy-gpu:latest
     container_name: angevoice-legacy-gpu
     ports:
       - "${wizard_http_port:-8101}:8000"
@@ -173,7 +173,7 @@ services:
               count: all
               capabilities: ["gpu"]
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request,json; d=json.loads(urllib.request.urlopen('http://localhost:8000/health').read()); assert d.get('status') in {'ok','idle','loading'}"]
+      test: ["CMD", "python3", "-c", "import urllib.request,json; d=json.loads(urllib.request.urlopen('http://localhost:8000/health').read()); assert d.get('status') in {'ok','idle','loading','restarting'}"]
       interval: 30s
       timeout: 10s
       retries: 6

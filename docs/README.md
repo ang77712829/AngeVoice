@@ -1,6 +1,6 @@
 # AngeVoice 文档
 
-AngeVoice 提供三个稳定产品模型入口：`Kokoro v1.1 Chinese`、`MOSS-TTS-Nano` 与 `ZipVoice`。CPU、CUDA 与自动回退等运行信息在状态与诊断中单独展示。
+AngeVoice 提供三个稳定产品模型入口：`Kokoro v1.1 Chinese`、`MOSS-TTS-Nano` 与 `ZipVoice`。CPU、CUDA 与自动回退等运行信息在状态与诊断中单独展示。2.6.610 起，MOSS 长文本流式等待、停止后立刻再次合成、空闲卸载后可选彻底清理均有独立配置和后台开关。
 
 ## 使用与部署
 

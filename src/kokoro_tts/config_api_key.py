@@ -123,17 +123,17 @@ def load_or_generate_api_key(config) -> str:
             existing = legacy_file.read_text(encoding="utf-8").strip()
             if existing:
                 _atomic_write_secret(key_file, existing)
-                logger.info("Migrated generated API key from %s to %s", legacy_file, key_file)
+                logger.info("已将生成的 API Key 从 %s 迁移到 %s", legacy_file, key_file)
                 return existing
         generated = generate_api_key()
         _atomic_write_secret(key_file, generated)
-        logger.warning("Generated AngeVoice API key at %s. Copy it into Studio/API clients or rotate it in /admin.", key_file)
+        logger.warning("已在 %s 生成 AngeVoice API Key。请填入 Studio/API 客户端，或在 /admin 中轮换。", key_file)
         return generated
     except Exception:
-        logger.exception("Unable to load or generate API key file: %s", key_file)
+        logger.exception("无法读取或生成 API Key 文件：%s", key_file)
         generated = generate_api_key()
         logger.warning(
-            "Generated in-memory AngeVoice API key because key file is unavailable; "
-            "set ANGEVOICE_API_KEY_FILE to a writable persistent path."
+            "由于 API Key 文件不可用，已生成仅驻留内存的 AngeVoice API Key；"
+            "请将 ANGEVOICE_API_KEY_FILE 设置为可写的持久化路径。"
         )
         return generated

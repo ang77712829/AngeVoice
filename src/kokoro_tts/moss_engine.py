@@ -18,6 +18,7 @@ from typing import Callable, Optional
 
 from .audio import encode_audio_segment, write_wav_bytes
 from .config import TTSConfig
+from .config_ids import moss_voice_catalog
 from .moss_engine_streaming import MossStreamingMixin
 from .moss import (
     StreamBudgetThresholds,
@@ -33,8 +34,6 @@ from .moss import (
     normalize_waveform,
     prompt_audio_cache_key,
     prepare_prompt_audio,
-    MossProcessClient,
-    MossProcessTimeoutError,
     get_cuda_vram_snapshot,
     is_memory_allocation_error,
     resolve_prompt_audio_codes_cached,
@@ -46,6 +45,8 @@ from .moss import (
     trim_silence_edges,
     temp_output_path,
 )
+# MOSS 现在统一使用通用 EngineProcessClient，与 Kokoro/ZipVoice 一致。
+from .workers.process_worker import EngineProcessClient, EngineProcessTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +68,10 @@ class MossNanoEngine(MossStreamingMixin):
         self.engine_id = engine_id
         self.display_name = "MOSS-TTS-Nano"
         self._process_isolated = self._resolve_process_isolation(process_isolation)
-        self._process_client: MossProcessClient | None = None
+        self._process_client: EngineProcessClient | None = None
         self._cached_sample_rate = 48000
         self._cached_channels = 2
-        self._cached_voices: list[str] = [self.config.moss_default_voice]
+        self._cached_voices: list[str] = moss_voice_catalog(self.config.moss_default_voice)
         self._runtime = None
         self._loaded = False
         self._actual_provider = self.execution_provider
@@ -138,7 +139,10 @@ class MossNanoEngine(MossStreamingMixin):
     def get_voices(self) -> list[str]:
         if self._process_isolated and self._process_client is not None and self._process_client.alive:
             try:
-                voices = self._process_client.request("voices", {}, timeout=10.0)
+                # 修复说明：统一使用 "get_voices" 命令（与 _worker_main 中的处理分支对应）。
+                # 原代码误用 "voices" 命令，会导致 worker 返回
+                # “未知 moss worker 命令：voices” 错误。
+                voices = self._process_client.request("get_voices", {}, timeout=10.0)
                 self._cached_voices = [str(item) for item in voices] or [self.default_voice]
             except Exception:
                 logger.debug("读取 MOSS 隔离进程音色列表失败", exc_info=True)
@@ -231,16 +235,19 @@ class MossNanoEngine(MossStreamingMixin):
 
 
     def _load_process_isolated(self) -> "MossNanoEngine":
-        """在独立子进程中加载 MOSS runtime。"""
+        """在独立子进程中加载 MOSS runtime。
 
-        self._process_client = MossProcessClient(
+        使用统一的 EngineProcessClient（与 Kokoro/ZipVoice 相同的基础设施）。
+        engine_id 必须为 "moss"，对应 workers/factories.py 中注册的工厂。
+        """
+        self._process_client = EngineProcessClient(
             config=self.config,
-            provider=self.execution_provider,
-            engine_id=self.engine_id,
+            engine_id="moss",
+            requested_provider=self.execution_provider,
             logger=logger,
         )
         try:
-            metadata = self._process_client.request("load", {}, timeout=float(self.config.request_timeout_seconds))
+            metadata = self._process_client.load(timeout=float(self.config.request_timeout_seconds))
         except Exception as exc:
             self._load_error = str(exc)
             self._process_client.close(kill=True)
@@ -368,21 +375,21 @@ class MossNanoEngine(MossStreamingMixin):
             self._loaded = False
             self._rebuild_executor()
             logger.warning(
-                "MOSS inference timed out (%.0fs) — executor rebuilt, engine marked unhealthy (consecutive=%d)",
+                "MOSS 推理超时（%.0fs），已重建执行器并标记引擎不健康（连续次数=%d）",
                 timeout, self._consecutive_timeouts,
             )
             raise RuntimeError(
-                f"MOSS inference timed out ({timeout}s). "
-                "Engine marked unhealthy and quarantined. "
-                "The next request will create a fresh engine instance. "
-                "If this persists, try switching to CPU or restarting the container."
+                f"MOSS 推理超时（{timeout}s）。"
+                "引擎已标记为不健康并隔离；下次请求会创建新的引擎实例。"
+                "如果持续出现，请切换到 CPU 或重启容器。"
             )
 
 
     def _synthesize_array_process_isolated(self, *, text: str, voice: str, speed: float, prompt_audio_path: str | None, timeout: float):
         """通过隔离子进程执行一次非流式 MOSS 推理。"""
 
-        if self._process_client is None:
+        # 修复说明：同时检查 is_loaded，处理进程崩溃后 client 存在但未加载的场景。
+        if self._process_client is None or not self._process_client.is_loaded:
             self.load()
         try:
             return self._process_client.request(
@@ -390,24 +397,33 @@ class MossNanoEngine(MossStreamingMixin):
                 {"text": text, "voice": voice, "speed": speed, "prompt_audio_path": prompt_audio_path},
                 timeout=float(timeout),
             )
-        except MossProcessTimeoutError as exc:
+        except EngineProcessTimeoutError as exc:
             self._mark_process_failure(timeout=timeout, reason="timeout")
             raise RuntimeError(
-                f"MOSS isolated worker timed out ({timeout}s). Worker process was killed and will be rebuilt on next request."
+                f"MOSS 隔离 worker 推理超时（{timeout}s）。worker 进程已被终止，下次请求会重新创建。"
             ) from exc
         except Exception:
             self._mark_process_failure(timeout=timeout, reason="worker_error")
             raise
 
     def _mark_process_failure(self, *, timeout: float, reason: str) -> None:
-        """记录隔离进程失败并让下次请求重新加载 worker。"""
+        """记录隔离进程失败，标记引擎不健康。
 
+        修复说明（原实现有两个问题）：
+        1. 原代码设 ``_process_client = None``，导致 EngineManager 无法通过
+           ``engine.is_healthy`` 感知到不健康状态，错误地跳过 drop+rebuild 流程。
+        2. 原代码设 ``_loaded = False``，但 EngineManager 通过 ``is_healthy`` 判断
+           是否需要重建——应由 EngineManager 统一管理，而非在此强制修改加载状态。
+
+        现在只设 ``_unhealthy = True`` 并 kill 进程，让 EngineManager 在下次
+        borrow() 时检测到 is_healthy == False，自动 drop + rebuild。
+        """
         self._consecutive_timeouts += 1
         self._unhealthy = True
-        self._loaded = False
+        # 保持 _process_client 引用：EngineManager 通过 is_healthy 感知状态，
+        # drop_model 时会调用 unload()，unload() 会正确地 close + null client。
         if self._process_client is not None:
             self._process_client.close(kill=True)
-            self._process_client = None
         logger.warning(
             "MOSS isolated worker failed (%s, %.0fs); process killed (consecutive=%d)",
             reason,
@@ -734,8 +750,8 @@ class MossNanoEngine(MossStreamingMixin):
             single_newline_policy=str(getattr(self.config, "text_single_newline_policy", "auto")),
         )
 
-    def _vram_status(self) -> dict:
-        if self.execution_provider == "cuda" and bool(getattr(self.config, "moss_vram_guard_enabled", True)):
+    def _vram_status(self, *, refresh: bool = False) -> dict:
+        if refresh and self.execution_provider == "cuda" and bool(getattr(self.config, "moss_vram_guard_enabled", True)):
             self._refresh_vram_guard(force=False)
         snapshot = self._last_vram_snapshot
         data = snapshot.as_dict() if snapshot is not None else {"available": False, "source": "not-checked"}

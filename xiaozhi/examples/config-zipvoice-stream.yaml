@@ -1,0 +1,20 @@
+# AngeVoice ZipVoice 克隆流式示例
+# reference.wav 必须能在小智容器内访问；prompt_text 必须和参考音频实际朗读文本一致。
+
+selected_module:
+  TTS: AngeVoiceZipVoiceCloneStream
+
+TTS:
+  AngeVoiceZipVoiceCloneStream:
+    type: angevoice_stream
+    api_url: ws://host.docker.internal:8101/ws/v1/tts
+    http_url: http://host.docker.internal:8101
+    api_key: ""
+    model: zipvoice
+    voice: xiaozhi_zipvoice
+    format: pcm_s16le
+    prompt_audio_path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
+    prompt_audio_filename: reference.wav
+    prompt_text: 请改成参考音频实际朗读文本。
+    output_dir: tmp/
+    tts_timeout: 360

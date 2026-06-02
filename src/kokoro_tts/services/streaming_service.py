@@ -1,8 +1,9 @@
-"""Unified model-neutral streaming synthesis service."""
+"""统一的模型无关流式合成服务。"""
 
 from __future__ import annotations
 
 import inspect
+import logging
 from typing import Any, Callable, Iterator, TYPE_CHECKING
 
 from ..contracts import CancellationContext, GenerationParameters, StreamingRequest, StreamingResult
@@ -10,6 +11,8 @@ from ..validation import validate_model_speed, validate_tts_text
 
 if TYPE_CHECKING:
     from ..service_state import ServiceState
+
+logger = logging.getLogger(__name__)
 
 
 class StreamingService:
@@ -73,10 +76,32 @@ class StreamingService:
             if cancel_check is not None:
                 candidates["cancel_check"] = cancellation.cancelled
             kwargs = self._supported_kwargs(engine.synthesize_stream, candidates)
+            saw_terminal_frame = False
             for chunk in engine.synthesize_stream(request.text, request.voice, request.speed, request.audio_format, **kwargs):
                 if cancellation.cancelled():
+                    # 取消后关闭底层生成器，由进程隔离 worker 设置软取消标志；
+                    # 新请求不需要等待旧长文本完整跑完。
                     break
                 if isinstance(chunk, dict):
+                    event_type = str(chunk.get("type") or "")
+                    if event_type in {"done", "cancelled", "error", "segment_error"}:
+                        saw_terminal_frame = True
                     yield StreamingResult.from_frame(chunk, model_id=request.model_id, request_id=request.request_id).as_frame()
                 else:
                     yield chunk
+            if not saw_terminal_frame and cancellation.cancelled():
+                logger.info("流式合成在取消状态下结束，补发取消终止帧", extra={"request_id": request.request_id})
+                yield StreamingResult.from_frame(
+                    {"type": "cancelled"},
+                    model_id=request.model_id,
+                    request_id=request.request_id,
+                ).as_frame()
+            elif not saw_terminal_frame:
+                yield StreamingResult.from_frame(
+                    {
+                        "type": "segment_error",
+                        "message": "流式合成提前结束，未收到完成帧；本次部分音频已丢弃",
+                    },
+                    model_id=request.model_id,
+                    request_id=request.request_id,
+                ).as_frame()

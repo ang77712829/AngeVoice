@@ -1,9 +1,10 @@
-"""CPU deployment security, persistence and validation-gate tests."""
+"""CPU 部署安全、持久化与校验入口测试。"""
 
 from __future__ import annotations
 
 import base64
 import json
+import os
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -44,7 +45,8 @@ def test_persisted_admin_credentials_store_hash_not_plaintext(tmp_path):
     assert "pbkdf2_hmac_sha256" in raw
     assert store.verify("operator", "StrongPass-2026") is True
     assert store.verify("operator", "wrong-password") is False
-    assert (cfg.admin_credentials_file.stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":
+        assert (cfg.admin_credentials_file.stat().st_mode & 0o777) == 0o600
 
 
 def test_api_key_and_runtime_config_migrate_from_legacy_outputs(tmp_path):
@@ -60,7 +62,7 @@ def test_api_key_and_runtime_config_migrate_from_legacy_outputs(tmp_path):
     assert load_runtime_config(cfg) == ["cache_max_items"]
     assert cfg.cache_max_items == 12
     migrated = json.loads((config_dir / "runtime-config.json").read_text(encoding="utf-8"))
-    assert migrated["migrated_from"].endswith("outputs/runtime-config.json")
+    assert Path(migrated["migrated_from"]).as_posix().endswith("outputs/runtime-config.json")
 
 
 def test_low_memory_deep_sleep_profile_is_explicit_profile():
@@ -137,17 +139,18 @@ def test_fnos_package_uses_verified_compose_profile_template_for_v26601():
     install_callback = (root / "packaging/fnos/AngeVoice/cmd/install_callback").read_text(encoding="utf-8")
     assert "单一 Compose 文件 + 三个互斥 profile service" in guide
     assert "COMPOSE_PROFILES" in guide
-    assert "version               = 2.6.602" in manifest
+    assert "version               = 2.6.610" in manifest
     assert compose.count("profiles:") == 3
     assert "angevoice-cpu:" in compose and "angevoice-gpu:" in compose and "angevoice-legacy-gpu:" in compose
-    assert "ghcr.io/ang77712829/angevoice-gpu:latest" in compose
+    assert "ang77712829/angevoice-gpu:latest" in compose
     assert "${wizard_admin_password:-admin123}" in compose
     assert "ZIPVOICE_PROCESS_ISOLATION_ENABLED" in compose
     assert "ANGEVOICE_STARTUP_PRELOAD_ENABLED" in compose
     assert "COMPOSE_PROFILES" in install_callback
     assert "wizard_run_mode" not in install_callback
     assert "wizard_container_runtime" not in install_callback
-    assert "_mode_env" not in install_callback
+    assert "${TRIM_PKGVAR}/cmd/_mode_env.sh" in install_callback
+    assert "source \"${TRIM_PKGVAR}/cmd/_mode_env.sh\"" not in install_callback
     fnos_env = (root / "packaging/fnos/AngeVoice/app/docker/angevoice.env").read_text(encoding="utf-8")
     assert "KOKORO_PROCESS_ISOLATION_ENABLED=true" in fnos_env
     assert "MOSS_PROCESS_ISOLATION_ENABLED=true" in fnos_env

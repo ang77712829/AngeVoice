@@ -35,10 +35,9 @@ check_network() {
   if [[ "$GITHUB_OK" != "yes" ]]; then
     warn "访问 GitHub 较差：建议使用代理、镜像源或手动上传源码包。"
   fi
-  if [[ "$GHCR_OK" != "yes" ]]; then
-    warn "访问 ghcr.io 较差：将跳过预构建镜像 pull，优先本地构建。"
-  fi
   if [[ "$DOCKERHUB_OK" != "yes" && -z "$REGISTRY_MIRRORS" ]]; then
-    warn "访问 Docker Hub 较差且未检测到 registry mirror；本地构建可能在拉基础镜像时较慢。"
+    warn "访问 Docker Hub 较差且未检测到 registry mirror；将跳过预构建镜像 pull，直接本地构建。"
+  elif [[ "$DOCKERHUB_OK" != "yes" ]]; then
+    warn "访问 Docker Hub 较差，但检测到 registry mirror；将尝试通过镜像加速拉取默认镜像。"
   fi
 }

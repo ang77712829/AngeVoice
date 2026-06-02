@@ -1,4 +1,4 @@
-"""Runtime resource and provider reporting contracts."""
+"""运行时资源和 Provider 状态报告契约。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ class RuntimeResourceStatus:
     models: list[dict[str, Any]] = field(default_factory=list)
     current_model: str = ""
     active_requests: int = 0
+    restart: dict[str, Any] = field(default_factory=dict)
     sampled_at: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
@@ -30,5 +31,6 @@ class RuntimeResourceStatus:
             "models": self.models,
             "current_model": self.current_model,
             "active_requests": self.active_requests,
+            "restart": dict(self.restart),
             "sampled_at": self.sampled_at,
         }

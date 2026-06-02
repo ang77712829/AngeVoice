@@ -1,4 +1,4 @@
-"""Unified model asset inspection and repair orchestration for AngeVoice deployments."""
+"""AngeVoice 部署使用的统一模型资产检查和修复编排。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class ModelAssetService:
-    """Model-neutral view over local durable assets and repair operations."""
+    """面向本地持久化资产和修复操作的模型无关视图。"""
 
     def __init__(self, cfg):
         self.cfg = cfg

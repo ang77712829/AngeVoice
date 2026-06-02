@@ -1,7 +1,7 @@
-"""Admin-editable runtime configuration schema.
+"""管理后台可编辑运行时配置 schema。
 
-The admin console uses this module as the single source for editable fields,
-profile presets, validation, runtime persistence, and ENV patch export.
+管理控制台把本模块作为可编辑字段、预设、校验、运行时持久化
+以及 ENV 导出的唯一来源。
 """
 
 from __future__ import annotations
@@ -290,6 +290,7 @@ _field(
     "moss",
     "bool",
     True,
+    help="默认开启以保持 MOSS 官方逐帧流式体验；若特定设备出现边界噪声或显存压力，可在后台关闭。",
 )
 _field(
     "stream_chunk_seconds",
@@ -341,10 +342,11 @@ _field(
     "MOSS 预缓冲",
     "moss",
     "float",
-    0.75,
-    0,
     3.0,
+    0,
+    12.0,
     0.05,
+    help="MOSS 长文本可能分段间隔较长，适当提高可减少播放中途断续。",
 )
 _field(
     "moss_stream_queue_max_items",
@@ -410,6 +412,54 @@ _field(
     "service",
     "bool",
     True,
+)
+_field(
+    "restart_after_idle_unload_enabled",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD",
+    "空闲后彻底清理",
+    "service",
+    "bool",
+    False,
+    help="模型因空闲自动释放后，如果服务没有活跃请求或 WebSocket，会退出当前进程并交给 Docker/服务管理器自动拉起，以清理底层运行时残留。",
+)
+_field(
+    "restart_after_idle_unload_delay_seconds",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_DELAY_SECONDS",
+    "彻底清理延迟秒数",
+    "service",
+    "float",
+    3.0,
+    0.0,
+    3600.0,
+    1.0,
+    advanced=True,
+    help="空闲卸载成功后等待多久再退出进程；等待期间若出现新请求会取消本次退出。",
+)
+_field(
+    "restart_after_idle_unload_cooldown_seconds",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_COOLDOWN_SECONDS",
+    "彻底清理冷却秒数",
+    "service",
+    "float",
+    1800.0,
+    0.0,
+    86400.0,
+    60.0,
+    advanced=True,
+    help="避免异常环境中频繁退出重启；只有距离上次计划退出超过该时间才会再次触发。",
+)
+_field(
+    "restart_after_idle_unload_exit_code",
+    "ANGEVOICE_RESTART_AFTER_IDLE_UNLOAD_EXIT_CODE",
+    "彻底清理退出码",
+    "service",
+    "int",
+    75,
+    0,
+    255,
+    1,
+    advanced=True,
+    help="用于日志和运维区分主动清理退出；请确认容器 restart 策略会自动拉起服务。",
 )
 _field(
     "startup_preload_enabled",
@@ -928,7 +978,7 @@ ADMIN_CONFIG_PROFILES: dict[str, dict[str, Any]] = {
             "moss_max_new_frames": 320,
             "moss_stream_chunk_seconds": 0.40,
             "moss_stream_queue_max_items": 8,
-            "moss_stream_prebuffer_seconds": 0.75,
+            "moss_stream_prebuffer_seconds": 3.0,
             "moss_max_silence_ms": 480,
             "moss_crossfade_ms": 12,
             "moss_segment_pause_ms": 80,
@@ -944,11 +994,12 @@ ADMIN_CONFIG_PROFILES: dict[str, dict[str, Any]] = {
     },
     "nas_deep_sleep_cpu": {
         "label": "CPU 低配 NAS / Deep Sleep",
-        "description": "低内存模式：降低缓存并在 180 秒空闲后释放当前模型；适用于内存受限设备，可结合唤醒延迟调整。",
+        "description": "低内存模式：降低缓存并在 180 秒空闲后释放当前模型；适用于内存受限设备，可结合彻底清理开关使用。",
         "values": {
             "model_idle_timeout_seconds": 180.0,
             "model_idle_check_interval": 30.0,
             "model_idle_unload_current": True,
+            "restart_after_idle_unload_enabled": False,
             "cache_max_items": 16,
             "cache_max_bytes": 134217728,
             "cache_skip_text_over_chars": 400,
@@ -1015,7 +1066,7 @@ ADMIN_CONFIG_PROFILES: dict[str, dict[str, Any]] = {
             "moss_stream_queue_max_items": 8,
             "moss_max_silence_ms": 760,
             "moss_crossfade_ms": 35,
-            "moss_realtime_streaming_decode": False,
+            "moss_realtime_streaming_decode": True,
         },
     },
 }

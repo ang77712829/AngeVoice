@@ -33,14 +33,13 @@ def _apply_quality_runtime_guards(cfg) -> list[str]:
         cfg.moss_vram_critical_free_mb = max(0, safe_free - 100)
         adjusted.append("moss_vram_critical_free_mb")
 
-    # 低延迟实时解码时，强制保持预缓冲不小于一个分包，减少首播抖动和断续。
-    if bool(getattr(cfg, "moss_realtime_streaming_decode", True)):
-        chunk = float(getattr(cfg, "moss_stream_chunk_seconds", 0.4) or 0.4)
-        prebuffer = float(getattr(cfg, "moss_stream_prebuffer_seconds", 0.75) or 0.0)
-        min_prebuffer = max(0.35, chunk)
-        if prebuffer < min_prebuffer:
-            cfg.moss_stream_prebuffer_seconds = min_prebuffer
-            adjusted.append("moss_stream_prebuffer_seconds")
+    # 预缓冲不应小于一个分包，避免首播阶段直接断续。
+    chunk = float(getattr(cfg, "moss_stream_chunk_seconds", 0.4) or 0.4)
+    prebuffer = float(getattr(cfg, "moss_stream_prebuffer_seconds", 3.0) or 0.0)
+    min_prebuffer = max(0.35, chunk)
+    if prebuffer < min_prebuffer:
+        cfg.moss_stream_prebuffer_seconds = min_prebuffer
+        adjusted.append("moss_stream_prebuffer_seconds")
 
     # 声音克隆文本 token 上限不应超过 MOSS 分句长度的一半附近，避免单段过重导致显存突增。
     segment_length = int(getattr(cfg, "moss_segment_length", 120) or 120)
@@ -97,12 +96,16 @@ def config_snapshot(cfg) -> dict:
         "idle_timeout_seconds": cfg.model_idle_timeout_seconds,
         "idle_check_interval": cfg.model_idle_check_interval,
         "idle_unload_current": getattr(cfg, "model_idle_unload_current", True),
+        "restart_after_idle_unload_enabled": getattr(cfg, "restart_after_idle_unload_enabled", False),
+        "restart_after_idle_unload_delay_seconds": getattr(cfg, "restart_after_idle_unload_delay_seconds", 3.0),
+        "restart_after_idle_unload_cooldown_seconds": getattr(cfg, "restart_after_idle_unload_cooldown_seconds", 1800.0),
+        "restart_after_idle_unload_exit_code": getattr(cfg, "restart_after_idle_unload_exit_code", 75),
         "moss_execution_provider": cfg.moss_execution_provider,
         "moss_stream_chunk_seconds": cfg.moss_stream_chunk_seconds,
         "moss_segment_length": cfg.moss_segment_length,
         "moss_voice_clone_max_text_tokens": cfg.moss_voice_clone_max_text_tokens,
         "moss_max_new_frames": cfg.moss_max_new_frames,
-        "moss_stream_prebuffer_seconds": getattr(cfg, "moss_stream_prebuffer_seconds", 0.75),
+        "moss_stream_prebuffer_seconds": getattr(cfg, "moss_stream_prebuffer_seconds", 3.0),
         "moss_max_silence_ms": getattr(cfg, "moss_max_silence_ms", 480),
         "moss_crossfade_ms": getattr(cfg, "moss_crossfade_ms", 12),
         "moss_segment_pause_ms": getattr(cfg, "moss_segment_pause_ms", 80),
@@ -185,7 +188,7 @@ def admin_config_payload(cfg) -> dict:
 
 
 def rotate_api_key(cfg) -> str:
-    """Rotate into the durable credential file; never place secrets in os.environ."""
+    """轮换到持久凭证文件，绝不把密钥写入 os.environ。"""
     return rotate_persisted_api_key(cfg)
 
 

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from .. import __version__
+from ..config_api_key import effective_api_key
 from ..service_state import ServiceState
 
 
@@ -17,7 +18,8 @@ def _get_vram_usage() -> dict:
         import torch  # noqa: F811
         if torch.cuda.is_available():
             device = torch.cuda.current_device()
-            total = torch.cuda.get_device_properties(device).total_mem
+            props = torch.cuda.get_device_properties(device)
+            total = int(getattr(props, "total_memory", getattr(props, "total_mem", 0)) or 0)
             used = torch.cuda.memory_allocated(device)
             reserved = torch.cuda.memory_reserved(device)
             return {
@@ -137,6 +139,85 @@ def _voice_details(model_id: str, voices: list[str], snapshot: dict, cfg) -> lis
     ]
 
 
+def _auth_required(cfg) -> bool:
+    """根据当前实际可用密钥判断接口是否需要鉴权。"""
+    return bool(effective_api_key(cfg))
+
+
+def _api_key_file(cfg) -> str:
+    return str(getattr(cfg, "api_key_file", "") or "")
+
+
+def _public_catalog_allowed_for_config(cfg) -> bool:
+    return bool(getattr(cfg, "public_status_endpoints", True)) or not _auth_required(cfg)
+
+
+def _bootstrap_base(cfg, current_model: dict | None = None) -> dict:
+    current_model = current_model or {}
+    return {
+        "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
+        "defaultSpeed": cfg.default_speed,
+        "maxTextLength": cfg.max_text_length,
+        "sampleRate": current_model.get("sample_rate") or cfg.sample_rate,
+        "authRequired": _auth_required(cfg),
+        "streamEnabled": cfg.stream_enabled,
+        "streamBinaryEnabled": cfg.stream_binary_enabled,
+        "mp3Enabled": getattr(cfg, "mp3_enabled", False),
+        "modelSwitchEnabled": getattr(cfg, "model_switch_enabled", True),
+        "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
+        "apiKeyFile": _api_key_file(cfg),
+    }
+
+
+def _minimal_bootstrap_payload(cfg, state, current_model: dict | None = None) -> dict:
+    current_model = current_model or state.model_manager.current_snapshot()
+    payload = {
+        "voices": [],
+        "models": [],
+        "currentModel": "",
+        "catalogProtected": True,
+    }
+    payload.update(_bootstrap_base(cfg, current_model))
+    return payload
+
+
+def _catalog_bootstrap_payload(cfg, state, current_model: dict | None = None) -> dict:
+    current_model = current_model or state.model_manager.current_snapshot()
+    payload = {
+        "voices": current_model.get("voices") or [],
+        "models": state.model_manager.list_models(),
+        "currentModel": state.model_manager.current_model_id,
+        "catalogProtected": False,
+    }
+    payload.update(_bootstrap_base(cfg, current_model))
+    return payload
+
+
+def _minimal_health_payload(cfg, status: str, is_healthy: bool, unhealthy_models: list[str], restart: dict | None = None) -> dict:
+    return {
+        "status": status,
+        "healthy": is_healthy,
+        "unhealthy_models": unhealthy_models,
+        "restart": restart or {},
+        "name": "AngeVoice",
+        "deployment_profile": str(getattr(cfg, "deployment_profile", "source") or "source"),
+        "auth_required": _auth_required(cfg),
+        "catalog_protected": not _public_catalog_allowed_for_config(cfg),
+        "stream_enabled": cfg.stream_enabled,
+    }
+
+
+def _health_status(current_model: dict, unhealthy_models: list[str]) -> str:
+    if unhealthy_models:
+        return "degraded"
+    if current_model.get("loaded"):
+        return "ok"
+    # 未预加载但可被唤醒的模型是可服务状态，不应被健康检查误判为加载中。
+    if current_model.get("idle_unloaded") or current_model.get("wakeable", True):
+        return "idle"
+    return "loading"
+
+
 class ModelSwitchRequest(BaseModel):
     model: str
     unload_previous: bool | None = None
@@ -156,39 +237,13 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         await verify_api_key(request)
 
     def _public_catalog_allowed() -> bool:
-        return bool(getattr(cfg, "public_status_endpoints", True)) or not bool(cfg.api_key)
+        return _public_catalog_allowed_for_config(cfg)
 
     def _minimal_bootstrap(current_model: dict | None = None) -> dict:
-        current_model = current_model or state.model_manager.current_snapshot()
-        return {
-            "voices": [],
-            "models": [],
-            "currentModel": "",
-            "defaultVoice": cfg.default_voice,
-            "defaultSpeed": cfg.default_speed,
-            "maxTextLength": cfg.max_text_length,
-            "sampleRate": current_model.get("sample_rate") or cfg.sample_rate,
-            "authRequired": bool(cfg.api_key),
-            "catalogProtected": True,
-            "streamEnabled": cfg.stream_enabled,
-            "streamBinaryEnabled": cfg.stream_binary_enabled,
-            "mp3Enabled": getattr(cfg, "mp3_enabled", False),
-            "modelSwitchEnabled": getattr(cfg, "model_switch_enabled", True),
-            "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
-            "apiKeyFile": str(getattr(cfg, "api_key_file", "") or ""),
-        }
+        return _minimal_bootstrap_payload(cfg, state, current_model)
 
-    def _minimal_health(status: str, is_healthy: bool, unhealthy_models: list[str]) -> dict:
-        return {
-            "status": status,
-            "healthy": is_healthy,
-            "unhealthy_models": unhealthy_models,
-            "name": "AngeVoice",
-            "deployment_profile": str(getattr(cfg, "deployment_profile", "source") or "source"),
-            "auth_required": bool(cfg.api_key),
-            "catalog_protected": not _public_catalog_allowed(),
-            "stream_enabled": cfg.stream_enabled,
-        }
+    def _minimal_health(status: str, is_healthy: bool, unhealthy_models: list[str], restart: dict | None = None) -> dict:
+        return _minimal_health_payload(cfg, status, is_healthy, unhealthy_models, restart)
 
     def _model_catalog_snapshot(target_model: str) -> dict:
         """返回模型元数据和音色列表，不触发模型实际加载。"""
@@ -229,25 +284,9 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
     async def index(request: Request):
         if templates:
             current_model = state.model_manager.current_snapshot()
-            voices = current_model.get("voices") or []
             if _public_catalog_allowed():
-                bootstrap = {
-                    "voices": voices,
-                    "models": state.model_manager.list_models(),
-                    "currentModel": state.model_manager.current_model_id,
-                    "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
-                    "defaultSpeed": cfg.default_speed,
-                    "maxTextLength": cfg.max_text_length,
-                    "sampleRate": current_model.get("sample_rate") or cfg.sample_rate,
-                    "authRequired": bool(cfg.api_key),
-                    "catalogProtected": False,
-                    "streamEnabled": cfg.stream_enabled,
-                    "streamBinaryEnabled": cfg.stream_binary_enabled,
-                    "mp3Enabled": getattr(cfg, "mp3_enabled", False),
-                    "modelSwitchEnabled": getattr(cfg, "model_switch_enabled", True),
-                    "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
-                    "apiKeyFile": str(getattr(cfg, "api_key_file", "") or ""),
-                }
+                bootstrap = _catalog_bootstrap_payload(cfg, state, current_model)
+                voices = bootstrap["voices"]
             else:
                 bootstrap = _minimal_bootstrap(current_model)
                 voices = []
@@ -266,27 +305,15 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         """返回带有可复制 MOSS 克隆示例的 API 文档页。"""
         if templates:
             current_model = state.model_manager.current_snapshot()
-            if _public_catalog_allowed():
-                bootstrap = {
-                    "models": state.model_manager.list_models(),
-                    "currentModel": state.model_manager.current_model_id,
-                    "authRequired": bool(cfg.api_key),
-                    "catalogProtected": False,
-                    "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
-                    "streamEnabled": cfg.stream_enabled,
-                    "streamBinaryEnabled": cfg.stream_binary_enabled,
-                    "mp3Enabled": getattr(cfg, "mp3_enabled", False),
-                    "mossPromptUploadMaxBytes": getattr(cfg, "moss_prompt_upload_max_bytes", 0),
-                    "mossPromptAudioMaxSeconds": getattr(cfg, "moss_prompt_audio_max_seconds", 0),
-                    "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
-                    "apiKeyFile": str(getattr(cfg, "api_key_file", "") or ""),
-                }
-            else:
-                bootstrap = _minimal_bootstrap(current_model)
-                bootstrap.update({
-                    "mossPromptUploadMaxBytes": getattr(cfg, "moss_prompt_upload_max_bytes", 0),
-                    "mossPromptAudioMaxSeconds": getattr(cfg, "moss_prompt_audio_max_seconds", 0),
-                })
+            bootstrap = (
+                _catalog_bootstrap_payload(cfg, state, current_model)
+                if _public_catalog_allowed()
+                else _minimal_bootstrap(current_model)
+            )
+            bootstrap.update({
+                "mossPromptUploadMaxBytes": getattr(cfg, "moss_prompt_upload_max_bytes", 0),
+                "mossPromptAudioMaxSeconds": getattr(cfg, "moss_prompt_audio_max_seconds", 0),
+            })
             return templates.TemplateResponse(
                 request,
                 "api_docs.html",
@@ -299,34 +326,35 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
 
     @router.get("/health")
     async def health():
-        current_model = state.model_manager.current_snapshot()
+        current_model = await run_in_threadpool(
+            state.model_manager.current_snapshot,
+            include_runtime_metadata=False,
+        )
         voices = current_model.get("voices") or []
-        # 检查是否存在已加载但 unhealthy 的模型
-        all_models = state.model_manager.list_models()
+        # 检查是否存在已加载但状态异常的模型
+        all_models = await run_in_threadpool(
+            state.model_manager.list_models,
+            include_runtime_metadata=False,
+        )
         unhealthy_models = [
             m["id"] for m in all_models
             if m.get("loaded") and not m.get("healthy", True)
         ]
         is_healthy = not unhealthy_models
-        if unhealthy_models:
-            status = "degraded"
-        elif current_model.get("loaded"):
-            status = "ok"
-        elif current_model.get("idle_unloaded"):
-            status = "idle"
-        else:
-            status = "loading"
+        restart = state.idle_restart_snapshot()
+        status = "restarting" if restart.get("scheduled") else _health_status(current_model, unhealthy_models)
         if not _public_catalog_allowed():
-            return _minimal_health(status, is_healthy, unhealthy_models)
+            return _minimal_health(status, is_healthy, unhealthy_models, restart)
         return {
             "status": status,
             "healthy": is_healthy,
             "unhealthy_models": unhealthy_models,
+            "restart": restart,
             "name": "AngeVoice",
             "deployment_profile": str(getattr(cfg, "deployment_profile", "source") or "source"),
             "model_base": current_model.get("name") or "unknown",
             "model": current_model,
-            "models": state.model_manager.list_models(),
+            "models": all_models,
             "current_model": state.model_manager.current_model_id,
             "device": current_model.get("device"),
             "voices": voices,
@@ -338,7 +366,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             "batch_enabled": getattr(cfg, "batch_enabled", False),
             "admin_enabled": getattr(cfg, "admin_enabled", False),
             "mp3_enabled": getattr(cfg, "mp3_enabled", False),
-            "auth_required": bool(cfg.api_key),
+            "auth_required": _auth_required(cfg),
             "stream_enabled": cfg.stream_enabled,
         }
 
@@ -379,7 +407,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             "service": "AngeVoice",
             "version": __version__,
             "current_model": state.model_manager.current_model_id,
-            "auth_required": bool(cfg.api_key),
+            "auth_required": _auth_required(cfg),
             "catalog_protected": not _public_catalog_allowed(),
             "formats": formats,
             "defaults": {
@@ -455,7 +483,10 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         removed = await run_in_threadpool(state.model_manager.unload_model, model_id)
         if removed:
             state.cache_clear()
-        return {"ok": True, "model": state.model_manager.normalize_model_id(model_id), "unloaded": removed}
+            restart = state.handle_model_unload_completed([state.model_manager.normalize_model_id(model_id)], reason="manual")
+        else:
+            restart = state.idle_restart_snapshot()
+        return {"ok": True, "model": state.model_manager.normalize_model_id(model_id), "unloaded": removed, "restart": restart}
 
     @router.get("/stats")
     async def get_stats(_=Depends(verify_api_key)):
@@ -471,12 +502,19 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         # 延迟百分位统计
         latency = state.latency_tracker.summary()
 
-        # 模型信息
-        all_models = state.model_manager.list_models()
-        current_model = state.model_manager.current_snapshot()
+        # 统计接口会被 Web 端周期轮询，不能在事件循环里读取会等待
+        # worker 请求锁的运行时元数据。
+        all_models = await run_in_threadpool(
+            state.model_manager.list_models,
+            include_runtime_metadata=False,
+        )
+        current_model = await run_in_threadpool(
+            state.model_manager.current_snapshot,
+            include_runtime_metadata=False,
+        )
 
         # 显存信息
-        vram = _get_vram_usage()
+        vram = await run_in_threadpool(_get_vram_usage)
 
         requests_total = snapshot.get("requests_total", 0)
         requests_ok = snapshot.get("requests_ok", 0)
@@ -505,6 +543,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             "cache_items": state.cache_size(),
             "cache_bytes": state.cache_bytes(),
             "cache_enabled": cfg.cache_enabled,
+            "restart": state.idle_restart_snapshot(),
         }
 
     @router.get("/v1/diagnostics/resources")
@@ -519,7 +558,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
 
     @router.post("/v1/admin/cache/clear")
     async def clear_cache_release_compat(unload_models: bool = False, include_current: bool = True, _=Depends(verify_api_key)):
-        """Compatibility alias for NAS validation clients that called the R0 cache clear path."""
+        """兼容旧版 NAS 校验客户端曾调用的缓存清理入口。"""
         result = await run_in_threadpool(
             state.release_resources, clear_cache=True, unload_models=unload_models, include_current=include_current
         )

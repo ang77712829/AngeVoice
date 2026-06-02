@@ -36,6 +36,7 @@ ANGEVOICE_MODEL_UNLOAD_ON_SWITCH=true
 - 请求 ID 响应头 `X-Request-ID`
 - WebSocket JSON + 可选 binary 音频帧
 - 可选多模型运行时：Docker 画像预装匹配的 MOSS runtime，可通过 Studio 或 `/v1/models/switch` 切换，MOSS 克隆模式会显示参考音频上传控件
+- 可选“空闲后彻底清理”：默认关闭；空闲卸载成功且服务完全空闲后退出进程，依赖容器 restart 策略恢复到冷启动资源基线
 
 ## 2. legacy-gpu 兼容模式版
 
@@ -63,6 +64,8 @@ MOSS_SAMPLE_MODE=fixed
 MOSS_SEED=1234
 MOSS_STREAM_CHUNK_SECONDS=0.40
 MOSS_STREAM_QUEUE_MAX_ITEMS=8
+ANGEVOICE_WEBSOCKET_STREAM_IDLE_TIMEOUT_SECONDS=120
+ANGEVOICE_ENGINE_PROCESS_STREAM_IDLE_TIMEOUT_SECONDS=120
 MOSS_OUTPUT_PEAK_NORMALIZE_ENABLED=true
 MOSS_OUTPUT_TARGET_PEAK=0.86
 ```
@@ -123,7 +126,7 @@ Tesla P4 Docker 回传已确认标准 GPU 画像能运行 Kokoro、MOSS-TTS-Nano
 
 MOSS 克隆参考音频会被裁剪到 `MOSS_PROMPT_AUDIO_MAX_SECONDS`，并缓存编码后的 prompt audio codes。这样可以降低 clone 模式在 8GB 显存和低功耗 CPU 上的重复开销；如果仍然出现 OOM 或爆音，优先缩短参考音频而不是提高并发。
 
-WebSocket 输出会按固定时长切成小音频包。Kokoro 仍按官方 pipeline 段落推理；MOSS 默认启用 `MOSS_REALTIME_STREAMING_DECODE=true` 以降低首包等待。如果逐帧模式出现电流音、卡顿或边界噪声，可改为 `false`。长文本建议使用 `MOSS_SEGMENT_LENGTH=120` 或更高，减少中英文混合尾部漂移、卡顿和失真。
+WebSocket 输出会按固定时长切成小音频包。Kokoro 仍按官方 pipeline 段落推理；MOSS 默认使用 `MOSS_REALTIME_STREAMING_DECODE=true` 进行逐帧流式推送，保持首包速度和低延迟体验。如果特定设备出现电流音、卡顿、边界噪声或显存压力，可在后台关闭逐帧模式。长文本建议使用 `MOSS_SEGMENT_LENGTH=120` 或更高，减少中英文混合尾部漂移、卡顿和失真。
 
 持久化要求：
 
@@ -197,7 +200,7 @@ MOSS_SEGMENT_PAUSE_MS=100
 ```env
 MOSS_SEGMENT_LENGTH=120
 MOSS_STREAM_CHUNK_SECONDS=0.35
-MOSS_STREAM_PREBUFFER_SECONDS=0.55
+MOSS_STREAM_PREBUFFER_SECONDS=2.0
 MOSS_CROSSFADE_MS=20
 ```
 

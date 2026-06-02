@@ -67,6 +67,15 @@ bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/x
   --prompt-audio ./reference.wav
 ```
 
+指定 ZipVoice 克隆流式：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh) \
+  --mode zipvoice-stream \
+  --prompt-audio ./reference.wav \
+  --prompt-text "参考音频实际朗读文本"
+```
+
 指定小智目录和 AngeVoice 地址：
 
 ```bash
@@ -82,7 +91,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/x
 1. 下载 `angevoice.py`、`angevoice_stream.py`、`angevoice_clone.py` 到 `xiaozhi-server/angevoice-adapter/`。
 2. 自动识别并修改小智 compose 文件，把适配器挂载到小智容器内的 `core/providers/tts/`。
 3. 添加 `host.docker.internal:host-gateway`，方便小智容器访问宿主机 AngeVoice。
-4. 创建 `data/angevoice_prompts/`，用于放 MOSS 克隆参考音频。
+4. 创建 `data/angevoice_prompts/`，用于放 MOSS/ZipVoice 克隆参考音频。
 5. 可选写入 `data/.config.yaml` 示例配置。
 6. 重启 `xiaozhi-esp32-server` 容器并尝试导入适配器。
 
@@ -182,9 +191,9 @@ TTS:
     tts_timeout: 180
 ```
 
-### 第三层：MOSS clone，高级玩法
+### 第三层：MOSS 克隆，高级玩法
 
-使用 MOSS 或 MOSS clone 前，请先确认 AngeVoice 侧已启用对应 MOSS 模型，例如 `ANGEVOICE_ENABLED_MODELS` 中包含 `moss-nano-cpu` 或 `moss-nano-cuda`。如果 AngeVoice 只启用了 `kokoro`，小智里选择 MOSS 会请求失败。
+使用 MOSS 或 MOSS 克隆前，请先确认 AngeVoice 侧已启用 MOSS，例如 `ANGEVOICE_ENABLED_MODELS` 中包含 `moss`。如果 AngeVoice 只启用了 `kokoro`，小智里选择 MOSS 会请求失败。
 
 先准备一段参考音频：
 
@@ -210,7 +219,7 @@ TTS:
     api_url: ws://host.docker.internal:8101/ws/v1/tts
     http_url: http://host.docker.internal:8101
     api_key: ""
-    model: moss-nano-cpu
+    model: moss
     voice: Junhao
     format: pcm_s16le
     prompt_audio_path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
@@ -219,7 +228,35 @@ TTS:
     tts_timeout: 300
 ```
 
-## 如何更换 MOSS 克隆声音
+### 第四层：ZipVoice 克隆，参考文本驱动克隆
+
+使用 ZipVoice 前，请先确认 AngeVoice 侧已启用 ZipVoice，例如 `ANGEVOICE_ENABLED_MODELS` 中包含 `zipvoice`。ZipVoice 必须同时提供参考音频和参考音频实际朗读文本。
+
+配置：
+
+```yaml
+selected_module:
+  TTS: AngeVoiceZipVoiceCloneStream
+
+TTS:
+  AngeVoiceZipVoiceCloneStream:
+    type: angevoice_stream
+    api_url: ws://host.docker.internal:8101/ws/v1/tts
+    http_url: http://host.docker.internal:8101
+    api_key: ""
+    model: zipvoice
+    voice: xiaozhi_zipvoice
+    format: pcm_s16le
+    prompt_audio_path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
+    prompt_audio_filename: reference.wav
+    prompt_text: 请改成参考音频实际朗读文本。
+    output_dir: tmp/
+    tts_timeout: 360
+```
+
+也可以使用非流式 `AngeVoiceZipVoiceClone`，示例见 `xiaozhi/examples/config-zipvoice-clone.yaml`。`prompt_text` 不能保留占位文本，否则音色相似度和稳定性会明显下降。
+
+## 如何更换克隆声音
 
 只需要替换宿主机上的参考音频：
 
@@ -233,6 +270,7 @@ xiaozhi-server/data/angevoice_prompts/reference.wav
 - 尽量没有背景音乐和噪声。
 - 建议用 wav；mp3 也可以，但统一命名为 `reference.wav` 最省心。
 - 替换后无需重新安装适配器，下一次 TTS 请求会使用新音频。
+- ZipVoice 还要同步修改 `prompt_text`，让它和参考音频实际朗读文本一致。
 
 如果你要准备多个音色，可以这样放：
 

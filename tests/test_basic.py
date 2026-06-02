@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-EXPECTED_VERSION = "2.6.602"
+EXPECTED_VERSION = "2.6.610"
 
 
 def _has_module(name: str) -> bool:
@@ -22,6 +22,22 @@ class TestVersioning:
     def test_package_version_is_single_source(self):
         import kokoro_tts
         assert kokoro_tts.__version__ == EXPECTED_VERSION
+
+    def test_startup_banner_uses_public_moss_model_id(self):
+        from kokoro_tts.banner import format_startup_banner
+        from kokoro_tts.config import TTSConfig
+
+        cfg = TTSConfig(
+            enabled_models=["kokoro", "moss-nano-cuda", "zipvoice"],
+            default_model="moss-nano-cuda",
+            moss_execution_provider="cuda",
+            moss_cuda_enabled=True,
+        )
+        banner = format_startup_banner(cfg)
+
+        assert ">> DefaultModel : moss" in banner
+        assert ">> Enabled      : kokoro,moss,zipvoice" in banner
+        assert "moss-nano-cuda" not in banner
 
     @pytest.mark.skipif(not _has_module("fastapi"), reason="fastapi not installed")
     def test_openapi_schema_uses_package_version(self, tmp_path):
@@ -556,7 +572,7 @@ class TestKokoroLocalPathRegression:
         monkeypatch.delenv("KOKORO_MODEL_DIR", raising=False)
         monkeypatch.setenv("ANGEVOICE_MODELS_ROOT", "/tmp/angevoice-models")
         cfg = TTSConfig()
-        assert str(cfg.model_dir).endswith("/tmp/angevoice-models/models--hexgrad--Kokoro-82M-v1.1-zh")
+        assert cfg.model_dir.as_posix().endswith("/tmp/angevoice-models/models--hexgrad--Kokoro-82M-v1.1-zh")
 
     def test_tiny_but_valid_torch_voice_is_allowed(self, tmp_path):
         from kokoro_tts.kokoro_assets import is_valid_kokoro_voice_file

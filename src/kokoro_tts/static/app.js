@@ -28,6 +28,7 @@ const state = {
   currentWs: null,
   currentAbort: null,
   currentPlayer: null,
+  streamTerminalReceived: false,
   lastBlob: null,
   promptAudioFile: null,
   zipvoiceProfiles: [],
@@ -136,7 +137,7 @@ class StreamPlayer {
   setPrebuffer(seconds) {
     const value = Number(seconds);
     if (Number.isFinite(value)) {
-      this.prebufferSeconds = Math.max(0, Math.min(3, value));
+      this.prebufferSeconds = Math.max(0, Math.min(12, value));
     }
     if (this.ctx && this.audioChunks === 0) {
       this.nextStartTime = Math.max(this.nextStartTime, this.ctx.currentTime + this.prebufferSeconds);
@@ -849,6 +850,18 @@ function applyModelUi() {
   }
   const modelChanged = state.lastAppliedModelId !== model.id;
   state.lastAppliedModelId = model.id;
+  if (modelChanged && modelSupportsProfiles(model)) {
+    state.voices = state.zipvoiceProfiles.map(profile => profile.voice_id);
+    const selectedProfileExists = state.zipvoiceProfiles.some(profile => profile.voice_id === state.selectedVoice);
+    if (!selectedProfileExists) {
+      state.selectedVoice = '';
+      if (els.voice) els.voice.value = '';
+      clearZipVoicePreview();
+    }
+    renderVoiceSelect();
+    renderVoices();
+    resetDeleteProfileConfirmation();
+  }
   if (modelSupportsProfiles(model) && (modelChanged || !state.zipvoiceProfilesLoaded)) {
     loadZipVoiceProfiles({ forcePreview: modelChanged });
   }
@@ -975,10 +988,12 @@ function matchingVoices() {
 
 async function loadZipVoiceProfiles({ forcePreview = false } = {}) {
   if (!modelSupportsProfiles() || !els.zipvoiceProfileSelect) return;
+  const engineId = profileEngineId();
   try {
-    const response = await apiFetch(`/v1/voice-profiles?engine=${encodeURIComponent(profileEngineId())}`);
+    const response = await apiFetch(`/v1/voice-profiles?engine=${encodeURIComponent(engineId)}`);
     if (!response.ok) return;
     const data = await response.json();
+    if (!modelSupportsProfiles() || profileEngineId() !== engineId) return;
     const nextProfiles = Array.isArray(data.profiles) ? data.profiles : [];
     const signature = JSON.stringify(nextProfiles.map(profile => [profile.voice_id, profile.name || '', profile.revision || '']));
     const profilesChanged = signature !== state.zipvoiceProfilesSignature;
@@ -1416,22 +1431,20 @@ async function synthesizeStream(text, voice, speed) {
   }
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  // Capture the WebSocket instance in a local variable so that all event
-  // handlers below close over *this specific connection*.  If the user
-  // stops and starts a new synthesis before the old WebSocket closes,
-  // state.currentWs will already point to the new connection.  Guards
-  // like `if (ws !== state.currentWs) return;` ensure the stale handlers
-  // of the old connection never touch the new connection's state.
+  // 捕获当前 WebSocket 实例，让下面所有回调只处理本次连接。
+  // 如果用户停止后立刻开始新合成，state.currentWs 会指向新连接；
+  // `if (ws !== state.currentWs) return;` 可以防止旧连接回调误清理新任务。
   const ws = new WebSocket(`${protocol}//${location.host}/ws/v1/tts`);
   state.currentWs = ws;
   state.currentPlayer = new StreamPlayer();
+  state.streamTerminalReceived = false;
   state.currentRequestId = '';
   state.lastBlob = null;
   state.totalSegments = 0;
   state.totalAudioChunks = 0;
 
   ws.onopen = () => {
-    // Guard: a new synthesis may have replaced state.currentWs already.
+    // 新合成可能已经替换了 state.currentWs。
     if (ws !== state.currentWs) { try { ws.close(); } catch (_) {} return; }
     const payload = {
       text,
@@ -1464,34 +1477,54 @@ async function synthesizeStream(text, voice, speed) {
   ws.onmessage = event => {
     if (ws !== state.currentWs) return;
     if (typeof event.data !== 'string') return;
-    const msg = JSON.parse(event.data);
-    if (msg.request_id) {
-      state.currentRequestId = msg.request_id;
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch (_) {
+      setProgress('流式消息格式异常，已停止本次合成', true);
+      cleanupWs(ws, true);
+      return;
     }
-    if (msg.type === 'started') {
-      state.totalSegments = msg.segments || 0;
-      state.totalAudioChunks = 0;
-      state.currentPlayer.setPrebuffer(msg.recommended_prebuffer_seconds || (state.selectedModel.startsWith('moss') ? 0.75 : 0.25));
-      setProgress(`流式合成开始：文本 ${state.totalSegments} 段，预缓冲 ${state.currentPlayer.prebufferSeconds.toFixed(2)}s`);
-    } else if (msg.type === 'audio') {
-      const doneCount = msg.index + 1;
-      state.totalAudioChunks = doneCount;
-      state.currentPlayer.enqueuePCM(msg.data, msg.sample_rate, msg.channels);
-      const buffered = state.currentPlayer.bufferedSeconds().toFixed(2);
-      const underruns = state.currentPlayer.underrunCount ? `，补帧 ${state.currentPlayer.underrunCount} 次` : '';
-      setProgress(`已接收音频块 ${doneCount}，文本 ${state.totalSegments || '-'} 段，缓冲 ${buffered}s${underruns}`);
-    } else if (msg.type === 'done') {
-      state.lastBlob = state.currentPlayer.buildWavBlob();
-      if (state.lastBlob) {
-        els.audio.src = URL.createObjectURL(state.lastBlob);
+    try {
+      if (msg.request_id) {
+        state.currentRequestId = msg.request_id;
       }
-      setProgress(`合成完成：文本 ${msg.total_segments || state.totalSegments} 段，音频块 ${msg.total_audio_chunks || state.totalAudioChunks}`);
-      cleanupWs(ws, false);
-    } else if (msg.type === 'cancelled') {
-      setProgress('已停止', true);
-      cleanupWs(ws, false);
-    } else if (msg.type === 'error' || msg.type === 'segment_error') {
-      setProgress(msg.message || '流式合成失败', true);
+      if (msg.type === 'started') {
+        state.totalSegments = msg.segments || 0;
+        state.totalAudioChunks = 0;
+        state.currentPlayer.setPrebuffer(msg.recommended_prebuffer_seconds || (state.selectedModel.startsWith('moss') ? 3.0 : 0.25));
+        setProgress(`流式合成开始：文本 ${state.totalSegments} 段，预缓冲 ${state.currentPlayer.prebufferSeconds.toFixed(2)}s`);
+      } else if (msg.type === 'audio') {
+        const doneCount = msg.index + 1;
+        state.totalAudioChunks = doneCount;
+        state.currentPlayer.enqueuePCM(msg.data, msg.sample_rate, msg.channels);
+        const buffered = state.currentPlayer.bufferedSeconds().toFixed(2);
+        const underruns = state.currentPlayer.underrunCount ? `，补帧 ${state.currentPlayer.underrunCount} 次` : '';
+        setProgress(`已接收音频块 ${doneCount}，文本 ${state.totalSegments || '-'} 段，缓冲 ${buffered}s${underruns}`);
+      } else if (msg.type === 'progress') {
+        if (msg.stage === 'waiting_audio') {
+          const elapsed = Number(msg.elapsed_seconds || 0);
+          setProgress(`模型正在生成音频，请稍候${elapsed ? `（已等待 ${elapsed.toFixed(1)}s）` : ''}`);
+        }
+      } else if (msg.type === 'done') {
+        state.streamTerminalReceived = true;
+        state.lastBlob = state.currentPlayer.buildWavBlob();
+        if (state.lastBlob) {
+          els.audio.src = URL.createObjectURL(state.lastBlob);
+        }
+        setProgress(`合成完成：文本 ${msg.total_segments || state.totalSegments} 段，音频块 ${msg.total_audio_chunks || state.totalAudioChunks}`);
+        cleanupWs(ws, false);
+      } else if (msg.type === 'cancelled') {
+        state.streamTerminalReceived = true;
+        setProgress('已停止', true);
+        cleanupWs(ws, false);
+      } else if (msg.type === 'error' || msg.type === 'segment_error') {
+        state.streamTerminalReceived = true;
+        setProgress(msg.message || '流式合成失败', true);
+        cleanupWs(ws, true);
+      }
+    } catch (error) {
+      setProgress(error?.message || '流式播放处理失败，已停止本次合成', true);
       cleanupWs(ws, true);
     }
   };
@@ -1504,21 +1537,26 @@ async function synthesizeStream(text, voice, speed) {
 
   ws.onclose = () => {
     if (ws !== state.currentWs) return;
-    cleanupWs(ws, false);
+    if (!state.streamTerminalReceived && state.currentPlayer?.pcmChunks.length) {
+      state.lastBlob = state.currentPlayer.buildWavBlob();
+      if (state.lastBlob) {
+        els.audio.src = URL.createObjectURL(state.lastBlob);
+      }
+      setProgress('流式连接提前结束，已保留已接收音频；请查看服务日志中的终止原因', true, { kind: 'warning' });
+    }
+    cleanupWs(ws, !state.streamTerminalReceived);
   };
 }
 
 function cleanupWs(ws, hadError) {
-  // Guard: only clean up state if this WebSocket is still the active one.
-  // If a new synthesis has already started, state.currentWs points to the
-  // new connection and we must not touch it here.
+  // 只有当前连接仍是活跃连接时才清理状态。
+  // 如果新合成已经开始，state.currentWs 会指向新连接，旧连接不能再改状态。
   if (ws !== state.currentWs) {
-    // The caller's WS is stale; just make sure it's closed and bail out.
+    // 调用方连接已经过期，只确保关闭后返回。
     try { ws.close(); } catch (_) {}
     return;
   }
-  // Detach all handlers before closing so that ws.close() below does not
-  // re-trigger this function through the onclose event.
+  // 关闭前先解绑回调，避免 ws.close() 通过 onclose 再次触发本函数。
   ws.onopen = null;
   ws.onmessage = null;
   ws.onerror = null;
@@ -1559,9 +1597,8 @@ async function stopCurrent() {
     state.currentAbort.abort();
     state.currentAbort = null;
   }
-  // Detach all handlers from the current WebSocket BEFORE sending cancel and
-  // before closing, so that the ws.onclose event does not fire cleanupWs and
-  // accidentally interfere with a new synthesis that may start right after.
+  // 先解绑当前 WebSocket 事件，再发送取消并关闭连接。
+  // 避免旧连接的 onclose 回调清理掉刚刚开始的新合成。
   const ws = state.currentWs;
   if (ws) {
     ws.onopen = null;
@@ -1578,7 +1615,7 @@ async function stopCurrent() {
     apiFetch(`/v1/audio/requests/${state.currentRequestId}/cancel`, { method: 'POST' }).catch(() => {});
     state.currentRequestId = '';
   }
-  // Mark as idle immediately so the UI is responsive for the next action.
+  // 立即恢复空闲状态，让用户可以马上开始下一次合成。
   setBusy(false);
   setProgress('已停止', true);
   updateButtons();
@@ -1608,9 +1645,7 @@ function bindSpotlights() {
 function bindEvents() {
   els.form.addEventListener('submit', async event => {
     event.preventDefault();
-    // Block re-submission while synthesis is already in progress.
-    // The generate button is disabled in this state, but form submission
-    // can still fire via keyboard (Enter) even on a disabled button.
+    // 合成处理中禁止重复提交。按钮已禁用，但键盘回车仍可能触发表单提交。
     if (state.busy) return;
     const text = els.text.value.trim();
     if (!text) {

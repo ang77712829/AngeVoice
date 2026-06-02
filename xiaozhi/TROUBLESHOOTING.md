@@ -55,21 +55,17 @@ docker exec -it xiaozhi-esp32-server ls -lah /opt/xiaozhi-esp32-server/core/prov
 
 按 `xiaozhi/manager/presets.yaml` 填。
 
-## 4. MOSS clone 没有变成新声音
+## 4. MOSS 克隆没有变成新声音
 
 先确认 AngeVoice 侧已启用 MOSS 模型：
 
 ```text
-ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cpu
+ANGEVOICE_ENABLED_MODELS=kokoro,moss
 ```
 
-如果你使用 GPU 或 CUDA 版本，也可以是：
+CPU、GPU 与 legacy-gpu 都使用同一个公开模型 ID；实际 Provider 由 AngeVoice 当前部署画像决定。
 
-```text
-ANGEVOICE_ENABLED_MODELS=kokoro,moss-nano-cuda
-```
-
-如果 AngeVoice 只启用了 `kokoro`，小智里选择 `moss-nano-cpu` / `moss-nano-cuda` 会请求失败。
+如果 AngeVoice 只启用了 `kokoro`，小智里选择 `moss` 会请求失败。
 
 确认参考音频路径：
 
@@ -103,7 +99,25 @@ format: pcm_s16le
 
 并确认 AngeVoice WebSocket 返回的是 PCM 流式音频。MOSS 首次加载可能比较慢，第一次请求要等模型载入。
 
-## 6. 401 Unauthorized
+## 6. ZipVoice 克隆失败或不像参考音色
+
+先确认 AngeVoice 侧启用了 ZipVoice：
+
+```text
+ANGEVOICE_ENABLED_MODELS=kokoro,moss,zipvoice
+```
+
+小智配置里必须同时填写：
+
+```yaml
+model: zipvoice
+prompt_audio_path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
+prompt_text: 参考音频实际朗读文本
+```
+
+如果 `prompt_text` 还是占位文本，或者和参考音频不一致，合成会变慢、音色相似度下降，甚至报参数错误。ZipVoice 官方建议参考音频少于 3 秒，AngeVoice 最长允许 15 秒。
+
+## 7. 401 Unauthorized
 
 如果 AngeVoice 启用了 `KOKORO_API_KEY`，小智配置里必须填：
 
@@ -111,6 +125,6 @@ format: pcm_s16le
 api_key: "你的 KOKORO_API_KEY"
 ```
 
-## 7. MOSS 很慢
+## 8. MOSS 或 ZipVoice 很慢
 
-免费 CPU 或低配 NAS 上 MOSS clone 可能很慢。建议先用 Kokoro 流式跑通，再启用 MOSS。
+免费 CPU 或低配 NAS 上 MOSS 克隆、ZipVoice 克隆可能很慢。建议先用 Kokoro 流式跑通，再启用克隆模型。

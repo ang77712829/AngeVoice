@@ -15,15 +15,26 @@ from typing import Callable
 
 from .audio import encode_audio_segment
 from .moss import (
-    MossProcessTimeoutError,
     StreamBudgetThresholds,
     merge_codec_audio,
     resolve_stream_decode_frame_budget,
     runtime_supports_frame_streaming,
     split_waveform_for_stream,
 )
+from .workers.process_worker import EngineProcessTimeoutError
 
 logger = logging.getLogger(__name__)
+
+
+def _cancel_requested(cancel_check: Callable[[], bool] | None) -> bool:
+    if cancel_check is None:
+        return False
+    try:
+        return bool(cancel_check())
+    except Exception:
+        logger.debug("MOSS 取消状态检查失败", exc_info=True)
+        return False
+
 
 class _MossStreamCancelled(Exception):
     """客户端取消 MOSS 流式请求时使用的内部异常。"""
@@ -46,7 +57,7 @@ class MossStreamingMixin:
         无法中断正在进行的 ONNX/CUDA 单帧推理。
         """
         if fmt not in self.SUPPORTED_STREAM_FORMATS:
-            yield {"type": "error", "message": f"Unsupported format: {fmt}"}
+            yield {"type": "error", "message": f"不支持的流式格式：{fmt}"}
             return
         try:
             self._validate_request(text=text, voice=voice, speed=speed)
@@ -95,7 +106,7 @@ class MossStreamingMixin:
             try:
                 return bool(cancel_check())
             except Exception:
-                logger.debug("MOSS cancel_check failed", exc_info=True)
+                logger.debug("MOSS 取消状态检查失败", exc_info=True)
                 return False
 
         def put_item(item) -> bool:
@@ -118,9 +129,9 @@ class MossStreamingMixin:
                         is_cancelled=is_cancelled,
                     )
             except _MossStreamCancelled:
-                logger.info("MOSS stream cancelled")
+                logger.info("MOSS 流式请求已取消")
             except Exception as exc:
-                logger.warning("MOSS stream failed: %s", exc)
+                logger.warning("MOSS 流式请求失败：%s", exc)
                 put_item(("error", exc))
             finally:
                 put_item(("done", None))
@@ -137,7 +148,7 @@ class MossStreamingMixin:
                     if future.done():
                         exc = future.exception()
                         if exc is not None:
-                            logger.warning("MOSS stream worker failed: %s", exc)
+                            logger.warning("MOSS 流式 worker 失败：%s", exc)
                             yield {"type": "segment_error", "index": total_done, "message": str(exc), "model": self.engine_id}
                         break
                     continue
@@ -176,49 +187,79 @@ class MossStreamingMixin:
         prompt_audio_path: str | None,
         cancel_check: Callable[[], bool] | None,
     ):
-        """通过隔离子进程执行 MOSS 流式推理。"""
+        """通过隔离子进程执行 MOSS 流式推理。
 
-        if self._process_client is None or not self._process_client.alive:
-            self._loaded = False
+        取消策略在 EngineProcessClient 中统一处理：调用方提前关闭生成器时，
+        父进程立即设置共享取消标志并释放请求锁；子进程在 MOSS 运行时的
+        帧级检查点停止旧请求，后续请求会丢弃旧 request_id 的残留结束帧。
+        这样既不会长时间卡住 WebSocket，也不会为了停止而杀掉已加载模型。
+        """
+
+        # 修复说明：同时检查 is_loaded，处理进程崩溃后 client 存在但未加载的场景。
+        # 兼容旧测试/旧插件中可能传入的轻量 client stub：没有 is_loaded 时退回
+        # 检查 alive，避免 AttributeError 掩盖真正的重载路径。
+        client_loaded = bool(
+            self._process_client is not None
+            and getattr(self._process_client, "is_loaded", bool(getattr(self._process_client, "alive", False)))
+        )
+        if not client_loaded:
             self.load()
         if self._process_client is None:
             # 加载可能已被测试或外层取消路径取消/替换。
             yield {"type": "done", "total_segments": 0, "total_audio_chunks": 0}
             return
+
+        # 把外部取消检查交给 EngineProcessClient.stream()。它会在生成器关闭
+        # 或取消检查命中时设置共享取消标志；实际停止由子进程内的帧级检查完成。
+        stream_timeout = max(
+            float(getattr(self.config, "request_timeout_seconds", 300.0) or 300.0),
+            float(getattr(self.config, "engine_process_stream_idle_timeout_seconds", 120.0) or 120.0),
+            5.0,
+        )
+        saw_protocol_done = False
+        saw_terminal_error = False
+        next_error_index = 0
         try:
             for event in self._process_client.stream(
-                "synthesize_stream",
                 {
                     "text": text,
                     "voice": voice,
                     "speed": speed,
                     "fmt": fmt,
                     "prompt_audio_path": prompt_audio_path,
-                    # 跨进程不能传递 cancel_check，父进程会在外层检测取消。
+                    # 跨进程不能传递 cancel_check callable，
+                    # 父进程通过 EngineProcessClient.stream(cancel_check=...) 在帧间隙控制取消。
                     "cancel_check": None,
                 },
-                timeout=float(self.config.request_timeout_seconds),
+                timeout=stream_timeout,
                 cancel_check=cancel_check,
             ):
-                if cancel_check is not None:
-                    try:
-                        if bool(cancel_check()):
-                            # 只设 cancel_flag 通知 worker 子进程在帧间隙停止推理，
-                            # 不杀进程，模型保持加载。下一个请求可直接复用。
-                            # 只有 drain 超时或 worker 真的 exit 才走 kill 路径。
-                            if self._process_client is not None:
-                                self._process_client.soft_cancel()
-                            logger.info("MOSS 隔离流式取消：已通知 worker 停止推理，保持进程存活")
-                            break
-                    except Exception:
-                        logger.debug("MOSS 隔离流式 cancel_check 失败", exc_info=True)
+                if isinstance(event, dict):
+                    event_type = str(event.get("type") or "")
+                    if event_type == "done":
+                        saw_protocol_done = True
+                    elif event_type in {"error", "segment_error", "cancelled"}:
+                        saw_terminal_error = True
+                    if event_type == "audio":
+                        try:
+                            next_error_index = max(next_error_index, int(event.get("index", -1)) + 1)
+                        except (TypeError, ValueError):
+                            next_error_index += 1
                 yield event
-        except MossProcessTimeoutError as exc:
-            self._mark_process_failure(timeout=float(self.config.request_timeout_seconds), reason="stream_timeout")
+            if not saw_protocol_done and not saw_terminal_error and not _cancel_requested(cancel_check):
+                logger.warning("MOSS 隔离流式合成提前结束，未收到协议完成帧")
+                yield {
+                    "type": "segment_error",
+                    "index": next_error_index,
+                    "message": "MOSS 流式合成提前结束，未收到完成帧；本次部分音频已丢弃",
+                    "model": self.engine_id,
+                }
+        except EngineProcessTimeoutError as exc:
+            self._mark_process_failure(timeout=stream_timeout, reason="stream_timeout")
             yield {"type": "segment_error", "index": 0, "message": str(exc), "model": self.engine_id}
             yield {"type": "done", "total_segments": 0, "total_audio_chunks": 0}
         except Exception as exc:
-            self._mark_process_failure(timeout=float(self.config.request_timeout_seconds), reason="stream_error")
+            self._mark_process_failure(timeout=stream_timeout, reason="stream_error")
             yield {"type": "segment_error", "index": 0, "message": str(exc), "model": self.engine_id}
             yield {"type": "done", "total_segments": 0, "total_audio_chunks": 0}
 
@@ -235,7 +276,11 @@ class MossStreamingMixin:
         self._configure_runtime_generation()
         total_segments = len([item for item in segments if item.strip()])
         emitted = 0
-        stream_state = {"emitted_samples_total": 0, "first_audio_emitted_at_perf": None}
+        stream_state = {
+            "emitted_samples_total": 0,
+            "first_audio_emitted_at_perf": None,
+            "chunk_seconds": self._stream_chunk_seconds_for_text(),
+        }
         for seg in segments:
             if is_cancelled():
                 raise _MossStreamCancelled()
@@ -252,7 +297,7 @@ class MossStreamingMixin:
                 stream_state=stream_state,
             )
             logger.info(
-                "MOSS segment %d/%d streamed (%.1fs, audio chunks=%d)",
+                "MOSS 分段 %d/%d 已流式输出（%.1fs，音频块=%d）",
                 emitted,
                 total_segments,
                 time.monotonic() - t0,
@@ -351,7 +396,7 @@ class MossStreamingMixin:
                 self._runtime.codec_streaming_session.reset()
 
             logger.info(
-                "MOSS runtime chunk %d/%d streamed (%.1fs, frames=%d, audio chunks=%d)",
+                "MOSS 运行时小块 %d/%d 已流式输出（%.1fs，帧=%d，音频块=%d）",
                 chunk_index + 1,
                 len(text_chunks),
                 time.monotonic() - t0,
@@ -417,18 +462,20 @@ class MossStreamingMixin:
             stream_state["first_audio_emitted_at_perf"] = time.perf_counter()
         stream_state["emitted_samples_total"] = int(stream_state["emitted_samples_total"]) + int(processed.shape[0])
         emitted = 0
-        for piece in self._split_waveform_for_stream(processed):
+        for piece in self._split_waveform_for_stream(processed, chunk_seconds=stream_state.get("chunk_seconds")):
             if is_cancelled() or not put_item(("audio", piece)):
                 raise _MossStreamCancelled()
             emitted += 1
         return emitted
 
-    def _split_waveform_for_stream(self, waveform):
+    def _stream_chunk_seconds_for_text(self) -> float:
+        base = float(self.config.moss_stream_chunk_seconds)
+        return max(0.05, min(2.0, base))
+
+    def _split_waveform_for_stream(self, waveform, *, chunk_seconds: float | None = None):
         return split_waveform_for_stream(
             waveform,
             sample_rate=self.sample_rate,
-            chunk_seconds=float(self.config.moss_stream_chunk_seconds),
+            chunk_seconds=float(chunk_seconds or self.config.moss_stream_chunk_seconds),
             min_floor=float(getattr(self.config, "moss_stream_chunk_min_floor", 0.10)),
         )
-
-

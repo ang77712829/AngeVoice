@@ -1,33 +1,16 @@
-"""AngeVoice WebSocket streaming adapter for xiaozhi-esp32-server.
+"""小智 AngeVoice WebSocket 流式适配器。
 
-Install into:
+安装到：
     /opt/xiaozhi-esp32-server/core/providers/tts/angevoice_stream.py
 
-Supports:
-- Kokoro streaming
-- MOSS preset-voice streaming
-- MOSS clone streaming when `prompt_audio_path` is configured
+支持 Kokoro 流式、MOSS 预设音色流式、MOSS/ZipVoice 克隆流式。克隆模式会读取
+`prompt_audio_path`，ZipVoice 还需要 `prompt_text` 对应参考音频实际朗读文本。
 
-The clone prompt path is intentionally tolerant because NAS users often copy a
-host path from the file manager into the manager UI.  The adapter accepts:
+参考音频路径会兼容常见 NAS 填写习惯：容器内文件、容器内目录、以及包含
+`/data/angevoice_prompts` 的宿主机路径都会尽力映射到小智容器内路径。
 
-- container file path: /opt/xiaozhi-esp32-server/data/angevoice_prompts/reference.wav
-- container directory: /opt/xiaozhi-esp32-server/data/angevoice_prompts/
-- host-like path containing /data/angevoice_prompts, such as /vol*/.../data/angevoice_prompts/
-
-If the prompt audio still cannot be found, the adapter falls back to normal MOSS
-streaming instead of failing the whole xiaozhi TTS response.
-
-AngeVoice models may return different PCM layouts.  Kokoro is usually mono, but
-MOSS exposes the runtime sample rate/channels in the `started` event and can be
-48 kHz stereo.  xiaozhi's Opus encoder expects the PCM bytes to match its own
-sample_rate/channels.  This adapter therefore downmixes/resamples raw PCM chunks
-before feeding them into the Opus encoder.
-
-Important: resampling must be stateful across chunks.  Stateless per-chunk
-interpolation creates discontinuities at chunk boundaries, which sounds like
-clicks, clipping, stutter, or harsh explosions on small speakers.  We use
-`audioop.ratecv` with persistent state for the actual real-time path.
+不同 AngeVoice 模型可能返回不同 PCM 布局；本适配器会在送入小智 Opus 编码器前
+按小智实际采样率和声道数做连续重采样，避免分块边界产生爆音、卡顿或失真。
 """
 
 from __future__ import annotations
@@ -106,14 +89,13 @@ class TTSProvider(TTSProviderBase):
         self.model = config.get("model", "kokoro")
         self.voice = config.get("private_voice") or config.get("voice", "zm_010")
         self.stream_format = config.get("stream_format") or config.get("format", "pcm_s16le")
-        # The real-time path consumes raw PCM, but xiaozhi's fallback base class
-        # expects a self-describing audio container when it calls text_to_speak().
-        # Return WAV bytes there to avoid pydub's raw PCM `sample_width` error.
+        # 实时路径使用裸 PCM；兜底 text_to_speak 路径返回 WAV，避免 pydub 解析裸 PCM 出错。
         self.audio_file_type = "wav"
         self.timeout = int(config.get("tts_timeout", config.get("timeout", 180)))
         self.connect_timeout = int(config.get("connect_timeout", 15))
         self.prompt_audio_path = config.get("prompt_audio_path", "") or ""
         self.prompt_audio_filename = config.get("prompt_audio_filename") or os.path.basename(self.prompt_audio_path) or "reference.wav"
+        self.prompt_text = config.get("prompt_text", "") or ""
         speed = config.get("speed", "1.0")
         self.speed = float(speed) if speed not in (None, "") else 1.0
         self.output_file = config.get("output_dir", "tmp/")
@@ -127,13 +109,7 @@ class TTSProvider(TTSProviderBase):
         self._apply_percentage_params(config)
 
     async def text_to_speak(self, text, output_file):
-        """Collect a whole websocket response for non-stream fallback/testing paths.
-
-        xiaozhi's base class may call this path for short prompt sentences, then
-        pass the returned bytes to pydub.  Returning raw PCM with file_type=pcm
-        triggers `sample_width` errors.  We therefore return WAV bytes here while
-        keeping the real-time streaming path raw-PCM -> Opus.
-        """
+        """收集完整流式响应，供小智兜底非实时路径和测试路径使用。"""
         pcm_chunks: list[bytes] = []
         self._reset_pcm_converter()
         async for item in self._iter_stream_events(str(text or "")):
@@ -276,6 +252,8 @@ class TTSProvider(TTSProviderBase):
         prompt_audio = _prepare_prompt_audio(self.prompt_audio_path, self.prompt_audio_filename)
         if prompt_audio:
             payload["prompt_audio"] = prompt_audio
+        if self.prompt_text:
+            payload["prompt_text"] = self.prompt_text
         return payload
 
     def _apply_stream_meta(self, meta: dict) -> None:
@@ -343,7 +321,7 @@ class TTSProvider(TTSProviderBase):
                 converted = audioop.tomono(converted, 2, 0.5, 0.5)
                 rate_in_channels = 1
             elif src_channels == 1 and dst_channels == 2:
-                # ratecv runs on the current channel count.  Upmix after ratecv.
+                # 先按单声道重采样，再补成双声道。
                 rate_in_channels = 1
             else:
                 rate_in_channels = src_channels
@@ -377,7 +355,7 @@ class TTSProvider(TTSProviderBase):
     def _flush_source_pcm_buffer(self) -> None:
         if not self._source_pcm_buffer:
             return
-        # Drop incomplete sample groups rather than feeding misaligned PCM into the Opus encoder.
+        # 不完整采样组不能送入 Opus 编码器，直接丢弃尾部字节。
         dropped = len(self._source_pcm_buffer)
         self._source_pcm_buffer.clear()
         logger.bind(tag=TAG).debug(f"AngeVoice丢弃不足一个PCM采样组的尾部字节: {dropped}")

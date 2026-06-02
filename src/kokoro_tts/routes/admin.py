@@ -51,7 +51,7 @@ def create_admin_router(state: ServiceState) -> APIRouter:
         templates = getattr(state, "templates", None)
         if templates is not None:
             return templates.TemplateResponse(request, "admin.html", {})
-        return HTMLResponse("<h1>AngeVoice Admin</h1><p>Template support is unavailable.</p>")
+        return HTMLResponse("<h1>AngeVoice 管理后台</h1><p>模板支持不可用。</p>")
 
     def _active_requests_snapshot() -> list[dict]:
         with state.request_lock:
@@ -68,6 +68,7 @@ def create_admin_router(state: ServiceState) -> APIRouter:
             "active_requests": _active_requests_snapshot(),
             "stats": state.snapshot_stats(),
             "resources": state.resource_snapshot(),
+            "idle_restart": state.idle_restart_snapshot(),
             "security": security_snapshot(cfg),
             "config": config_snapshot(cfg),
             "update": update_checker.snapshot(),
