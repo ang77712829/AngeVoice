@@ -1,4 +1,11 @@
-# 更新日志
+## [2.6.612] - 2026-06-08
+
+### 🐛 修复
+
+- 锁定 Docker 镜像中的 `transformers` / `torch` 兼容组合，修复 Kokoro v1.1 在新版 `transformers` 下导入 `AlbertModel` 时访问 `torch.float8_e8m0fnu` 导致的启动失败。
+- 固定 MOSS-TTS-Nano 上游源码引用到已验证 commit，避免 Docker 构建时跟随 upstream `main` 漂移。
+- Docker 构建阶段新增 Kokoro 与 MOSS runtime import smoke test，提前暴露依赖组合问题。
+- 同步版本号、fnOS manifest 与相关回归测试到 `2.6.612`。
 
 ## [2.6.611] - 2026-06-04
 

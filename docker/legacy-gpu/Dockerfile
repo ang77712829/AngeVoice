@@ -23,9 +23,13 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
 
 ARG PYTORCH_VERSION=2.5.1
 
+# 依赖约束先复制到镜像中，后续 pip install 全部使用同一份约束，避免 transformers 等间接依赖漂移。
+COPY docker/constraints-legacy-gpu.lock /app/docker/constraints-legacy-gpu.lock
+
 # CUDA 11.8 版 PyTorch 比 CUDA 12.x 更保守，适合旧 GPU 环境。
 # AngeVoice/MOSS 推理不需要 torchvision，保持镜像更轻。
 RUN python3 -m pip install --no-cache-dir \
+    -c /app/docker/constraints-legacy-gpu.lock \
     "torch==${PYTORCH_VERSION}+cu118" \
     "torchaudio==${PYTORCH_VERSION}+cu118" \
     --index-url https://download.pytorch.org/whl/cu118
@@ -33,6 +37,7 @@ RUN python3 -m pip install --no-cache-dir \
 ARG INSTALL_MOSS=true
 ARG INSTALL_ZIPVOICE=true
 ARG MOSS_REPO=https://github.com/OpenMOSS/MOSS-TTS-Nano.git
+ARG MOSS_REF=b09d1962a7df4d4007146ea53880c4b282d83e39
 ARG MOSS_RUNTIME_PACKAGE=onnxruntime-gpu==1.20.1
 ARG MOSS_RUNTIME_INDEX_URL=https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/
 ENV MOSS_TTS_NANO_PATH=/opt/MOSS-TTS-Nano
@@ -44,11 +49,17 @@ ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidi
 # Compose 配置默认隐藏该 CUDA 模型。
 # 保留上游 OpenMOSS 许可证到预构建镜像中。
 RUN if [ "$INSTALL_MOSS" = "true" ]; then \
-      git clone --depth 1 "$MOSS_REPO" "$MOSS_TTS_NANO_PATH" && \
+      mkdir -p "$MOSS_TTS_NANO_PATH" && \
+      git init "$MOSS_TTS_NANO_PATH" && \
+      cd "$MOSS_TTS_NANO_PATH" && git remote add origin "$MOSS_REPO" && \
+      (git fetch --depth 1 origin "$MOSS_REF" || git fetch --depth 1 origin main) && \
+      git checkout --detach "$MOSS_REF" && \
+      rm -rf .git && cd /app && \
       mkdir -p /app/licenses && \
       if [ -f "$MOSS_TTS_NANO_PATH/LICENSE" ]; then cp "$MOSS_TTS_NANO_PATH/LICENSE" /app/licenses/MOSS-TTS-Nano-LICENSE; fi && \
-      python3 -m pip install --no-cache-dir "sentencepiece>=0.1.99" "huggingface_hub>=0.23" "modelscope>=1.20.0" coloredlogs flatbuffers numpy packaging protobuf sympy && \
-      python3 -m pip install --no-cache-dir --index-url "$MOSS_RUNTIME_INDEX_URL" "$MOSS_RUNTIME_PACKAGE"; \
+      python3 -m pip install --no-cache-dir -c /app/docker/constraints-legacy-gpu.lock sentencepiece huggingface_hub modelscope coloredlogs flatbuffers numpy packaging protobuf sympy && \
+      python3 -m pip install --no-cache-dir -c /app/docker/constraints-legacy-gpu.lock --index-url "$MOSS_RUNTIME_INDEX_URL" "$MOSS_RUNTIME_PACKAGE" && \
+      python3 -c "import sys; sys.path.insert(0, '$MOSS_TTS_NANO_PATH'); import onnx_tts_runtime; print('MOSS ONNX runtime import smoke check: OK')"; \
     fi
 
 COPY pyproject.toml README.md README_EN.md LICENSE NOTICE THIRD_PARTY_NOTICES.md ACKNOWLEDGEMENTS.md ./
@@ -57,12 +68,12 @@ COPY src/ src/
 COPY scripts/ scripts/
 COPY vendor/ZipVoice/ /opt/ZipVoice/
 
-RUN python3 -m pip install --no-cache-dir -e .
+RUN python3 -m pip install --no-cache-dir -c /app/docker/constraints-legacy-gpu.lock -e .
 
 # ZipVoice 使用已冻结的 ONNX INT8 CPU runtime。GPU 镜像复用 onnxruntime-gpu 的 CPUExecutionProvider，
 # 不额外安装 onnxruntime CPU 包，避免覆盖 MOSS 的 CUDA runtime。
 RUN if [ "$INSTALL_ZIPVOICE" = "true" ]; then \
-      python3 -m pip install --no-cache-dir "huggingface_hub>=0.23" "lhotse>=1.24.0" "vocos>=0.1.0" "pydub>=0.25.1" "cn2an>=0.5.22" "inflect>=7.0.0" "piper_phonemize>=1.1.0" "safetensors>=0.4.0" "setuptools<81" && \
+      python3 -m pip install --no-cache-dir -c /app/docker/constraints-legacy-gpu.lock huggingface_hub lhotse vocos pydub cn2an inflect piper_phonemize safetensors "setuptools<81" && \
       mkdir -p /app/licenses && cp /opt/ZipVoice/LICENSE /app/licenses/ZipVoice-Apache-2.0-LICENSE && \
       python3 -c "import sys, onnxruntime as ort; assert 'CPUExecutionProvider' in ort.get_available_providers(); sys.path.insert(0, '/opt/ZipVoice'); from zipvoice.bin.infer_zipvoice_onnx import OnnxModel, generate_sentence; from zipvoice.tokenizer.tokenizer import EmiliaTokenizer; from zipvoice.utils.feature import VocosFbank; print('ZipVoice ONNX CPU provider import smoke check: OK')"; \
     fi
@@ -73,6 +84,9 @@ RUN python3 -m pip check
 # 预装 spaCy 英文模型（misaki/kokoro 依赖，避免每次启动重新下载）
 RUN python3 -m pip install --no-cache-dir \
     en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+# 构建阶段验证 Kokoro import 链，避免 transformers/torch 版本组合漂移到运行时才失败。
+RUN python3 -c "import torch, transformers; from kokoro import KModel, KPipeline; print('Kokoro import smoke check: OK'); print('torch:', torch.__version__); print('transformers:', transformers.__version__)"
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

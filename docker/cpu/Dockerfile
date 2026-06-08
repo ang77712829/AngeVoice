@@ -14,16 +14,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG INSTALL_MOSS=true
 ARG MOSS_REPO=https://github.com/OpenMOSS/MOSS-TTS-Nano.git
+ARG MOSS_REF=b09d1962a7df4d4007146ea53880c4b282d83e39
 ARG MOSS_RUNTIME_PACKAGE=onnxruntime>=1.20.0
 ARG PYTORCH_VERSION=2.5.1
 ARG INSTALL_ZIPVOICE=true
 ENV MOSS_TTS_NANO_PATH=/opt/MOSS-TTS-Nano
 ENV ZIPVOICE_REPO_PATH=/opt/ZipVoice
 
+# 依赖约束先复制到镜像中，后续 pip install 全部使用同一份约束，避免 transformers 等间接依赖漂移。
+COPY constraints.txt ./
+
 # CPU 版 PyTorch。官方 CPU index 的安装命令使用不带 +cpu 后缀的版本约束；
 # 这样同一 Dockerfile 可同时解析 linux/amd64 与 linux/arm64 wheel。
 # AngeVoice/MOSS 推理不需要 torchvision，保持镜像更轻。
 RUN python3 -m pip install --no-cache-dir \
+    -c /app/constraints.txt \
     "torch==${PYTORCH_VERSION}" \
     "torchaudio==${PYTORCH_VERSION}" \
     --index-url https://download.pytorch.org/whl/cpu
@@ -32,10 +37,16 @@ RUN python3 -m pip install --no-cache-dir \
 # AngeVoice 通过 MOSS_TTS_NANO_PATH 环境变量引用它。
 # 保留上游 OpenMOSS 许可证到预构建镜像中。
 RUN if [ "$INSTALL_MOSS" = "true" ]; then \
-      git clone --depth 1 "$MOSS_REPO" "$MOSS_TTS_NANO_PATH" && \
+      mkdir -p "$MOSS_TTS_NANO_PATH" && \
+      git init "$MOSS_TTS_NANO_PATH" && \
+      cd "$MOSS_TTS_NANO_PATH" && git remote add origin "$MOSS_REPO" && \
+      (git fetch --depth 1 origin "$MOSS_REF" || git fetch --depth 1 origin main) && \
+      git checkout --detach "$MOSS_REF" && \
+      rm -rf .git && cd /app && \
       mkdir -p /app/licenses && \
       if [ -f "$MOSS_TTS_NANO_PATH/LICENSE" ]; then cp "$MOSS_TTS_NANO_PATH/LICENSE" /app/licenses/MOSS-TTS-Nano-LICENSE; fi && \
-      python3 -m pip install --no-cache-dir "sentencepiece>=0.1.99" "huggingface_hub>=0.23" "modelscope>=1.20.0" "$MOSS_RUNTIME_PACKAGE"; \
+      python3 -m pip install --no-cache-dir -c /app/constraints.txt sentencepiece huggingface_hub modelscope "$MOSS_RUNTIME_PACKAGE" && \
+      python3 -c "import sys; sys.path.insert(0, '$MOSS_TTS_NANO_PATH'); import onnx_tts_runtime; print('MOSS ONNX runtime import smoke check: OK')"; \
     fi
 
 # 复制项目
@@ -47,10 +58,10 @@ COPY vendor/ZipVoice/ /opt/ZipVoice/
 
 # 安装项目。使用 editable 模式让 Compose 挂载的模板/静态资源能立即生效。
 RUN if [ "$INSTALL_ZIPVOICE" = "true" ]; then \
-      python3 -m pip install --no-cache-dir -e ".[zipvoice]" && \
+      python3 -m pip install --no-cache-dir -c /app/constraints.txt -e ".[zipvoice]" && \
       mkdir -p /app/licenses && cp /opt/ZipVoice/LICENSE /app/licenses/ZipVoice-Apache-2.0-LICENSE; \
     else \
-      python3 -m pip install --no-cache-dir -e .; \
+      python3 -m pip install --no-cache-dir -c /app/constraints.txt -e .; \
     fi
 
 # 构建阶段即验证 ZipVoice ONNX CPU 推理导入链，避免到 NAS 首次合成时才暴露遗漏依赖。
@@ -65,6 +76,9 @@ RUN python3 -m pip check
 # 预装 spaCy 英文模型（misaki/kokoro 依赖，避免每次启动重新下载）
 RUN python3 -m pip install --no-cache-dir \
     en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+# 构建阶段验证 Kokoro import 链，避免 transformers/torch 版本组合漂移到运行时才失败。
+RUN python3 -c "import torch, transformers; from kokoro import KModel, KPipeline; print('Kokoro import smoke check: OK'); print('torch:', torch.__version__); print('transformers:', transformers.__version__)"
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

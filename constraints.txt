@@ -1,13 +1,17 @@
-# AngeVoice — pinned dependency constraints (minimum versions)
-# Regenerate when pyproject.toml changes.
-# Usage:  pip install -r constraints.txt
+# AngeVoice — pinned dependency constraints for source/CPU Docker builds.
+# Regenerate when pyproject.toml or Docker base torch version changes.
+# Usage: pip install -c constraints.txt -e ".[zipvoice]"
 
 # ── core ──────────────────────────────────────────────
 kokoro==0.8.2
 misaki[zh]==0.8.2
 jieba==0.42.1
 pypinyin==0.50.0
-torch==2.0.0
+torch==2.5.1
+torchaudio==2.5.1
+transformers==4.46.3
+tokenizers==0.20.3
+huggingface_hub==0.26.5
 numpy==1.24.0
 soundfile==0.12.0
 fastapi==0.100.0
@@ -17,10 +21,19 @@ jinja2==3.1.0
 websockets==12.0
 
 # ── optional[moss] ───────────────────────────────────
-torchaudio==2.0.0
 sentencepiece==0.1.99
-huggingface_hub==0.23
+modelscope==1.20.0
 onnxruntime==1.20.0
+
+# ── optional[zipvoice] ───────────────────────────────
+lhotse==1.24.0
+vocos==0.1.0
+pydub==0.25.1
+cn2an==0.5.22
+inflect==7.0.0
+piper_phonemize==1.1.0
+safetensors==0.4.5
+setuptools<81
 
 # ── optional[moss-gpu] ───────────────────────────────
 onnxruntime-gpu==1.20.2

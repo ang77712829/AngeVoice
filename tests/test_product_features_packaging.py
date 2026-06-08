@@ -186,7 +186,7 @@ def test_update_checker_reports_new_release_without_auto_update():
 
 def test_version_and_fnos_wizards_expose_verified_profile_modes_and_safe_default_warning():
     from kokoro_tts import __version__
-    assert __version__ == "2.6.611"
+    assert __version__ == "2.6.612"
     root = Path(__file__).resolve().parents[1]
     install = json.loads((root / "packaging/fnos/AngeVoice/wizard/install").read_text(encoding="utf-8"))
     text = json.dumps(install, ensure_ascii=False)
