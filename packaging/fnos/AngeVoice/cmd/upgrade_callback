@@ -2,7 +2,9 @@
 # 升级后处理：持久化数据保留；新版 compose 在启动前直接使用升级向导透传的 COMPOSE_PROFILES。
 set -eu
 PROFILE="${COMPOSE_PROFILES:-cpu}"
+FFMPEG_ENABLED="${wizard_ffmpeg_enabled:-false}"
 case "$PROFILE" in cpu|gpu|legacy-gpu) ;; *) exit 1 ;; esac
+case "$FFMPEG_ENABLED" in true|false) ;; *) exit 1 ;; esac
 mkdir -p "${TRIM_PKGVAR}/models" "${TRIM_PKGVAR}/outputs" "${TRIM_PKGVAR}/prompts" \
   "${TRIM_PKGVAR}/credentials" "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/logs"
 for item in \
@@ -15,5 +17,5 @@ for item in \
     rm -f "$item"
   fi
 done
-echo "[AngeVoice] 升级完成：profile=${PROFILE}；模型、音色、输出、凭据与运行配置目录均已保留。"
+echo "[AngeVoice] 升级完成：profile=${PROFILE}, ffmpeg=${FFMPEG_ENABLED}；模型、音色、输出、凭据与运行配置目录均已保留。"
 exit 0

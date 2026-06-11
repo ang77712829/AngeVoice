@@ -49,3 +49,77 @@ def test_trim_silence_edges_reports_trimmed_ms():
 def test_clamp_pause_seconds():
     assert clamp_pause_seconds(5.0, max_ms=650) == 0.65
     assert clamp_pause_seconds(-1.0, max_ms=650) == 0.0
+
+
+def test_audio_format_aliases_and_ffmpeg_disabled_errors():
+    import pytest
+    from fastapi import HTTPException
+    from kokoro_tts.audio_formats import normalize_response_format, supported_response_formats
+    from kokoro_tts.config import TTSConfig
+
+    cfg = TTSConfig(ffmpeg_enabled=False, mp3_enabled=False)
+    assert normalize_response_format("wav", cfg) == "wav"
+    assert normalize_response_format("pcm_s16le", cfg) == "pcm"
+    assert supported_response_formats(cfg) == ["wav", "pcm"]
+    with pytest.raises(HTTPException) as err:
+        normalize_response_format("telegram_voice", cfg)
+    assert err.value.status_code == 400
+    assert err.value.detail["code"] == "FFMPEG_DISABLED"
+
+
+def test_audio_format_transcode_invokes_expected_ogg_opus_command(monkeypatch):
+    import subprocess
+    from kokoro_tts.audio_formats import transcode_wav_bytes
+    from kokoro_tts.config import TTSConfig
+
+    calls = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = b"ogg-data"
+        stderr = b""
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
+        return _Proc()
+
+    monkeypatch.setattr("kokoro_tts.audio_formats.shutil.which", lambda binary: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("kokoro_tts.audio_formats.subprocess.run", fake_run)
+    cfg = TTSConfig(ffmpeg_enabled=True, ffmpeg_binary="ffmpeg")
+    payload, media_type = transcode_wav_bytes(b"RIFF....WAVE", cfg, "telegram_voice")
+    assert payload == b"ogg-data"
+    assert media_type == "audio/ogg"
+    assert "libopus" in calls["cmd"]
+    assert calls["kwargs"]["stdout"] is subprocess.PIPE
+
+
+def test_audio_format_transcode_m4a_uses_seekable_temp_file(monkeypatch):
+    from pathlib import Path
+    from kokoro_tts.audio_formats import transcode_wav_bytes
+    from kokoro_tts.config import TTSConfig
+
+    calls = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+
+    def fake_run(cmd, **kwargs):
+        calls["cmd"] = cmd
+        calls["kwargs"] = kwargs
+        output_path = Path(cmd[-1])
+        assert output_path.name == "output.m4a"
+        assert output_path.parent.exists()
+        output_path.write_bytes(b"m4a-data")
+        return _Proc()
+
+    monkeypatch.setattr("kokoro_tts.audio_formats.shutil.which", lambda binary: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("kokoro_tts.audio_formats.subprocess.run", fake_run)
+    cfg = TTSConfig(ffmpeg_enabled=True, ffmpeg_binary="ffmpeg")
+    payload, media_type = transcode_wav_bytes(b"RIFF....WAVE", cfg, "m4a")
+    assert payload == b"m4a-data"
+    assert media_type == "audio/mp4"
+    assert calls["cmd"][-1].endswith("output.m4a")
+    assert "pipe:1" not in calls["cmd"]

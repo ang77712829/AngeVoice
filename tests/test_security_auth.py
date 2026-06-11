@@ -30,3 +30,29 @@ async def test_verify_ws_key_accepts_token_with_surrounding_spaces():
 
     cfg = TTSConfig(api_key="expected-token")
     assert await verify_ws_key(cfg, _WS()) is True
+
+@pytest.mark.asyncio
+async def test_verify_api_key_unicode_token_returns_unauthorized_not_type_error():
+    from kokoro_tts.config import TTSConfig
+    from kokoro_tts.security import make_verify_api_key
+    from fastapi import HTTPException
+
+    class _Request:
+        headers = {"Authorization": "Bearer expected…token"}
+
+    verify = make_verify_api_key(TTSConfig(api_key="expected-token"))
+    with pytest.raises(HTTPException) as err:
+        await verify(_Request())
+    assert err.value.status_code == 401
+    assert err.value.detail == "Invalid or missing API key"
+
+
+@pytest.mark.asyncio
+async def test_verify_ws_key_unicode_token_is_false_not_type_error():
+    from kokoro_tts.config import TTSConfig
+    from kokoro_tts.security import verify_ws_key
+
+    class _WS:
+        headers = {"authorization": "Bearer expected…token"}
+
+    assert await verify_ws_key(TTSConfig(api_key="expected-token"), _WS()) is False

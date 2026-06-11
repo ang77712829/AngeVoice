@@ -406,7 +406,9 @@ environment:
 | `KOKORO_CACHE_ENABLED` | `true` | 是否启用内存 LRU 缓存 |
 | `KOKORO_BATCH_ENABLED` | `true` | 是否启用批量合成 |
 | `KOKORO_ADMIN_ENABLED` | Docker 默认 `true` | 是否启用管理后台和管理接口；首次可用 `admin / admin123` 登录，公网暴露前必须在后台改密 |
-| `KOKORO_MP3_ENABLED` | `false` | 是否启用 MP3 输出，依赖 ffmpeg |
+| `ANGEVOICE_FFMPEG_ENABLED` | `false` | 是否启用非流式 HTTP 转码输出，支持 `mp3`、`ogg_opus`/`telegram_voice`、`m4a`；依赖 ffmpeg |
+| `ANGEVOICE_FFMPEG_BINARY` | `ffmpeg` | ffmpeg 可执行文件名或路径 |
+| `KOKORO_MP3_ENABLED` | `false` | 旧兼容项：设为 true 时视为启用 FFmpeg 转码 |
 | `ANGEVOICE_ENABLED_MODELS` | `kokoro,moss,zipvoice` | 启用的公开产品模型 ID；GPU/CPU 实际运行方式由 Provider Policy 与部署画像决定 |
 | `ANGEVOICE_DEFAULT_MODEL` | `kokoro` | Studio 启动后默认选中的模型；是否启动加载由 `ANGEVOICE_STARTUP_PRELOAD_ENABLED` 决定 |
 | `ANGEVOICE_STARTUP_PRELOAD_ENABLED` | 程序与正式模板默认 `false` | 是否在服务启动后通过 Worker 预载模型；关闭时首次生成会按需唤醒 |

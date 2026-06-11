@@ -139,7 +139,7 @@ def test_fnos_package_uses_verified_compose_profile_template_for_v26601():
     install_callback = (root / "packaging/fnos/AngeVoice/cmd/install_callback").read_text(encoding="utf-8")
     assert "单一 Compose 文件 + 三个互斥 profile service" in guide
     assert "COMPOSE_PROFILES" in guide
-    assert "version               = 2.6.612" in manifest
+    assert "version               = 2.6.613" in manifest
     assert compose.count("profiles:") == 3
     assert "angevoice-cpu:" in compose and "angevoice-gpu:" in compose and "angevoice-legacy-gpu:" in compose
     assert "maxblack777/angevoice-gpu:latest" in compose
@@ -156,3 +156,13 @@ def test_fnos_package_uses_verified_compose_profile_template_for_v26601():
     assert "MOSS_PROCESS_ISOLATION_ENABLED=true" in fnos_env
     assert "ZIPVOICE_PROCESS_ISOLATION_ENABLED=true" in fnos_env
     assert "ANGEVOICE_STARTUP_PRELOAD_ENABLED=false" in fnos_env
+    assert "ANGEVOICE_FFMPEG_ENABLED=false" in fnos_env
+    assert "ANGEVOICE_FFMPEG_BINARY=ffmpeg" in fnos_env
+    assert "ANGEVOICE_FFMPEG_TIMEOUT_SECONDS=30" in fnos_env
+    assert "ANGEVOICE_AUDIO_MP3_BITRATE=192k" in fnos_env
+    assert "ANGEVOICE_AUDIO_OPUS_BITRATE=32k" in fnos_env
+    assert "ANGEVOICE_AUDIO_AAC_BITRATE=96k" in fnos_env
+    for wizard_name in ("install", "config", "upgrade"):
+        wizard_text = (root / f"packaging/fnos/AngeVoice/wizard/{wizard_name}").read_text(encoding="utf-8")
+        assert "wizard_ffmpeg_enabled" in wizard_text
+    assert 'ANGEVOICE_FFMPEG_ENABLED: "${wizard_ffmpeg_enabled:-false}"' in compose

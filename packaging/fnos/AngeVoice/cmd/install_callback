@@ -31,11 +31,13 @@ cleanup_legacy_routing_files() {
 PORT="${wizard_http_port:-8101}"
 PROFILE="${COMPOSE_PROFILES:-cpu}"
 MODEL_SOURCE="${wizard_model_source:-modelscope}"
+FFMPEG_ENABLED="${wizard_ffmpeg_enabled:-false}"
 
 case "$PORT" in *[!0-9]*|'') fail "服务端口必须为数字。" ;; esac
 [ "$PORT" -ge 1024 ] && [ "$PORT" -le 65535 ] || fail "服务端口必须在 1024 到 65535 之间。"
 case "$PROFILE" in cpu|gpu|legacy-gpu) ;; *) fail "运行模式无效：${PROFILE}" ;; esac
 case "$MODEL_SOURCE" in auto|modelscope|huggingface) ;; *) fail "模型下载源无效：${MODEL_SOURCE}" ;; esac
+case "$FFMPEG_ENABLED" in true|false) ;; *) fail "FFmpeg 转码开关无效：${FFMPEG_ENABLED}" ;; esac
 [ -n "${wizard_admin_username:-admin}" ] || fail "管理员用户名不能为空。"
 [ -n "${wizard_admin_password:-admin123}" ] || fail "管理员密码不能为空。"
 
@@ -46,6 +48,6 @@ fi
 mkdir -p "${TRIM_PKGVAR}/models" "${TRIM_PKGVAR}/outputs" "${TRIM_PKGVAR}/prompts" \
   "${TRIM_PKGVAR}/credentials" "${TRIM_PKGVAR}/config" "${TRIM_PKGVAR}/logs"
 cleanup_legacy_routing_files
-log "配置完成：profile=${PROFILE}, port=${PORT}, model_source=${MODEL_SOURCE}"
+log "配置完成：profile=${PROFILE}, port=${PORT}, model_source=${MODEL_SOURCE}, ffmpeg=${FFMPEG_ENABLED}"
 log "首次可使用 admin / admin123 登录；公网暴露前请在后台立即改密。"
 exit 0

@@ -622,8 +622,7 @@ def generate_sentence(
     )
     max_tokens = int((25 - prompt_duration) / token_duration)
     chunked_tokens_str = chunk_tokens_punctuation(tokens_str, max_tokens=max_tokens)
-    print(len(chunked_tokens_str))
-    print(chunked_tokens_str)
+    # AngeVoice: avoid printing user text/token chunks to stdout in server mode.
 
     # Tokenize text (int tokens)
     chunked_tokens = tokenizer.tokens_to_token_ids(chunked_tokens_str)

@@ -22,6 +22,7 @@ from ..contracts import StreamingRequest
 from ..prompt_audio import decode_prompt_audio_base64, save_prompt_audio_bytes, validate_reference_audio_duration
 from ..security import _extract_bearer_token, verify_ws_key
 from ..service_state import ServiceState
+from ..validation import websocket_error_frame_from_http
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +220,7 @@ class TtsWebSocketSession:
                 engine_params=supplied, parameter_source=msg, request_id=self.request_id,
             )
         except HTTPException as exc:
-            await self.websocket.send_json({"type": "error", "message": str(exc.detail), "request_id": self.request_id})
+            await self.websocket.send_json(websocket_error_frame_from_http(exc, request_id=self.request_id))
             return None
         except OSError:
             logger.exception("WebSocket 参考音频或请求资源处理失败", extra={"request_id": self.request_id})
@@ -372,6 +373,11 @@ class TtsWebSocketSession:
                         extra={"request_id": self.request_id},
                     )
                     break
+        except HTTPException as exc:
+            logger.warning("WebSocket 音频生产任务返回参数错误", extra={"request_id": self.request_id})
+            if not self.cancel_event.is_set():
+                with suppress(Exception):
+                    self._thread_put(websocket_error_frame_from_http(exc, request_id=self.request_id))
         except Exception:
             logger.exception("WebSocket 音频生产任务失败", extra={"request_id": self.request_id})
             if not self.cancel_event.is_set():

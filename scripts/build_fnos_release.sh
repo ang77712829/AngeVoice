@@ -45,11 +45,18 @@ for item in ('${TRIM_PKGVAR}/credentials:/app/credentials', '${TRIM_PKGVAR}/conf
     assert compose.count(item) == 3, item
 for item in ('KOKORO_PROCESS_ISOLATION_ENABLED: "true"', 'MOSS_PROCESS_ISOLATION_ENABLED: "true"', 'ZIPVOICE_PROCESS_ISOLATION_ENABLED: "true"', 'ANGEVOICE_STARTUP_PRELOAD_ENABLED: "false"'):
     assert compose.count(item) == 3, item
+fnos_env = (p / 'app/docker/angevoice.env').read_text(encoding='utf-8')
+for item in ('ANGEVOICE_FFMPEG_ENABLED=false', 'ANGEVOICE_FFMPEG_BINARY=ffmpeg', 'ANGEVOICE_FFMPEG_TIMEOUT_SECONDS=30', 'ANGEVOICE_AUDIO_MP3_BITRATE=192k', 'ANGEVOICE_AUDIO_OPUS_BITRATE=32k', 'ANGEVOICE_AUDIO_AAC_BITRATE=96k'):
+    assert item in fnos_env, item
 assert 'ANGEVOICE_DEPLOYMENT_PROFILE: "gpu"' in compose
 assert 'MOSS_EXECUTION_PROVIDER: "cuda"' in compose
 assert 'ZIPVOICE_EXECUTION_PROVIDER: "cuda"' in compose
 assert 'NVIDIA_VISIBLE_DEVICES: "all"' in compose
 assert 'wizard_http_port' in compose and 'wizard_admin_password' in compose
+assert 'wizard_ffmpeg_enabled' in compose
+for name in ('install', 'config', 'upgrade'):
+    wizard = json.loads((p / 'wizard' / name).read_text(encoding='utf-8'))
+    assert 'wizard_ffmpeg_enabled' in json.dumps(wizard, ensure_ascii=False)
 for name in ('install_callback', 'config_callback', 'upgrade_callback'):
     callback = (p / 'cmd' / name).read_text(encoding='utf-8')
     assert 'COMPOSE_PROFILES' in callback

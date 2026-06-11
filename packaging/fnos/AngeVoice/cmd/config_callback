@@ -3,8 +3,10 @@
 set -eu
 PROFILE="${COMPOSE_PROFILES:-cpu}"
 PORT="${wizard_http_port:-8101}"
+FFMPEG_ENABLED="${wizard_ffmpeg_enabled:-false}"
 case "$PROFILE" in cpu|gpu|legacy-gpu) ;; *) exit 1 ;; esac
 case "$PORT" in *[!0-9]*|'') exit 1 ;; esac
+case "$FFMPEG_ENABLED" in true|false) ;; *) exit 1 ;; esac
 [ "$PORT" -ge 1024 ] && [ "$PORT" -le 65535 ] || exit 1
-echo "[AngeVoice] 设置已保存：profile=${PROFILE}, port=${PORT}。请停止并重新启动应用以应用新的容器模式。"
+echo "[AngeVoice] 设置已保存：profile=${PROFILE}, port=${PORT}, ffmpeg=${FFMPEG_ENABLED}。请停止并重新启动应用以应用新的容器模式。"
 exit 0

@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from .. import __version__
+from ..admin_auth import make_verify_admin
+from ..audio_formats import ffmpeg_effective_enabled, supported_response_formats
 from ..config_api_key import effective_api_key
 from ..service_state import ServiceState
 
@@ -78,9 +80,7 @@ def _role_hints_for_gender(gender: str) -> list[str]:
 
 def _model_capabilities(snapshot: dict, cfg) -> dict:
     model_id = snapshot.get("id") or ""
-    formats = ["wav", "pcm"]
-    if getattr(cfg, "mp3_enabled", False):
-        formats.append("mp3")
+    formats = supported_response_formats(cfg)
     supports_clone = bool(snapshot.get("voice_clone_supported") or snapshot.get("voice_clone_enabled"))
     return {
         "id": model_id,
@@ -162,7 +162,8 @@ def _bootstrap_base(cfg, current_model: dict | None = None) -> dict:
         "authRequired": _auth_required(cfg),
         "streamEnabled": cfg.stream_enabled,
         "streamBinaryEnabled": cfg.stream_binary_enabled,
-        "mp3Enabled": getattr(cfg, "mp3_enabled", False),
+        "mp3Enabled": ffmpeg_effective_enabled(cfg),
+        "ffmpegEnabled": ffmpeg_effective_enabled(cfg),
         "modelSwitchEnabled": getattr(cfg, "model_switch_enabled", True),
         "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
         "apiKeyFile": _api_key_file(cfg),
@@ -226,6 +227,7 @@ class ModelSwitchRequest(BaseModel):
 def create_status_router(state: ServiceState, verify_api_key, templates=None) -> APIRouter:
     router = APIRouter()
     cfg = state.cfg
+    verify_admin = make_verify_admin(cfg)
 
     def _admin_required():
         if not cfg.metrics_enabled:
@@ -365,7 +367,8 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             "cache_bytes": state.cache_bytes(),
             "batch_enabled": getattr(cfg, "batch_enabled", False),
             "admin_enabled": getattr(cfg, "admin_enabled", False),
-            "mp3_enabled": getattr(cfg, "mp3_enabled", False),
+            "mp3_enabled": ffmpeg_effective_enabled(cfg),
+            "ffmpeg_enabled": ffmpeg_effective_enabled(cfg),
             "auth_required": _auth_required(cfg),
             "stream_enabled": cfg.stream_enabled,
         }
@@ -402,7 +405,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             if include_voices:
                 item["voices"] = _voice_details(model_id, voices, snapshot, cfg)
             models.append(item)
-        formats = ["wav", "pcm"] + (["mp3"] if getattr(cfg, "mp3_enabled", False) else [])
+        formats = supported_response_formats(cfg)
         return {
             "service": "AngeVoice",
             "version": __version__,
@@ -551,14 +554,14 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
         return state.resource_snapshot()
 
     @router.post("/v1/diagnostics/resources/release")
-    async def release_resources(unload_models: bool = False, include_current: bool = True, _=Depends(verify_api_key)):
+    async def release_resources(unload_models: bool = False, include_current: bool = True, _=Depends(verify_admin)):
         return await run_in_threadpool(
             state.release_resources, clear_cache=True, unload_models=unload_models, include_current=include_current
         )
 
     @router.post("/v1/admin/cache/clear")
-    async def clear_cache_release_compat(unload_models: bool = False, include_current: bool = True, _=Depends(verify_api_key)):
-        """兼容旧版 NAS 校验客户端曾调用的缓存清理入口。"""
+    async def clear_cache_release_compat(unload_models: bool = False, include_current: bool = True, _=Depends(verify_admin)):
+        """旧版缓存清理别名；现在与管理后台一样要求 Admin Auth。"""
         result = await run_in_threadpool(
             state.release_resources, clear_cache=True, unload_models=unload_models, include_current=include_current
         )

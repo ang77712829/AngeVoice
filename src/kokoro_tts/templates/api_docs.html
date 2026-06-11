@@ -253,6 +253,7 @@
         <a href="#moss-clone">MOSS 克隆：音频放哪</a>
         <a href="#moss-http">MOSS HTTP 克隆</a>
         <a href="#moss-ws">MOSS WebSocket 流式克隆</a>
+        <a href="#zipvoice-http">ZipVoice HTTP 克隆</a>
         <a href="#server-default">服务端默认参考音频</a>
         <a href="#errors">常见错误</a>
       </nav>
@@ -291,6 +292,7 @@ curl "$BASE_URL/v1/audio/voices"</code></pre>
               <tbody>
                 <tr><td><code>kokoro</code></td><td>Kokoro v1.1 中文，默认启动，资源占用低</td><td>否，只支持 .pt 音色</td></tr>
                 <tr><td><code>moss</code></td><td>MOSS-TTS-Nano 克隆引擎；CPU/CUDA 由服务运行策略决定</td><td>是</td></tr>
+                <tr><td><code>zipvoice</code></td><td>ZipVoice 高质量克隆与长文本后端</td><td>是，支持保存 Voice Profile 或 multipart 临时参考音频</td></tr>
               </tbody>
             </table>
           </div>
@@ -312,7 +314,7 @@ curl "$BASE_URL/v1/audio/voices"</code></pre>
           <h2>OpenAI 兼容合成</h2>
           <p>
             <code>/v1/audio/speech</code> 用 JSON 调用，适合普通 TTS。它不走 multipart，
-            所以 <strong>MOSS 参考音频上传请用 <code>/api/tts</code></strong>。
+            所以 <strong>MOSS/ZipVoice 临时参考音频上传请用 <code>/api/tts</code></strong>。
           </p>
 
           <div class="code-block">
@@ -331,6 +333,19 @@ curl "$BASE_URL/v1/audio/voices"</code></pre>
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"model":"moss","input":"这是 MOSS 预设音色测试。","voice":"Junhao","response_format":"wav"}' \
   --output moss.wav</code></pre>
+          </div>
+
+          <div class="code-block">
+            <button class="copy-btn" type="button">复制</button>
+            <pre><code>curl -X POST "$BASE_URL/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{"model":"zipvoice","input":"这是已保存 ZipVoice 音色测试。","voice":"voice_001","response_format":"telegram_voice"}' \
+  --output zipvoice.ogg</code></pre>
+          </div>
+
+          <div class="callout">
+            <code>telegram_voice</code>、<code>ogg_opus</code>、<code>m4a</code> 和 <code>mp3</code> 仅适用于非流式 HTTP，且需要在管理后台启用 FFmpeg 转码。
           </div>
         </article>
 
@@ -403,7 +418,7 @@ curl -X POST "$BASE_URL/api/tts" \
                 <tr><td><code>model</code></td><td><code>moss</code></td></tr>
                 <tr><td><code>text</code></td><td>要合成的文本</td></tr>
                 <tr><td><code>voice</code></td><td>MOSS 内置说话人名，例如 <code>Junhao</code>；有参考音频时仍作为 prompt 解析的 voice 参数</td></tr>
-                <tr><td><code>response_format</code></td><td><code>wav</code>、<code>pcm</code>，或启用 ffmpeg 后的 <code>mp3</code></td></tr>
+                <tr><td><code>response_format</code></td><td><code>wav</code>、<code>pcm</code>，或启用 FFmpeg 后的 <code>mp3</code>、<code>ogg_opus</code>/<code>telegram_voice</code>、<code>m4a</code></td></tr>
                 <tr><td><code>prompt_audio</code></td><td>参考音频文件上传字段，支持 wav/mp3/flac/ogg/m4a/aac</td></tr>
               </tbody>
             </table>
@@ -557,6 +572,42 @@ asyncio.run(main())</code></pre>
           </div>
         </article>
 
+        <article class="doc-card" id="zipvoice-http">
+          <h2>ZipVoice HTTP 克隆调用</h2>
+          <p>
+            ZipVoice 可以使用已保存的 <code>voice</code>，也可以通过 <code>POST /api/tts</code> multipart 临时上传参考音频与参考文本。
+            <code>prompt_text</code> 必须是参考音频中真实朗读的自然语言文本。
+          </p>
+
+          <div class="code-block">
+            <button class="copy-btn" type="button">复制</button>
+            <pre><code>curl -X POST "$BASE_URL/api/tts" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F model=zipvoice \
+  -F text="这是 ZipVoice 临时参考音频克隆测试。" \
+  -F voice=voice_001 \
+  -F prompt_text="这是一段参考音频中实际朗读的文字。" \
+  -F prompt_audio=@reference.wav \
+  -F response_format=wav \
+  --output zipvoice.wav</code></pre>
+          </div>
+
+          <div class="code-block">
+            <button class="copy-btn" type="button">复制</button>
+            <pre><code>curl -X POST "$BASE_URL/api/tts" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F model=zipvoice \
+  -F text="这条语音将输出为 Telegram 可直接尝试的 OGG Opus 格式。" \
+  -F voice=voice_001 \
+  -F response_format=telegram_voice \
+  --output voice.ogg</code></pre>
+          </div>
+
+          <div class="callout warn">
+            WebSocket 流式暂不输出 OGG/MP3/M4A；流式仍使用 <code>pcm_s16le</code> 或 <code>wav</code> 分包。
+          </div>
+        </article>
+
         <article class="doc-card" id="server-default">
           <h2>服务端默认参考音频</h2>
           <p>
@@ -605,7 +656,27 @@ environment:
                 <tr>
                   <td><code>当前模型不支持参考音频克隆</code></td>
                   <td>请求打到了 <code>kokoro</code>，或模型没有 voice_clone 能力</td>
-                  <td>切换/指定 <code>moss</code></td>
+                  <td>切换/指定 <code>moss</code> 或 <code>zipvoice</code></td>
+                </tr>
+                <tr>
+                  <td><code>未检测到可合成的中文或英文文本</code></td>
+                  <td>输入是 URL、代码、日志、JSON、纯符号，或清理后没有可进入 tokenizer 的文本</td>
+                  <td>改成自然语言后重试；纯数字如 <code>3.5</code> 会自动转成自然读法</td>
+                </tr>
+                <tr>
+                  <td><code>FFMPEG_DISABLED</code></td>
+                  <td>请求了 <code>mp3</code>、<code>ogg_opus</code>/<code>telegram_voice</code> 或 <code>m4a</code>，但未启用 FFmpeg 转码</td>
+                  <td>到管理后台启用 FFmpeg 转码，并确认服务器安装了 ffmpeg</td>
+                </tr>
+                <tr>
+                  <td><code>FFMPEG_UNAVAILABLE</code></td>
+                  <td>已启用转码，但服务环境找不到可执行的 ffmpeg</td>
+                  <td>安装 ffmpeg，或在管理后台/环境变量中配置正确路径</td>
+                </tr>
+                <tr>
+                  <td><code>FFMPEG_CONVERSION_FAILED</code></td>
+                  <td>ffmpeg 运行失败，常见原因是缺少 <code>libopus</code> / <code>libmp3lame</code> / <code>aac</code> 编码器</td>
+                  <td>检查 ffmpeg 构建能力，或临时改用 <code>wav</code></td>
                 </tr>
                 <tr>
                   <td>MOSS 模型不可选</td>

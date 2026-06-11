@@ -345,17 +345,33 @@ class TestSynthesizeStreamLogic:
 
 
 @pytest.mark.asyncio
-async def test_v1_admin_cache_clear_alias_returns_resource_evidence(app_with_mock):
-    """Keep the legacy route as an API-key protected compatibility alias."""
-    state = app_with_mock.state.angevoice
+async def test_v1_admin_cache_clear_alias_requires_admin_auth(mock_engine, tmp_path):
+    """The legacy /v1/admin alias must not be callable with normal API credentials."""
+    from kokoro_tts.config import TTSConfig
+    from kokoro_tts.server import create_app
+
+    config = TTSConfig(admin_enabled=True, api_key="api-token", admin_credentials_file=tmp_path / "admin-credentials.json")
+    app = create_app(config=config, engine=mock_engine)
+    state = app.state.angevoice
     state.cache_set("nas-compat", (b"cache-bytes", "audio/wav"), text="缓存证据")
     assert state.cache_size() == 1
-    transport = ASGITransport(app=app_with_mock)
+    token = base64.b64encode(b"admin:admin123").decode("ascii")
+    admin_headers = {"Authorization": f"Basic {token}"}
+    transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/v1/admin/cache/clear")
+        api_response = await client.post("/v1/admin/cache/clear", headers={"Authorization": "Bearer api-token"})
+        assert api_response.status_code == 401
+        diagnostics_api_response = await client.post("/v1/diagnostics/resources/release", headers={"Authorization": "Bearer api-token"})
+        assert diagnostics_api_response.status_code == 401
+        response = await client.post("/v1/admin/cache/clear", headers=admin_headers)
         assert response.status_code == 200
         payload = response.json()
         assert payload["cleared_cache_items"] == 1
         assert payload["after"]["cache_items"] == 0
         assert payload["compatibility_alias"] == "/v1/admin/cache/clear"
         assert payload["canonical_endpoint"] == "/v1/diagnostics/resources/release"
+
+        state.cache_set("canonical", (b"cache-bytes", "audio/wav"), text="缓存证据")
+        canonical_response = await client.post("/v1/diagnostics/resources/release", headers=admin_headers)
+        assert canonical_response.status_code == 200
+        assert canonical_response.json()["cleared_cache_items"] == 1

@@ -91,7 +91,7 @@ class KokoroAdapter:
         fmt: str = "pcm_s16le", *, cancel_check: Callable[[], bool] | None = None,
     ):
         if self._worker is None:
-            yield from self._engine.synthesize_stream(text, voice, speed, fmt)
+            yield from self._engine.synthesize_stream(text, voice, speed, fmt, cancel_check=cancel_check)
             return
         if not self.is_loaded:
             self.load()

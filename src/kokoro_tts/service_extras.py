@@ -22,6 +22,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .admin_auth import make_verify_admin
+from .audio_formats import (
+    ffmpeg_effective_enabled,
+    normalize_response_format as normalize_public_audio_format,
+    supported_response_formats,
+    transcode_wav_bytes,
+)
 from .validation import validate_model_speed, validate_tts_text
 
 logger = logging.getLogger(__name__)
@@ -66,37 +72,16 @@ def _normalize_mp3_bitrate(bitrate: str = "192k") -> str:
 
 
 def _wav_to_mp3(wav_bytes: bytes, bitrate: str = "192k") -> bytes:
-    bitrate = _normalize_mp3_bitrate(bitrate)
-    if not shutil.which("ffmpeg"):
-        raise RuntimeError("ffmpeg not found")
-    proc = subprocess.run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "wav",
-            "-i",
-            "pipe:0",
-            "-codec:a",
-            "libmp3lame",
-            "-b:a",
-            bitrate,
-            "-f",
-            "mp3",
-            "pipe:1",
-        ],
-        input=wav_bytes,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        timeout=30,
-    )
-    if proc.returncode != 0:
-        err = proc.stderr.decode("utf-8", errors="ignore") or "ffmpeg mp3 conversion failed"
-        raise RuntimeError(err)
-    return proc.stdout
+    class _Cfg:
+        ffmpeg_enabled = True
+        mp3_enabled = True
+        ffmpeg_binary = "ffmpeg"
+        ffmpeg_timeout_seconds = 30.0
+        mp3_bitrate = bitrate
+        audio_opus_bitrate = "32k"
+        audio_aac_bitrate = "96k"
+
+    return transcode_wav_bytes(wav_bytes, _Cfg(), "mp3")[0]
 
 
 def register_extra_routes(
@@ -128,12 +113,7 @@ def register_extra_routes(
     verify_admin = make_verify_admin(cfg)
 
     def normalize_extra_format(fmt: str) -> str:
-        fmt = (fmt or "wav").lower()
-        if fmt == "mp3":
-            if not cfg.mp3_enabled:
-                raise HTTPException(status_code=400, detail="MP3 output disabled. Set KOKORO_MP3_ENABLED=true and install ffmpeg.")
-            return "mp3"
-        return normalize_response_format(fmt)
+        return normalize_public_audio_format(fmt, cfg)
 
     async def synthesize_optional_mp3(text: str, voice: str, speed: float, fmt: str, request_id: str, model: str | None = None):
         fmt = normalize_extra_format(fmt)
@@ -143,17 +123,7 @@ def register_extra_routes(
         if resolved_model is not None:
             model = resolved_model.model_manager.normalize_model_id(model)
         speed = validate_model_speed(model, speed)
-        if fmt != "mp3":
-            return await synthesize_threaded(text, voice, speed, fmt, request_id, model)
-        wav_bytes, _ = await synthesize_threaded(text, voice, speed, "wav", request_id, model)
-        try:
-            mp3_bytes = _wav_to_mp3(wav_bytes, getattr(cfg, "mp3_bitrate", "192k"))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        except Exception:
-            logger.exception("MP3 conversion failed")
-            raise HTTPException(status_code=500, detail="MP3 conversion failed")
-        return mp3_bytes, "audio/mpeg"
+        return await synthesize_threaded(text, voice, speed, fmt, request_id, model)
 
     @app.post("/v1/audio/batch")
     async def batch_tts(req: BatchTTSRequest, _=Depends(verify_api_key)):
@@ -166,7 +136,7 @@ def register_extra_routes(
             raise HTTPException(status_code=400, detail=f"too many items, max {cfg.batch_max_items}")
 
         fmt = normalize_extra_format(req.response_format)
-        ext = "pcm" if fmt == "pcm" else fmt
+        ext = {"pcm": "pcm", "ogg_opus": "ogg", "m4a": "m4a", "mp3": "mp3", "wav": "wav"}.get(fmt, fmt)
         batch_id = new_request_id()
         inc_stat("batch_requests_total")
         inc_stat("batch_items_total", len(req.items))
@@ -281,19 +251,23 @@ def register_extra_routes(
 
     @app.get("/v1/audio/formats")
     async def audio_formats():
-        formats = ["wav", "pcm"]
-        if cfg.mp3_enabled:
-            formats.append("mp3")
+        formats = supported_response_formats(cfg)
         bitrate_ok = True
         try:
             _normalize_mp3_bitrate(getattr(cfg, "mp3_bitrate", "192k"))
         except ValueError:
             bitrate_ok = False
+        binary = str(getattr(cfg, "ffmpeg_binary", "ffmpeg") or "ffmpeg")
         return {
             "formats": formats,
-            "mp3_enabled": cfg.mp3_enabled,
+            "ffmpeg_enabled": ffmpeg_effective_enabled(cfg),
+            "ffmpeg_available": bool(shutil.which(binary)),
+            "ffmpeg_binary": binary,
+            "mp3_enabled": ffmpeg_effective_enabled(cfg),
             "mp3_requires_ffmpeg": True,
-            "mp3_available": bool(shutil.which("ffmpeg")),
+            "mp3_available": bool(shutil.which(binary)),
             "mp3_bitrate": getattr(cfg, "mp3_bitrate", "192k"),
             "mp3_bitrate_valid": bitrate_ok,
+            "opus_bitrate": getattr(cfg, "audio_opus_bitrate", "32k"),
+            "aac_bitrate": getattr(cfg, "audio_aac_bitrate", "96k"),
         }

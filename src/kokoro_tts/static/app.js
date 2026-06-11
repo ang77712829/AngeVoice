@@ -329,6 +329,27 @@ function dismissToast() {
   els.toastStack?.replaceChildren();
 }
 
+const USER_ERROR_MESSAGES = {
+  NO_SYNTHESIZABLE_TEXT: '未检测到可合成的中文或英文文本\n当前内容包含代码、数字或符号，暂不适合直接语音合成\n请修改为自然语言后重试',
+  FFMPEG_DISABLED: '当前未启用 FFmpeg 转码。请在管理后台启用后，再请求 mp3、ogg_opus、telegram_voice 或 m4a。',
+  FFMPEG_UNAVAILABLE: 'FFmpeg 不可用。请确认服务环境已安装 ffmpeg，或在管理后台配置正确的 ffmpeg 路径。',
+  FFMPEG_CONVERSION_FAILED: '音频转码失败。请检查 ffmpeg 编码器支持，或改用 wav 格式。'
+};
+
+function looksLikeRawBackendError(message) {
+  return /integer division|ZeroDivisionError|Traceback|TypeError:|ValueError:|tokens_lens|No English or Chinese characters/i.test(String(message || ''));
+}
+
+function userFacingErrorMessage(payload, fallback = '请求失败') {
+  if (!payload) return fallback;
+  const detail = payload.detail && typeof payload.detail === 'object' ? payload.detail : null;
+  const code = payload.code || payload.error_code || (detail && detail.code);
+  if (code && USER_ERROR_MESSAGES[code]) return USER_ERROR_MESSAGES[code];
+  const message = payload.message || (detail && detail.message) || (typeof payload.detail === 'string' ? payload.detail : '') || payload.error || '';
+  if (looksLikeRawBackendError(message)) return fallback === '流式合成失败' ? USER_ERROR_MESSAGES.NO_SYNTHESIZABLE_TEXT : '合成失败，请检查输入内容后重试';
+  return message || fallback;
+}
+
 function showToast(text, kind = 'success', { sticky = false } = {}) {
   if (!els.toastStack || !text) return;
   if (state.toastTimer) {
@@ -1520,11 +1541,11 @@ async function synthesizeStream(text, voice, speed) {
         cleanupWs(ws, false);
       } else if (msg.type === 'error' || msg.type === 'segment_error') {
         state.streamTerminalReceived = true;
-        setProgress(msg.message || '流式合成失败', true);
+        setProgress(userFacingErrorMessage(msg, '流式合成失败'), true);
         cleanupWs(ws, true);
       }
     } catch (error) {
-      setProgress(error?.message || '流式播放处理失败，已停止本次合成', true);
+      setProgress(userFacingErrorMessage(error, '流式播放处理失败，已停止本次合成'), true);
       cleanupWs(ws, true);
     }
   };
@@ -1576,7 +1597,7 @@ function cleanupWs(ws, hadError) {
 async function readError(response) {
   try {
     const data = await response.json();
-    return data.detail || response.statusText;
+    return userFacingErrorMessage(data, response.statusText || '请求失败');
   } catch (_) {
     return response.statusText || '请求失败';
   }

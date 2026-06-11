@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-EXPECTED_VERSION = "2.6.612"
+EXPECTED_VERSION = "2.6.613"
 
 
 def _has_module(name: str) -> bool:
@@ -566,6 +566,22 @@ class TestKokoroLocalPathRegression:
         assert engine._resolve_voice_for_pipeline("../zm_010.pt") == str(voice_file)
         assert engine._resolve_voice_for_pipeline("missing_voice") == "missing_voice"
 
+
+
+    def test_non_streaming_synthesize_array_does_not_reference_cancel_check(self, monkeypatch):
+        import numpy as np
+        from kokoro_tts.config import TTSConfig
+        from kokoro_tts.engine import TTSEngine
+
+        engine = TTSEngine(TTSConfig(request_timeout_seconds=5))
+        engine._loaded = True
+        monkeypatch.setattr(engine, "_segment_text", lambda text: ["你好"])
+        monkeypatch.setattr(engine, "_synthesize_segment", lambda pipeline, segment, voice, speed_fn: np.ones(32, dtype=np.float32))
+        monkeypatch.setattr(engine, "_postprocess_segment", lambda audio: audio)
+
+        audio = engine.synthesize_array("你好", "zm_010", 1.0)
+
+        assert audio.shape == (32,)
 
     def test_default_model_dir_uses_unified_layout(self, monkeypatch):
         from kokoro_tts.config import TTSConfig

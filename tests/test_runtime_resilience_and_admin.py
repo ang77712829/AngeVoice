@@ -37,7 +37,7 @@ def test_formal_docker_template_enables_killable_moss_workers():
 def test_admin_schema_separates_product_parameter_groups_and_exposes_zipvoice_controls():
     schema = schema_payload()
     groups = {item["key"] for item in schema["groups"]}
-    assert {"kokoro", "moss", "zipvoice", "service", "security"} <= groups
+    assert {"kokoro", "moss", "zipvoice", "service", "audio", "security"} <= groups
     fields = {item["key"]: item for item in schema["fields"]}
     assert fields["default_speed"]["group"] == "kokoro"
     assert fields["moss_segment_length"]["group"] == "moss"
@@ -47,6 +47,13 @@ def test_admin_schema_separates_product_parameter_groups_and_exposes_zipvoice_co
     assert fields["websocket_max_message_bytes"]["default"] == 33554432
     assert fields["rate_limit_qps"]["default"] == 10.0
     assert fields["max_queue_length"]["default"] == 50
+    assert fields["ffmpeg_enabled"]["group"] == "audio"
+    assert fields["ffmpeg_enabled"]["type"] == "bool"
+    assert fields["ffmpeg_enabled"]["advanced"] is False
+    assert fields["ffmpeg_binary"]["group"] == "audio"
+    assert fields["mp3_bitrate"]["group"] == "audio"
+    assert fields["audio_opus_bitrate"]["group"] == "audio"
+    assert fields["audio_aac_bitrate"]["group"] == "audio"
 
 
 def test_zero_moss_silence_limit_disables_compression_instead_of_removing_silence():

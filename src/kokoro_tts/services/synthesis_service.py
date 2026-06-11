@@ -5,14 +5,16 @@ from __future__ import annotations
 import asyncio
 import inspect
 import time
+from dataclasses import replace
 from typing import Any, TYPE_CHECKING
 
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from ..audio import encode_audio_segment
+from ..audio_formats import transcode_wav_bytes
 from ..contracts import GenerationParameters, SynthesisRequest, SynthesisResult
-from ..validation import validate_model_speed, validate_tts_text
+from ..validation import prepare_text_for_synthesis, validate_model_speed, validate_tts_text
 
 if TYPE_CHECKING:
     from ..service_state import ServiceState
@@ -40,7 +42,10 @@ class SynthesisService:
         request_id: str = "",
     ) -> SynthesisRequest:
         resolved_model = self.state.model_manager.normalize_model_id(model_id)
-        clean_text = validate_tts_text(text, self.cfg)
+        if resolved_model == "zipvoice":
+            clean_text = prepare_text_for_synthesis(text, self.cfg, model_id=resolved_model, field_name="text", request_id=request_id)
+        else:
+            clean_text = validate_tts_text(text, self.cfg)
         clean_speed = validate_model_speed(resolved_model, speed)
         fmt = self.state.normalize_response_format(response_format)
         params = self.state.parameter_schema.parse(resolved_model, parameter_source, supplied=engine_params)
@@ -51,6 +56,13 @@ class SynthesisService:
             prompt_audio_id=prompt_audio_id,
             prompt_text=prompt_text,
         )
+        if resolved_model == "zipvoice" and condition.prompt_text:
+            condition = replace(
+                condition,
+                prompt_text=prepare_text_for_synthesis(
+                    condition.prompt_text, self.cfg, model_id=resolved_model, field_name="prompt_text", request_id=request_id
+                ),
+            )
         return SynthesisRequest(
             text=clean_text,
             model_id=resolved_model,
@@ -105,11 +117,10 @@ class SynthesisService:
                 wav = engine.synthesize_array(text=request.text, voice=request.voice, speed=request.speed, **kwargs)
                 sample_rate = int(getattr(engine, "sample_rate", self.cfg.sample_rate))
                 result = (encode_audio_segment(wav, "pcm_s16le", sample_rate), "audio/pcm")
-            elif request.response_format == "mp3":
-                from ..service_extras import _wav_to_mp3
+            elif request.response_format in {"mp3", "ogg_opus", "m4a"}:
                 kwargs = self._inference_kwargs(engine, request, "synthesize")
                 wav_bytes = engine.synthesize(text=request.text, voice=request.voice, speed=request.speed, **kwargs)
-                result = (_wav_to_mp3(wav_bytes, getattr(self.cfg, "mp3_bitrate", "192k")), "audio/mpeg")
+                result = transcode_wav_bytes(wav_bytes, self.cfg, request.response_format)
             else:
                 kwargs = self._inference_kwargs(engine, request, "synthesize")
                 result = (engine.synthesize(text=request.text, voice=request.voice, speed=request.speed, **kwargs), "audio/wav")

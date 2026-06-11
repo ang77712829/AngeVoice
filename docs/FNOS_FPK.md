@@ -37,6 +37,22 @@ ANGEVOICE_STARTUP_PRELOAD_MODEL=kokoro
 - 高级用户可以在管理后台关闭某个模型的进程隔离，页面会提示线程内运行时 RAM 不保证完整回收。
 - 用户开启启动预载时，预热仍发生在 Worker 中，不会把模型权重载入 API 主进程。
 
+
+## FFmpeg 转码开关
+
+FPK 打包源同时在 `app/docker/angevoice.env` 和 `app/docker/docker-compose.yaml` 中声明 FFmpeg 转码相关变量。安装、配置与升级向导提供 `wizard_ffmpeg_enabled` 单选项，启动时会映射为：
+
+```env
+ANGEVOICE_FFMPEG_ENABLED=${wizard_ffmpeg_enabled:-false}
+ANGEVOICE_FFMPEG_BINARY=ffmpeg
+ANGEVOICE_FFMPEG_TIMEOUT_SECONDS=30
+ANGEVOICE_AUDIO_MP3_BITRATE=192k
+ANGEVOICE_AUDIO_OPUS_BITRATE=32k
+ANGEVOICE_AUDIO_AAC_BITRATE=96k
+```
+
+默认关闭，避免普通用户在不了解转码依赖时误用。需要 Telegram voice / OGG Opus、MP3 或 M4A 输出时，可以在 fnOS 向导或 AngeVoice 管理后台开启。Compose 镜像仍固定拉取 `maxblack777/angevoice-*:latest`。
+
 ## 持久化目录
 
 | 目录 | 用途 |

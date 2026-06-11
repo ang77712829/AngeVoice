@@ -118,8 +118,14 @@ class TTSConfig:
     admin_enabled: bool = False
     voice_upload_enabled: bool = False
     voice_upload_max_bytes: int = 10 * 1024 * 1024
+    # 旧 mp3 开关保留兼容；新转码能力统一由 FFmpeg 开关控制。
     mp3_enabled: bool = False
     mp3_bitrate: str = "192k"
+    ffmpeg_enabled: bool = False
+    ffmpeg_binary: str = "ffmpeg"
+    ffmpeg_timeout_seconds: float = 30.0
+    audio_opus_bitrate: str = "32k"
+    audio_aac_bitrate: str = "96k"
 
     enabled_models: list[str] = field(default_factory=lambda: ["kokoro"])
     default_model: str = "kokoro"
@@ -326,6 +332,7 @@ class TTSConfig:
         self._normalize_default_model()
         self._normalize_moss_text_options()
         self._normalize_text_policy()
+        self._normalize_audio_transcoding()
 
     def _validate_auth_and_admin_security(self) -> None:
         api_key = (self.api_key or "").strip()
@@ -444,6 +451,19 @@ class TTSConfig:
         self.text_single_newline_policy = str(self.text_single_newline_policy or "auto").strip().lower()
         if self.text_single_newline_policy not in {"auto", "preserve", "space"}:
             raise ValueError("ANGEVOICE_SINGLE_NEWLINE_POLICY must be auto, preserve, or space")
+
+    def _normalize_audio_transcoding(self) -> None:
+        # 兼容旧部署：KOKORO_MP3_ENABLED=true 继续代表允许 FFmpeg 转码。
+        if self.mp3_enabled:
+            self.ffmpeg_enabled = True
+        self.ffmpeg_binary = str(self.ffmpeg_binary or "ffmpeg").strip() or "ffmpeg"
+        self.mp3_bitrate = str(self.mp3_bitrate or "192k").strip().lower()
+        self.audio_opus_bitrate = str(self.audio_opus_bitrate or "32k").strip().lower()
+        self.audio_aac_bitrate = str(self.audio_aac_bitrate or "96k").strip().lower()
+        try:
+            self.ffmpeg_timeout_seconds = max(1.0, float(self.ffmpeg_timeout_seconds))
+        except (TypeError, ValueError):
+            self.ffmpeg_timeout_seconds = 30.0
 
     def resolve_device(self) -> str:
         if self.device != "auto":

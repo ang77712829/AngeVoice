@@ -70,6 +70,28 @@
             "message": "请选择模型下载源"
           }
         ]
+      },
+      {
+        "type": "radio",
+        "field": "wizard_ffmpeg_enabled",
+        "label": "启用 FFmpeg 转码（mp3/ogg_opus/telegram_voice/m4a）",
+        "initValue": "false",
+        "options": [
+          {
+            "label": "关闭（默认；仅输出 wav/pcm）",
+            "value": "false"
+          },
+          {
+            "label": "开启（容器内使用 ffmpeg；仅非流式 HTTP 生效）",
+            "value": "true"
+          }
+        ],
+        "rules": [
+          {
+            "required": true,
+            "message": "请选择是否启用 FFmpeg 转码"
+          }
+        ]
       }
     ]
   },

@@ -143,6 +143,17 @@ def test_zipvoice_allows_longer_reference_with_warning_but_rejects_over_product_
         manager.stop_idle_timer()
 
 
+def test_api_docs_expose_zipvoice_http_examples_in_visible_navigation():
+    root = Path(__file__).resolve().parents[1] / "src/kokoro_tts"
+    html = (root / "templates/api_docs.html").read_text(encoding="utf-8")
+    assert '<a href="#zipvoice-http">ZipVoice HTTP 克隆</a>' in html
+    assert '<article class="doc-card" id="zipvoice-http">' in html
+    assert 'model=zipvoice' in html
+    assert 'prompt_audio=@reference.wav' in html
+    assert 'response_format=telegram_voice' in html
+    assert 'WebSocket 流式暂不输出 OGG/MP3/M4A' in html
+
+
 def test_studio_recording_and_profile_delete_are_capability_driven():
     root = Path(__file__).resolve().parents[1] / "src/kokoro_tts"
     html = (root / "templates/index.html").read_text(encoding="utf-8")
@@ -186,7 +197,7 @@ def test_update_checker_reports_new_release_without_auto_update():
 
 def test_version_and_fnos_wizards_expose_verified_profile_modes_and_safe_default_warning():
     from kokoro_tts import __version__
-    assert __version__ == "2.6.612"
+    assert __version__ == "2.6.613"
     root = Path(__file__).resolve().parents[1]
     install = json.loads((root / "packaging/fnos/AngeVoice/wizard/install").read_text(encoding="utf-8"))
     text = json.dumps(install, ensure_ascii=False)

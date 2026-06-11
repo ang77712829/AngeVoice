@@ -16,7 +16,7 @@ class TTSRequest(BaseModel):
     input: str = Field(..., min_length=1, description="Text to synthesize", alias="text")
     voice: str = Field(default="zm_010", description="Voice name")
     speed: float = Field(default=1.0, ge=0.5, le=2.0, description="Speed")
-    response_format: str = Field(default="wav", description="wav, pcm, or mp3 when enabled")
+    response_format: str = Field(default="wav", description="wav, pcm, or FFmpeg formats mp3/ogg_opus/telegram_voice/m4a when enabled")
     response_encoding: str = Field(
         default="binary",
         description="binary for audio bytes, or base64/json for a JSON payload containing a data URL",

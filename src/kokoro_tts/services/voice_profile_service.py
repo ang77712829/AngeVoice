@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from ..contracts import VoiceCondition, VoiceConditionKind
+from ..validation import prepare_text_for_synthesis
 from ..zipvoice.profiles import ZipVoiceProfileStore
 
 
@@ -66,7 +67,12 @@ class VoiceProfileService:
         return self.store_for(engine_id).load(voice_id)
 
     def save(self, engine_id: str, **kwargs) -> dict[str, Any]:
-        return self.store_for(engine_id).save(**kwargs)
+        engine = str(engine_id or "").strip().lower()
+        if engine == "zipvoice" and "prompt_text" in kwargs:
+            kwargs["prompt_text"] = prepare_text_for_synthesis(
+                kwargs.get("prompt_text"), self.cfg, model_id=engine, field_name="prompt_text"
+            )
+        return self.store_for(engine).save(**kwargs)
 
     def delete(self, engine_id: str, voice_id: str) -> bool:
         return self.store_for(engine_id).delete(voice_id)

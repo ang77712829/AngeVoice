@@ -1,3 +1,26 @@
+## [2.6.613] - 2026-06-11
+
+### 🐛 修复
+
+- 修复 ZipVoice 输入纯数字、小数、百分比、日期、负数与千分位数字时无法稳定合成或读法异常的问题；`3.5`、`-42`、`1,000,000` 等会先转为自然中文读法。
+- 补齐带千分位的货币金额读法，`¥1,000`、`1,234.56元` 会读作自然金额，不再残留 `¥` 符号。
+- 无可合成文本（URL、代码、日志、JSON、纯符号等）现在返回 `NO_SYNTHESIZABLE_TEXT` 结构化错误，WebSocket 发送 `error` 事件，前端 toast 不再暴露 Python 原始异常。
+- 修复非 ASCII API Key 触发 `hmac.compare_digest` TypeError 导致 500 的问题；错误 token 统一按鉴权失败处理。
+- 修复 `normalize_text_input(0)` 被 falsy 值吞成空字符串的问题。
+- 修复 Kokoro 非流式合成路径误引用 `cancel_check` 导致 HTTP `/v1/audio/speech` / `synthesize_array()` 抛出 `NameError` 的回归。
+- 旧版 `/v1/zipvoice/recommended-prompts` 兼容端点补齐 API Key 鉴权；`/v1/admin/cache/clear` 与 `/v1/diagnostics/resources/release` 改为 Admin Auth，避免普通 API Key 清理运行缓存。
+- 修复 Kokoro 进程内流式路径未转发 `cancel_check` 的问题；ZipVoice 本地推理不再持有状态锁贯穿整段推理。
+- 修复 m4a 转码使用 `pipe:1` 时触发 FFmpeg `ipod` muxer 需要 seekable 输出的问题；m4a 现在使用受控临时文件生成后读取返回。
+- 修正上游单层 RNN 无效 dropout 配置，避免 PyTorch 对 `num_layers=1` 且 `dropout>0` 的运行警告；ZipVoice UTMOS 评估模型改用新的 parametrizations `weight_norm` 入口。
+
+### 🔧 格式与文档
+
+- 新增统一 `ANGEVOICE_FFMPEG_ENABLED` 转码开关，非流式 HTTP 支持 `mp3`、`ogg_opus`/`telegram_voice`、`m4a`；WebSocket 流式继续限定 `pcm_s16le` / `wav`。
+- 管理后台新增独立“格式转码”配置分组，让 `ANGEVOICE_FFMPEG_ENABLED` 开关、FFmpeg 路径、MP3/Opus/AAC 码率与超时配置在 UI 中明确可见。
+- fnOS/FPK 打包源同步 FFmpeg 变量：env、Compose、安装/配置/升级向导与打包校验均包含 `wizard_ffmpeg_enabled` 和转码环境变量。
+- `/api-docs` 补齐前端可见的 ZipVoice HTTP 调用导航与示例，覆盖保存音色、multipart 参考音频、`telegram_voice` 输出和流式格式限制。
+- 同步版本号、fnOS manifest 与回归测试到 `2.6.613`；Docker / fnOS Compose 镜像仍默认拉取 `maxblack777/angevoice-*:latest`。
+
 ## [2.6.612] - 2026-06-08
 
 ### 🐛 修复

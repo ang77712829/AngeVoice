@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from .latency_tracker import LatencyTracker
+from .audio_formats import normalize_response_format as normalize_public_audio_format, supported_response_formats
 
 from fastapi import HTTPException
 
@@ -370,15 +371,7 @@ class ServiceState:
         return known
 
     def normalize_response_format(self, fmt: str) -> str:
-        fmt = (fmt or "wav").lower()
-        if fmt in {"wav", "pcm"}:
-            return fmt
-        if fmt == "mp3" and getattr(self.cfg, "mp3_enabled", False):
-            return fmt
-        if fmt == "mp3":
-            raise HTTPException(status_code=400, detail="MP3 输出未启用。如需使用，请启用 KOKORO_MP3_ENABLED 并安装 ffmpeg。")
-        supported = "wav, pcm" + (", mp3" if getattr(self.cfg, "mp3_enabled", False) else "")
-        raise HTTPException(status_code=400, detail=f"不支持的输出格式。当前支持：{supported}")
+        return normalize_public_audio_format(fmt, self.cfg)
 
     def _safe_filename_part(self, value: str, fallback: str = "item") -> str:
         value = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "").strip()).strip("._")
@@ -401,6 +394,10 @@ class ServiceState:
         fmt = self.normalize_response_format(response_format)
         if media_type == "audio/mpeg":
             ext = "mp3"
+        elif media_type == "audio/ogg" or fmt == "ogg_opus":
+            ext = "ogg"
+        elif media_type == "audio/mp4" or fmt == "m4a":
+            ext = "m4a"
         elif fmt == "pcm" or media_type == "audio/pcm":
             ext = "pcm_s16le"
         else:
@@ -434,7 +431,7 @@ class ServiceState:
         files = [
             item
             for item in root.rglob("*")
-            if item.is_file() and item.suffix.lower() in {".wav", ".mp3", ".pcm_s16le"}
+            if item.is_file() and item.suffix.lower() in {".wav", ".mp3", ".ogg", ".m4a", ".pcm_s16le"}
         ]
         overflow = len(files) - max_files
         if overflow <= 0:

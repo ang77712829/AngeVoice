@@ -20,6 +20,14 @@ def _extract_bearer_token(auth: str) -> str:
     return ""
 
 
+def _constant_time_equal(left: object, right: object) -> bool:
+    """支持 Unicode 输入的 timing-safe 比较；非法值一律视为不匹配。"""
+    try:
+        return hmac.compare_digest(str(left if left is not None else "").encode("utf-8"), str(right if right is not None else "").encode("utf-8"))
+    except Exception:
+        return False
+
+
 def make_verify_api_key(cfg: TTSConfig):
     """Return a FastAPI dependency that enforces Bearer auth when configured."""
 
@@ -28,14 +36,8 @@ def make_verify_api_key(cfg: TTSConfig):
         if expected_key:
             auth = request.headers.get("Authorization", "")
             token = _extract_bearer_token(auth)
-            if not hmac.compare_digest(token, expected_key):
-                raise HTTPException(
-                    status_code=401,
-                    detail=(
-                        "Invalid API key. Open Studio settings and paste your token; "
-                        "admins can view or rotate the key in /admin when admin is enabled."
-                    ),
-                )
+            if not _constant_time_equal(token, expected_key):
+                raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     return verify_api_key
 
@@ -63,4 +65,4 @@ async def verify_ws_key(cfg: TTSConfig, websocket: WebSocket, token: str = "") -
     if not supplied_tokens:
         return False
 
-    return any(hmac.compare_digest(candidate, expected_key) for candidate in supplied_tokens)
+    return any(_constant_time_equal(candidate, expected_key) for candidate in supplied_tokens)

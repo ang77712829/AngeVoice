@@ -734,7 +734,7 @@ button:disabled {
   animation: toast-enter .18s ease-out;
 }
 .toast-dot { width: 9px; height: 9px; margin-top: 5px; border-radius: 999px; background: var(--accent); }
-.toast-message { font-size: 14px; line-height: 1.48; font-weight: 650; overflow-wrap: anywhere; }
+.toast-message { font-size: 14px; line-height: 1.48; font-weight: 650; overflow-wrap: anywhere; white-space: pre-line; }
 .toast-close { appearance: none; border: 0; min-height: 26px; min-width: 26px; padding: 0; border-radius: 9px; color: var(--muted); background: transparent; cursor: pointer; font-size: 18px; line-height: 1; }
 .toast-close:hover { color: var(--text); background: var(--control-soft); transform: none; }
 .toast.loading .toast-dot { background: var(--accent); animation: toast-pulse 1.15s ease-in-out infinite; }

@@ -136,7 +136,7 @@ def create_zipvoice_router(state: ServiceState, verify_api_key) -> APIRouter:
         return {"engine": model, "recommended_duration_seconds": "<3", "maximum_duration_seconds": state.voice_profiles.reference_max_seconds(model), "items": state.voice_profiles.recommended_prompts(model)}
 
     @router.get("/v1/zipvoice/recommended-prompts")
-    async def recommended_prompts():
+    async def recommended_prompts(_=Depends(verify_api_key)):
         # 旧版兼容端点。新版 UI 使用 /v1/reference-audio/{engine}/recommended-prompts。
         return {"engine": "zipvoice", "recommended_duration_seconds": "<3", "maximum_duration_seconds": state.voice_profiles.reference_max_seconds("zipvoice"), "items": state.voice_profiles.recommended_prompts("zipvoice")}
 

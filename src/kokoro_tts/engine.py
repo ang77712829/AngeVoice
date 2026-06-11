@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import threading
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from typing import Optional
@@ -38,6 +39,63 @@ _DIGITS_ZH = {
     "9": "九",
 }
 _DIGITS_ZH_READING = {**_DIGITS_ZH, "1": "幺"}
+
+
+@contextmanager
+def _single_layer_rnn_dropout_compat():
+    """把上游单层 RNN 的无效 dropout 参数修正为 0。
+
+    PyTorch 对 ``num_layers=1`` 且 ``dropout>0`` 的 RNN/LSTM/GRU 会告警，
+    因为这个 dropout 实际不会生效。Kokoro 上游部分版本会这样构建模型。
+    这里不是过滤 warning，而是在加载 Kokoro 期间把无效参数改为等价的 0，
+    避免未来 PyTorch 收紧行为时把无效配置变成硬错误。
+    """
+
+    try:
+        import torch.nn as nn
+    except Exception:  # pragma: no cover - torch import failure belongs to model load path
+        yield
+        return
+
+    patches = (
+        (nn.LSTM, 5),
+        (nn.GRU, 5),
+        (nn.RNN, 6),
+    )
+    originals = []
+
+    def _needs_fix(args, kwargs, dropout_index: int) -> bool:
+        num_layers = kwargs.get("num_layers", args[2] if len(args) > 2 else 1)
+        dropout = kwargs.get("dropout", args[dropout_index] if len(args) > dropout_index else 0.0)
+        try:
+            return int(num_layers) == 1 and float(dropout) > 0.0
+        except (TypeError, ValueError):
+            return False
+
+    try:
+        for cls, dropout_index in patches:
+            original = cls.__init__
+            originals.append((cls, original))
+
+            def patched_init(self, *args, _original=original, _dropout_index=dropout_index, **kwargs):
+                if _needs_fix(args, kwargs, _dropout_index):
+                    if "dropout" in kwargs:
+                        kwargs = dict(kwargs)
+                        kwargs["dropout"] = 0.0
+                    elif len(args) > _dropout_index:
+                        mutable_args = list(args)
+                        mutable_args[_dropout_index] = 0.0
+                        args = tuple(mutable_args)
+                    else:
+                        kwargs = dict(kwargs)
+                        kwargs["dropout"] = 0.0
+                return _original(self, *args, **kwargs)
+
+            cls.__init__ = patched_init
+        yield
+    finally:
+        for cls, original in originals:
+            cls.__init__ = original
 
 
 def _spell_digits(text: str, use_yao: bool = False) -> str:
@@ -198,6 +256,67 @@ def normalize_text_for_tts(text: str, model: str = "kokoro") -> str:
     if not text:
         return text
 
+    def _read_decimal_amount(raw: str) -> str:
+        number = raw.replace(",", "")
+        integer, dot, frac = number.partition(".")
+        spoken = _read_small_int(int(integer))
+        if dot and frac:
+            spoken += "点" + _spell_digits(frac)
+        return spoken
+
+    def _read_money_amount(raw: str) -> str:
+        number = raw.replace(",", "")
+        integer, dot, frac = number.partition(".")
+        spoken = _read_small_int(int(integer)) + "元"
+        if dot and frac:
+            frac = (frac + "00")[:2]
+            if frac[0] != "0":
+                spoken += _DIGITS_ZH[frac[0]] + "角"
+            if frac[1] != "0":
+                spoken += _DIGITS_ZH[frac[1]] + "分"
+        return spoken
+
+    def repl_thousand_money(match):
+        _prefix, sign, amount, _suffix = match.groups()
+        spoken = _read_money_amount(amount)
+        return ("负" if sign == "-" else "") + spoken
+
+    # 货币金额要先于通用千分位处理，否则 ¥1,000 会变成 ¥一千。
+    # 仅处理明确带 ¥/￥/元 的金额，避免把普通逗号数字误读成金额。
+    text = re.sub(
+        r"(?<![\dA-Za-z])(¥|￥)?([+-]?)(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?)(元)?(?![\dA-Za-z])",
+        lambda m: repl_thousand_money(m) if (m.group(1) or m.group(4)) else m.group(0),
+        text,
+    )
+
+    def repl_thousand_number(match):
+        raw = match.group(0)
+        percent = raw.endswith("%")
+        if percent:
+            raw = raw[:-1]
+        sign = ""
+        if raw.startswith(("+", "-")):
+            sign, raw = raw[0], raw[1:]
+        try:
+            spoken = _read_decimal_amount(raw)
+        except ValueError:
+            number = raw.replace(",", "")
+            integer, dot, frac = number.partition(".")
+            spoken = _spell_digits(integer)
+            if dot and frac:
+                spoken += "点" + _spell_digits(frac)
+        negative = sign == "-"
+        if percent:
+            return ("负" if negative else "") + "百分之" + spoken
+        if negative:
+            spoken = "负" + spoken
+        return spoken
+
+    # 先处理标准千分位数字，避免 ZipVoice 把 1,000,000 读成
+    # “一逗号零零零逗号零零零”。只处理 1,234 / 1,234.56 / 1,234%
+    # 这种合法分组，不碰 1,2 或代码/列表里的逗号。
+    text = re.sub(r"(?<![\dA-Za-z¥￥])[-+]?\d{1,3}(?:,\d{3})+(?:\.\d+)?%?(?![\dA-Za-z])", repl_thousand_number, text)
+
     def repl_date(match):
         year, month, day = match.groups()
         return f"{_spell_digits(year)}年{_read_small_int(int(month))}月{_read_small_int(int(day))}日"
@@ -218,20 +337,13 @@ def normalize_text_for_tts(text: str, model: str = "kokoro") -> str:
         prefix, amount, suffix = match.groups()
         if not prefix and not suffix:
             return match.group(0)
-        integer, dot, frac = amount.partition(".")
-        spoken = _read_small_int(int(integer)) + "元"
-        if dot and frac:
-            frac = (frac + "00")[:2]
-            if frac[0] != "0":
-                spoken += _DIGITS_ZH[frac[0]] + "角"
-            if frac[1] != "0":
-                spoken += _DIGITS_ZH[frac[1]] + "分"
-        return spoken
+        return _read_money_amount(amount)
 
     text = re.sub(r"(?<![\dA-Za-z])(¥|￥)?(\d{1,16}(?:\.\d{1,2})?)(元)?(?![\dA-Za-z])", repl_money, text)
 
     def repl_percent(match):
-        value = match.group(1)
+        sign = match.group(1) or ""
+        value = match.group(2)
         integer, dot, frac = value.partition(".")
         try:
             spoken = _read_small_int(int(integer))
@@ -239,9 +351,9 @@ def normalize_text_for_tts(text: str, model: str = "kokoro") -> str:
             spoken = _spell_digits(integer)
         if dot and frac:
             spoken += "点" + _spell_digits(frac)
-        return "百分之" + spoken
+        return ("负" if sign == "-" else "") + "百分之" + spoken
 
-    text = re.sub(r"(?<!\d)(\d+(?:\.\d+)?)%(?!\d)", repl_percent, text)
+    text = re.sub(r"(?<![\dA-Za-z])([+-]?)(\d+(?:\.\d+)?)%(?!\d)", repl_percent, text)
 
     def repl_mobile(match):
         number = match.group(0)
@@ -259,6 +371,43 @@ def normalize_text_for_tts(text: str, model: str = "kokoro") -> str:
         return "，".join(_spell_digits(group, use_yao=True) for group in grouped)
 
     text = re.sub(r"(?<!\d)\d{6,}(?!\d)", repl_long_number, text)
+
+    def _signed_prefix(sign: str) -> str:
+        return "负" if sign == "-" else ""
+
+    def repl_plain_decimal(match):
+        before = match.string[max(0, match.start() - 6):match.start()]
+        after = match.string[match.end():match.end() + 6]
+        # 保持原有上下文中的小数/版本号行为，只处理裸小数输入，
+        # 解决 ZipVoice 单独输入 3.5 无 token 的问题。
+        if match.string.strip() != match.group(0):
+            return match.group(0)
+        if before.endswith(("版本", "版", "v", "V")) or after.startswith(("版", "版本")):
+            return match.group(0)
+        sign = match.group(1) or ""
+        integer = match.group(2)
+        frac = match.group(3)
+        try:
+            spoken = _read_small_int(int(integer))
+        except ValueError:
+            spoken = _spell_digits(integer)
+        return _signed_prefix(sign) + spoken + "点" + _spell_digits(frac)
+
+    # ZipVoice 等中文 tokenizer 对纯数字/小数没有可合成 token。
+    # 这里把常见裸数字表达转成自然读法，但仍避免处理版本号、URL 等技术文本。
+    text = re.sub(r"(?<![\dA-Za-z./])([+-]?)([0-9]{1,8})\.([0-9]{1,8})(?![\dA-Za-z])", repl_plain_decimal, text)
+
+    def repl_trailing_number_dot(match):
+        sign = match.group(1) or ""
+        return _signed_prefix(sign) + _read_small_int(int(match.group(2)))
+
+    text = re.sub(r"(?<![\dA-Za-z./])([+-]?)([0-9]{1,5})\.(?![\dA-Za-z])", repl_trailing_number_dot, text)
+
+    def repl_plain_int(match):
+        sign = match.group(1) or ""
+        return _signed_prefix(sign) + _read_small_int(int(match.group(2)))
+
+    text = re.sub(r"(?<![\dA-Za-z./])([+-]?)([0-9]{1,5})(?![\dA-Za-z./])", repl_plain_int, text)
     text = normalize_chinese_rules(text, model=model)
     return text
 
@@ -412,10 +561,11 @@ class TTSEngine:
                     pass
 
             try:
-                if use_local:
-                    self._model = KModel(repo_id=repo_id, config=str(local_config), model=str(local_model)).to(self._device).eval()
-                else:
-                    self._model = KModel(repo_id=repo_id).to(self._device).eval()
+                with _single_layer_rnn_dropout_compat():
+                    if use_local:
+                        self._model = KModel(repo_id=repo_id, config=str(local_config), model=str(local_model)).to(self._device).eval()
+                    else:
+                        self._model = KModel(repo_id=repo_id).to(self._device).eval()
             except Exception as exc:
                 message = str(exc)
                 if "WeightsUnpickler" in message or "Unsupported operand 118" in message:
@@ -589,7 +739,7 @@ class TTSEngine:
     def _normalize_audio(self, audio_array):
         return normalize_audio_array(audio_array).reshape(-1)
 
-    def synthesize_stream(self, text, voice="zm_010", speed=1.0, fmt="pcm_s16le"):
+    def synthesize_stream(self, text, voice="zm_010", speed=1.0, fmt="pcm_s16le", *, cancel_check=None):
         if fmt not in self.SUPPORTED_STREAM_FORMATS:
             yield {"type": "error", "message": f"不支持的流式格式：{fmt}"}
             return
@@ -624,6 +774,8 @@ class TTSEngine:
                 if wav_seg is not None:
                     wav_seg = self._postprocess_segment(wav_seg)
                     for stream_seg in self._split_stream_audio(wav_seg):
+                        if cancel_check is not None and bool(cancel_check()):
+                            break
                         audio_bytes = self._encode_segment(stream_seg, fmt)
                         yield {
                             "type": "audio",

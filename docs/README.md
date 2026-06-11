@@ -1,6 +1,6 @@
 # AngeVoice 文档
 
-AngeVoice 提供三个稳定产品模型入口：`Kokoro v1.1 Chinese`、`MOSS-TTS-Nano` 与 `ZipVoice`。CPU、CUDA 与自动回退等运行信息在状态与诊断中单独展示。2.6.610 起，MOSS 长文本流式等待、停止后立刻再次合成、空闲卸载后可选彻底清理均有独立配置和后台开关。2.6.611 修复后台更新检查仓库地址与 ZipVoice CUDA 状态误报；2.6.612 锁定 Docker 依赖组合并增加 Kokoro/MOSS 构建期 smoke test，修复 Kokoro v1.1 import 失败。
+AngeVoice 提供三个稳定产品模型入口：`Kokoro v1.1 Chinese`、`MOSS-TTS-Nano` 与 `ZipVoice`。CPU、CUDA 与自动回退等运行信息在状态与诊断中单独展示。2.6.610 起，MOSS 长文本流式等待、停止后立刻再次合成、空闲卸载后可选彻底清理均有独立配置和后台开关。2.6.611 修复后台更新检查仓库地址与 ZipVoice CUDA 状态误报；2.6.612 锁定 Docker 依赖组合并修复 Kokoro v1.1 import 失败；2.6.613 合并修复 ZipVoice 数字/金额输入、结构化错误、Unicode API Key、资源释放鉴权、Kokoro 回归、FFmpeg 输出格式与管理后台转码配置。
 
 ## 使用与部署
 

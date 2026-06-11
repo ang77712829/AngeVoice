@@ -11,6 +11,8 @@ from typing import Any, Callable
 from ..audio import encode_audio_segment
 from ..engines.base import EngineCapabilities, ProviderStatus
 from ..text_segmenter import segment_text_natural
+from ..validation import no_synthesizable_text_frame, prepare_text_for_synthesis, websocket_error_frame_from_http
+from fastapi import HTTPException
 from ..workers import EngineProcessClient
 from .assets import ZipVoiceAssetManager
 from .profiles import ZipVoiceProfileStore
@@ -186,6 +188,10 @@ class ZipVoiceEngine:
         return float(getattr(self.cfg, "request_timeout_seconds", 300.0))
 
     def synthesize(self, text: str, voice: str = "", speed: float = 1.0, *, prompt_audio_path: str | None = None, prompt_text: str = "", zipvoice_num_steps: int | None = None, zipvoice_remove_long_sil: bool | None = None) -> bytes:
+        text = prepare_text_for_synthesis(text, self.cfg, model_id=self.public_id, field_name="text")
+        if not prompt_audio_path or not str(prompt_text or "").strip():
+            raise HTTPException(status_code=400, detail="ZipVoice 生成需要参考音频与参考文本，或选择已保存音色")
+        prompt_text = prepare_text_for_synthesis(prompt_text, self.cfg, model_id=self.public_id, field_name="prompt_text")
         kwargs = {
             "text": text, "voice": voice, "speed": speed,
             "prompt_audio_path": prompt_audio_path, "prompt_text": prompt_text,
@@ -195,17 +201,26 @@ class ZipVoiceEngine:
             if not self.is_loaded:
                 self.load()
             if self._worker is not None:
-                return self._worker.request("synthesize", kwargs, timeout=self._timeout())
-            runtime_kwargs = {
-                "text": text, "prompt_audio_path": str(prompt_audio_path or ""), "prompt_text": prompt_text,
-                "speed": speed, "num_steps": zipvoice_num_steps, "remove_long_sil": zipvoice_remove_long_sil,
-            }
-            try:
-                return self.runtime.synthesize(**runtime_kwargs)
-            except RuntimeError as exc:
-                if not (self.requested_provider == "cuda" and self.runtime is self._cuda_runtime and bool(getattr(self.cfg, "zipvoice_auto_fallback_cpu", True))):
-                    raise
-                logger.warning("ZipVoice CUDA synthesis failed; retrying with ONNX INT8 CPU: %s", exc)
+                worker = self._worker
+                timeout = self._timeout()
+                runtime = None
+            else:
+                worker = None
+                timeout = self._timeout()
+                runtime = self.runtime
+        if worker is not None:
+            return worker.request("synthesize", kwargs, timeout=timeout)
+        runtime_kwargs = {
+            "text": text, "prompt_audio_path": str(prompt_audio_path or ""), "prompt_text": prompt_text,
+            "speed": speed, "num_steps": zipvoice_num_steps, "remove_long_sil": zipvoice_remove_long_sil,
+        }
+        try:
+            return runtime.synthesize(**runtime_kwargs)
+        except RuntimeError as exc:
+            if not (self.requested_provider == "cuda" and runtime is self._cuda_runtime and bool(getattr(self.cfg, "zipvoice_auto_fallback_cpu", True))):
+                raise
+            logger.warning("ZipVoice CUDA synthesis failed; retrying with ONNX INT8 CPU: %s", exc)
+            with self._state_lock:
                 try:
                     self._cuda_runtime.unload()
                 except Exception:
@@ -216,7 +231,8 @@ class ZipVoiceEngine:
                 self._actual_provider = "cpu_onnx_int8"
                 self._fallback = True
                 self._fallback_reason = f"CUDA synthesis failed: {exc}"
-                return self.runtime.synthesize(**runtime_kwargs)
+                fallback_runtime = self.runtime
+            return fallback_runtime.synthesize(**runtime_kwargs)
 
     def synthesize_array(self, text: str, voice: str = "", speed: float = 1.0, **kwargs):
         if self._worker is not None:
@@ -233,21 +249,32 @@ class ZipVoiceEngine:
         prompt_audio_path: str | None = None, prompt_text: str = "", cancel_check: Callable[[], bool] | None = None,
         zipvoice_num_steps: int | None = None, zipvoice_remove_long_sil: bool | None = None,
     ):
+        try:
+            text = prepare_text_for_synthesis(text, self.cfg, model_id=self.public_id, field_name="text")
+        except HTTPException as exc:
+            yield websocket_error_frame_from_http(exc)
+            return
+        if not prompt_audio_path or not str(prompt_text or "").strip():
+            yield {"type": "error", "message": "ZipVoice 流式生成需要参考音频与参考文本，或选择已保存音色"}; return
+        try:
+            prompt_text = prepare_text_for_synthesis(prompt_text, self.cfg, model_id=self.public_id, field_name="prompt_text")
+        except HTTPException as exc:
+            yield websocket_error_frame_from_http(exc)
+            return
         if self._worker is not None:
-            if not self.is_loaded:
-                self.load()
-            yield from self._worker.stream({
+            with self._state_lock:
+                if not self.is_loaded:
+                    self.load()
+                worker = self._worker
+                timeout = self._timeout()
+            yield from worker.stream({
                 "text": text, "voice": voice, "speed": speed, "fmt": fmt,
                 "prompt_audio_path": prompt_audio_path, "prompt_text": prompt_text,
                 "zipvoice_num_steps": zipvoice_num_steps, "zipvoice_remove_long_sil": zipvoice_remove_long_sil,
-            }, timeout=self._timeout(), cancel_check=cancel_check)
+            }, timeout=timeout, cancel_check=cancel_check)
             return
         if fmt not in {"pcm_s16le", "wav"}:
             yield {"type": "error", "message": f"不支持的流式音频格式：{fmt}"}; return
-        if not str(text or "").strip():
-            yield {"type": "error", "message": "文本不能为空"}; return
-        if not prompt_audio_path or not str(prompt_text or "").strip():
-            yield {"type": "error", "message": "ZipVoice 流式生成需要参考音频与参考文本，或选择已保存音色"}; return
         segments = segment_text_natural(str(text), max_text_length=int(getattr(self.cfg, "max_text_length", 5000) or 5000), segment_length=int(getattr(self.cfg, "segment_length", 120) or 120), flush_sentence_boundaries=True)
         if not segments:
             yield {"type": "error", "message": "文本清理后为空"}; return
@@ -263,6 +290,10 @@ class ZipVoiceEngine:
                 payload = encode_audio_segment(audio, fmt, int(sample_rate))
                 yield {"type": "audio", "index": audio_index, "segment_index": segment_index, "data": base64.b64encode(payload).decode("ascii"), "format": fmt, "sample_rate": int(sample_rate), "channels": 1}
                 audio_index += 1
-            except Exception as exc:
-                yield {"type": "segment_error", "index": segment_index, "message": str(exc), "model": self.public_id}; break
+            except ZeroDivisionError:
+                logger.warning("ZipVoice 流式片段无可合成 token", extra={"segment_index": segment_index})
+                yield no_synthesizable_text_frame(); break
+            except Exception:
+                logger.exception("ZipVoice 流式片段合成失败", extra={"segment_index": segment_index})
+                yield {"type": "segment_error", "index": segment_index, "message": "当前片段合成失败，请检查文本和参考音频", "model": self.public_id}; break
         yield {"type": "done", "total_segments": len(segments), "total_audio_chunks": audio_index, "stream_mode": "segmented"}

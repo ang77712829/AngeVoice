@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import inspect
 import logging
+from dataclasses import replace
 from typing import Any, Callable, Iterator, TYPE_CHECKING
 
 from ..contracts import CancellationContext, GenerationParameters, StreamingRequest, StreamingResult
-from ..validation import validate_model_speed, validate_tts_text
+from ..validation import prepare_text_for_synthesis, validate_model_speed, validate_tts_text
 
 if TYPE_CHECKING:
     from ..service_state import ServiceState
@@ -44,8 +45,19 @@ class StreamingService:
             prompt_audio_id=prompt_audio_id,
             prompt_text=prompt_text,
         )
+        if model == "zipvoice":
+            clean_text = prepare_text_for_synthesis(text, self.cfg, model_id=model, field_name="text", request_id=request_id)
+            if condition.prompt_text:
+                condition = replace(
+                    condition,
+                    prompt_text=prepare_text_for_synthesis(
+                        condition.prompt_text, self.cfg, model_id=model, field_name="prompt_text", request_id=request_id
+                    ),
+                )
+        else:
+            clean_text = validate_tts_text(text, self.cfg)
         return StreamingRequest(
-            text=validate_tts_text(text, self.cfg),
+            text=clean_text,
             model_id=model,
             voice=str(voice or ""),
             speed=validate_model_speed(model, speed),

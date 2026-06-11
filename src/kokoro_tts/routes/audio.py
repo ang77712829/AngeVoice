@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from ..api_models import TTSRequest
 from ..prompt_audio import save_prompt_audio_upload, validate_reference_audio_duration
+from ..validation import is_no_synthesizable_text_error, no_synthesizable_text_detail
 from ..service_state import ServiceState
 
 logger = logging.getLogger(__name__)
@@ -124,9 +125,17 @@ async def _run_tts_call(callable_, request_id: str):
         raise HTTPException(status_code=504, detail="合成超时")
     except HTTPException:
         raise
+    except ZeroDivisionError as exc:
+        logger.warning("TTS 文本无可合成 token，已转换为结构化错误", extra={"request_id": request_id})
+        raise HTTPException(status_code=400, detail=no_synthesizable_text_detail(request_id=request_id, reason=str(exc))) from exc
     except ValueError as exc:
+        if is_no_synthesizable_text_error(exc):
+            raise HTTPException(status_code=400, detail=no_synthesizable_text_detail(request_id=request_id, reason=str(exc))) from exc
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception:
+    except Exception as exc:
+        if is_no_synthesizable_text_error(exc):
+            logger.warning("TTS 底层返回无可合成文本错误", extra={"request_id": request_id})
+            raise HTTPException(status_code=400, detail=no_synthesizable_text_detail(request_id=request_id, reason=str(exc))) from exc
         logger.exception("TTS 请求失败", extra={"request_id": request_id})
         raise HTTPException(
             status_code=500,

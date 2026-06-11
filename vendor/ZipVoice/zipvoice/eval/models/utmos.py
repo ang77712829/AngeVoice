@@ -12,6 +12,11 @@ import torch.nn.functional as F
 import torchaudio  # pyright: ignore [reportMissingTypeStubs]
 from torch import Tensor, nn
 
+try:
+    from torch.nn.utils.parametrizations import weight_norm as _weight_norm
+except ImportError:  # pragma: no cover - older PyTorch fallback
+    from torch.nn.utils import weight_norm as _weight_norm
+
 
 class UTMOS22Strong(nn.Module):
     """Saeki_2022 paper's `UTMOS strong learner` inference model
@@ -177,7 +182,7 @@ class TransformerEncoder(nn.Module):
 
         self.pos_conv = nn.Sequential(
             *[
-                nn.utils.weight_norm(
+                _weight_norm(
                     nn.Conv1d(feat, feat, kernel_size=128, padding=128 // 2, groups=16),
                     name="weight",
                     dim=2,
