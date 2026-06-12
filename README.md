@@ -163,7 +163,7 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 | 批量合成 | `POST /v1/audio/batch` 返回 ZIP 和 `manifest.json` |
 | 服务治理 | 请求 ID、`/health`、`/stats`、`/requests`、超时、并发限制、LRU 缓存 |
 | Docker 画像 | CPU、GPU、老架构 GPU 三套 Compose 画像 |
-| CLI | 推荐 `angevoice`，旧命令 `kokoro-tts` 继续兼容 |
+| CLI | `kokoro-tts serve`（也支持 `python -m kokoro_tts.main serve`） |
 | 空闲资源回收 | 默认 10 分钟无人使用后卸载所有已加载模型；可在后台开启“空闲后彻底清理”，让容器在卸载后自动重启一次以释放底层运行时残留 |
 
 ## 快速开始
@@ -224,16 +224,31 @@ docker tag docker.1ms.run/maxblack777/angevoice-gpu:latest maxblack777/angevoice
 
 ### pip 开发安装
 
+> **要求 Python 3.10 – 3.12**（不支持 3.13+，PyTorch 尚未适配）。
+
 ```bash
 git clone https://github.com/ang77712829/AngeVoice.git
 cd AngeVoice
 pip install -e .
+```
 
-angevoice serve --port 8000
-angevoice synth "你好世界" -o hello.wav -v zm_010
+启动服务：
 
+```bash
+python -m kokoro_tts.main serve --port 8000
 # 旧命令仍可用
 kokoro-tts serve --port 8000
+```
+
+启动后在浏览器或 curl 测试：
+
+```bash
+# 替换为你的实际 IP（局域网或 127.0.0.1）
+curl http://192.168.1.10:8000/health
+curl -X POST http://192.168.1.10:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model":"kokoro","input":"你好世界","voice":"zm_010","response_format":"wav"}' \
+  --output hello.wav
 ```
 
 
