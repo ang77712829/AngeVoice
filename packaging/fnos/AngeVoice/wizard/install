@@ -1,7 +1,7 @@
 [
   {
     "stepTitle": "基础配置",
-    "description": "AngeVoice 支持 Kokoro、MOSS-TTS-Nano、ZipVoice。模型不包含在 FPK 内，首次启动会下载到持久化目录，升级不会覆盖模型、音色、输出、API Key、凭据或配置。",
+    "description": "AngeVoice 支持 Kokoro、MOSS-TTS-Nano、ZipVoice。模型不包含在 FPK 内，首次使用会下载到持久化目录，升级不会覆盖模型、音色、输出、API Key、凭据或配置。推荐 4 核 CPU 与 8GB 内存起步；资源较低的设备可优先使用 Kokoro、降低并发或关闭预载。",
     "items": [
       {
         "type": "text",
@@ -30,7 +30,7 @@
             "value": "cpu"
           },
           {
-            "label": "标准 GPU（推荐 Tesla P4 / NVIDIA，三模型均可加速）",
+            "label": "NVIDIA GPU（推荐；三模型可使用 GPU 路径）",
             "value": "gpu"
           },
           {

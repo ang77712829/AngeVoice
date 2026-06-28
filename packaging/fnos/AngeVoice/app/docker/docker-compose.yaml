@@ -1,12 +1,12 @@
 # AngeVoice fnOS 模板：一个 Compose 文件包含三个互斥的 profile 服务。
 # fnOS 在 docker-project 创建容器前注入 COMPOSE_PROFILES。这是经过验证的
-# 安装机制；所有可部署镜像保持 :latest。
+# 安装机制；可部署镜像固定到当前版本标签，避免安装时漂移。
 name: angevoice-fnos
 
 services:
   angevoice-cpu:
     profiles: ["cpu"]
-    image: maxblack777/angevoice-cpu:latest
+    image: maxblack777/angevoice-cpu:2.6.614
     container_name: angevoice-cpu
     ports:
       - "${wizard_http_port:-8101}:8000"
@@ -60,7 +60,7 @@ services:
 
   angevoice-gpu:
     profiles: ["gpu"]
-    image: maxblack777/angevoice-gpu:latest
+    image: maxblack777/angevoice-gpu:2.6.614
     container_name: angevoice-gpu
     ports:
       - "${wizard_http_port:-8101}:8000"
@@ -126,7 +126,7 @@ services:
 
   angevoice-legacy-gpu:
     profiles: ["legacy-gpu"]
-    image: maxblack777/angevoice-legacy-gpu:latest
+    image: maxblack777/angevoice-legacy-gpu:2.6.614
     container_name: angevoice-legacy-gpu
     ports:
       - "${wizard_http_port:-8101}:8000"

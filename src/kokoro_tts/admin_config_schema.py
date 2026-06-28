@@ -108,6 +108,7 @@ ADMIN_CONFIG_GROUPS = OrderedDict(
         ("kokoro", "Kokoro"),
         ("moss", "MOSS-TTS-Nano"),
         ("zipvoice", "ZipVoice"),
+        ("text", "文本与词典"),
         ("service", "服务与存储"),
         ("audio", "格式转码"),
         ("security", "安全访问"),
@@ -123,6 +124,20 @@ def _field(*args, **kwargs) -> None:
     ADMIN_CONFIG_FIELDS[field.key] = field
 
 
+_field(
+    "angevoice_tn_engine",
+    "ANGEVOICE_TN_ENGINE",
+    "默认文本处理",
+    "text",
+    "choice",
+    "wetext",
+    choices=(
+        ("wetext", "标准：文本规范化"),
+        ("legacy", "保守：AngeVoice 2.6.613"),
+        ("off", "关闭：仅基础清理"),
+    ),
+    help="使用 wetext runtime 进行数字、日期、时间等文本规范化；技术字符串会先做保护。Studio 可按单次请求覆盖此默认值。",
+)
 _field(
     "default_speed",
     "KOKORO_DEFAULT_SPEED",
@@ -158,7 +173,7 @@ _field(
     600,
     10,
     rebuild_moss=True,
-    help="NAS/P4 默认 120，牺牲少量吞吐换取中英文混合和长文本稳定；12GB+ 可在后台切换长文本旁白预设。",
+    help="默认 120，牺牲少量吞吐换取中英文混合和长文本稳定；显存更充足时可切换长文本旁白预设。",
 )
 _field(
     "moss_voice_clone_max_text_tokens",
@@ -510,14 +525,14 @@ _field(
 _field(
     "cache_max_bytes",
     "KOKORO_CACHE_MAX_BYTES",
-    "缓存上限 Bytes",
+    "缓存上限",
     "service",
     "int",
     536870912,
     0,
     8589934592,
     1048576,
-    help="0 表示不限制；NAS 默认约 512MB。",
+    help="前端以 MiB 显示和编辑；0 表示不限制，默认约 512 MiB。",
 )
 _field(
     "cache_skip_text_over_chars",
@@ -541,7 +556,7 @@ _field(
     0,
     2147483647,
     1048576,
-    help="超过该大小的音频不写入缓存，0 表示关闭。",
+    help="前端以 MiB 显示和编辑；超过该大小的音频不写入缓存，0 表示关闭。",
 )
 _field(
     "save_outputs",
@@ -627,7 +642,7 @@ _field(
     "bool",
     True,
     rebuild_moss=False,
-    help="8GB/P4/NAS 推荐开启。",
+    help="8GB 显存或家用 NAS 推荐开启。",
 )
 _field(
     "moss_vram_safe_free_mb",
@@ -767,14 +782,14 @@ _field(
 _field(
     "websocket_max_message_bytes",
     "KOKORO_WS_MAX_MESSAGE_BYTES",
-    "WebSocket 单消息字节上限",
+    "WebSocket 单消息上限",
     "security",
     "int",
     33554432,
     1024,
     134217728,
     1024,
-    help="限制首包/控制消息大小；32 MiB 可容纳 20 MiB 参考音频的 base64 JSON。",
+    help="前端以 MiB 显示和编辑；限制首包/控制消息大小。32 MiB 可容纳约 20 MiB 参考音频的 base64 JSON。",
     restart=True,
 )
 _field(
@@ -817,22 +832,22 @@ _field(
     "text_single_newline_policy",
     "ANGEVOICE_SINGLE_NEWLINE_POLICY",
     "单换行策略",
-    "service",
+    "text",
     "choice",
     "auto",
-    choices=(("auto", "auto 智能合并"), ("preserve", "preserve 保留停顿"), ("space", "space 当作空格")),
+    choices=(("auto", "智能合并"), ("preserve", "保留停顿"), ("space", "当作空格")),
     help="中文网页/小说复制常有硬换行；auto 会尽量合并段内换行，只保留空行段落。",    advanced=True,
 )
 _field(
     "moss_apply_angevoice_rules",
     "MOSS_APPLY_ANGEVOICE_RULES",
     "MOSS 文本规则",
-    "moss",
+    "text",
     "choice",
     "auto",
-    choices=(("auto", "auto 中英文混排智能处理"), ("true", "true 完整中文规则"), ("false", "false 仅温和清理")),
+    choices=(("auto", "智能处理"), ("true", "完整中文规则"), ("false", "仅温和清理")),
     rebuild_moss=False,
-    help="auto 会对中文为主文本应用完整中文规则，对 URL、版本号、API、英文缩写等中英文混排文本保守处理。",    advanced=True,
+    help="MOSS 与 Kokoro 分离处理；auto 会对 URL、版本号、API、英文缩写等混排文本保持保守。",    advanced=True,
 )
 _field(
     "moss_prompt_audio_max_seconds",
@@ -1029,7 +1044,7 @@ ADMIN_CONFIG_PROFILES: dict[str, dict[str, Any]] = {
     },
     "nas_stable": {
         "label": "NAS 稳定",
-        "description": "默认推荐：8GB/P4/家用 NAS，优先中英文混合稳定、减少卡顿和低音量。",
+        "description": "默认推荐：8GB 显存或家用 NAS，优先中英文混合稳定、减少卡顿和低音量。",
         "values": {
             "moss_segment_length": 120,
             "moss_voice_clone_max_text_tokens": 56,
@@ -1083,7 +1098,7 @@ ADMIN_CONFIG_PROFILES: dict[str, dict[str, Any]] = {
     },
     "long_narration": {
         "label": "长文本旁白",
-        "description": "12GB+ 推荐：更自然，但 8GB/P4 不建议默认。",
+        "description": "12GB+ 显存推荐：更自然；8GB 显存或内存受限设备不建议默认使用。",
         "values": {
             "moss_segment_length": 260,
             "moss_voice_clone_max_text_tokens": 90,

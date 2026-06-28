@@ -26,3 +26,6 @@ cn2an==0.5.22
 inflect==7.0.0
 piper_phonemize==1.1.0
 setuptools<81
+
+# ── optional[tn] ───────────────────────────────────
+wetext==0.1.4

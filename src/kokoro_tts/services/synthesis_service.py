@@ -14,7 +14,8 @@ from starlette.concurrency import run_in_threadpool
 from ..audio import encode_audio_segment
 from ..audio_formats import transcode_wav_bytes
 from ..contracts import GenerationParameters, SynthesisRequest, SynthesisResult
-from ..validation import prepare_text_for_synthesis, validate_model_speed, validate_tts_text
+from ..text.frontend import cfg_with_tn_engine
+from ..validation import prepare_text_for_synthesis, validate_model_speed
 
 if TYPE_CHECKING:
     from ..service_state import ServiceState
@@ -39,13 +40,15 @@ class SynthesisService:
         prompt_text: str = "",
         engine_params: dict[str, Any] | None = None,
         parameter_source: Any | None = None,
+        text_normalization: str | None = None,
         request_id: str = "",
     ) -> SynthesisRequest:
         resolved_model = self.state.model_manager.normalize_model_id(model_id)
-        if resolved_model == "zipvoice":
-            clean_text = prepare_text_for_synthesis(text, self.cfg, model_id=resolved_model, field_name="text", request_id=request_id)
-        else:
-            clean_text = validate_tts_text(text, self.cfg)
+        try:
+            text_cfg = cfg_with_tn_engine(self.cfg, text_normalization)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        clean_text = prepare_text_for_synthesis(text, text_cfg, model_id=resolved_model, field_name="text", request_id=request_id)
         clean_speed = validate_model_speed(resolved_model, speed)
         fmt = self.state.normalize_response_format(response_format)
         params = self.state.parameter_schema.parse(resolved_model, parameter_source, supplied=engine_params)
@@ -60,7 +63,7 @@ class SynthesisService:
             condition = replace(
                 condition,
                 prompt_text=prepare_text_for_synthesis(
-                    condition.prompt_text, self.cfg, model_id=resolved_model, field_name="prompt_text", request_id=request_id
+                    condition.prompt_text, text_cfg, model_id=resolved_model, field_name="prompt_text", request_id=request_id
                 ),
             )
         return SynthesisRequest(
@@ -90,6 +93,10 @@ class SynthesisService:
             candidates["prompt_audio_path"] = request.condition.prompt_audio_path
         if request.condition.prompt_text:
             candidates["prompt_text"] = request.condition.prompt_text
+        if request.model_id == "zipvoice":
+            candidates["text_prepared"] = True
+            if request.condition.prompt_text:
+                candidates["prompt_text_prepared"] = True
         return self._supported_kwargs(getattr(engine, method_name), candidates)
 
     def response_result(self, request: SynthesisRequest) -> SynthesisResult:
@@ -154,6 +161,8 @@ class SynthesisService:
                     run_in_threadpool(self.response_bytes, request),
                     timeout=self.cfg.request_timeout_seconds,
                 )
+                if self.state.is_cancelled(request.request_id):
+                    raise HTTPException(status_code=499, detail="请求已取消")
             elapsed = time.perf_counter() - start
             self.state.inc_stat("requests_ok")
             self.state.inc_stat("audio_bytes_total", len(result[0]))
@@ -180,5 +189,7 @@ class SynthesisService:
         except Exception as exc:
             self.state.inc_stat("requests_error")
             status = "timeout" if isinstance(exc, asyncio.TimeoutError) else "error"
+            if status == "timeout":
+                self.state.model_manager.cancel_model_request(request.model_id, force=True)
             self.state.finish_request(request.request_id, status, error=str(exc))
             raise

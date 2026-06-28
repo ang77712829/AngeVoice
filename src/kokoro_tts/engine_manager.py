@@ -343,6 +343,48 @@ class EngineManager:
                 self._active_counts[target_id] = 0
             return True
 
+    def cancel_model_request(self, model_id: str | None, *, force: bool = False) -> dict[str, Any]:
+        """Signal the runtime handling a cancelled request.
+
+        ServiceState owns request lifecycle state; this method only bridges that
+        cancellation into the model runtime so process-isolated workers can stop
+        promptly instead of holding the request lock until a long synth finishes.
+        """
+
+        target_id = self.normalize_model_id(model_id)
+        with self._lock:
+            engine = self._engines.get(target_id)
+            active = self._active_count(target_id)
+            if engine is None:
+                return {
+                    "model": target_id,
+                    "active_count": active,
+                    "soft_cancelled": False,
+                    "force_killed": False,
+                    "reason": "engine_not_loaded",
+                }
+            soft_cancelled = False
+            soft_cancel = getattr(engine, "soft_cancel", None)
+            if callable(soft_cancel):
+                try:
+                    soft_cancel()
+                    soft_cancelled = True
+                except Exception:
+                    logger.warning("模型取消信号发送失败：%s", target_id, exc_info=True)
+            process_isolated = bool(getattr(engine, "_process_isolated", False)) or bool(
+                getattr(self.cfg, f"{target_id}_process_isolation_enabled", False)
+            )
+            force_killed = False
+            if force and process_isolated:
+                force_killed = self.drop_model(target_id, force=True, raise_if_busy=False)
+            return {
+                "model": target_id,
+                "active_count": active,
+                "soft_cancelled": soft_cancelled,
+                "force_killed": force_killed,
+                "process_isolated": process_isolated,
+            }
+
 
     def drop_model(self, model_id: str, *, force: bool = False, raise_if_busy: bool = True) -> bool:
         """卸载并移除引擎对象，使下次加载使用当前配置重新构建。"""

@@ -73,7 +73,7 @@ COPY scripts/ scripts/
 COPY vendor/ZipVoice/ /opt/ZipVoice/
 
 # 安装项目。使用 editable 模式让 Compose 挂载的模板/静态资源能立即生效。
-RUN python3 -m pip install --no-cache-dir -c /app/docker/constraints-gpu.lock -e .
+RUN python3 -m pip install --no-cache-dir -c /app/docker/constraints-gpu.lock -e ".[tn]"
 
 # ZipVoice 在标准 GPU 镜像中支持 PyTorch CUDA runtime，同时保留已冻结的 ONNX INT8 CPU fallback。
 # 仍复用 onnxruntime-gpu 的 CPUExecutionProvider，不额外安装 onnxruntime CPU 包，避免覆盖 MOSS CUDA runtime。

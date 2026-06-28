@@ -12,6 +12,7 @@ from ..admin_auth import make_verify_admin
 from ..audio_formats import ffmpeg_effective_enabled, supported_response_formats
 from ..config_api_key import effective_api_key
 from ..service_state import ServiceState
+from .admin_runtime import security_snapshot
 
 
 def _get_vram_usage() -> dict:
@@ -154,6 +155,7 @@ def _public_catalog_allowed_for_config(cfg) -> bool:
 
 def _bootstrap_base(cfg, current_model: dict | None = None) -> dict:
     current_model = current_model or {}
+    security = security_snapshot(cfg)
     return {
         "defaultVoice": current_model.get("default_voice") or cfg.default_voice,
         "defaultSpeed": cfg.default_speed,
@@ -167,6 +169,8 @@ def _bootstrap_base(cfg, current_model: dict | None = None) -> dict:
         "modelSwitchEnabled": getattr(cfg, "model_switch_enabled", True),
         "adminEnabled": bool(getattr(cfg, "admin_enabled", False)),
         "apiKeyFile": _api_key_file(cfg),
+        "adminDefaultCredentialsActive": bool(security.get("admin_default_credentials_active")),
+        "adminSecurityWarning": str(security.get("admin_security_warning") or ""),
     }
 
 
@@ -205,6 +209,7 @@ def _minimal_health_payload(cfg, status: str, is_healthy: bool, unhealthy_models
         "auth_required": _auth_required(cfg),
         "catalog_protected": not _public_catalog_allowed_for_config(cfg),
         "stream_enabled": cfg.stream_enabled,
+        "enabled_models": list(getattr(cfg, "enabled_models", []) or []),
     }
 
 
@@ -357,6 +362,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
             "model_base": current_model.get("name") or "unknown",
             "model": current_model,
             "models": all_models,
+            "enabled_models": list(getattr(cfg, "enabled_models", []) or []),
             "current_model": state.model_manager.current_model_id,
             "device": current_model.get("device"),
             "voices": voices,
@@ -432,6 +438,7 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
     async def list_models(_=Depends(_verify_status_endpoint_access)):
         return {
             "current_model": state.model_manager.current_model_id,
+            "enabled_models": list(getattr(cfg, "enabled_models", []) or []),
             "models": state.model_manager.list_models(),
         }
 
@@ -578,6 +585,11 @@ def create_status_router(state: ServiceState, verify_api_key, templates=None) ->
     @router.post("/v1/audio/requests/{request_id}/cancel")
     async def cancel_request(request_id: str, _=Depends(verify_api_key)):
         known = state.request_cancel(request_id)
-        return {"ok": True, "request_id": request_id, "known": known, "status": "cancelling"}
+        return {
+            "ok": True,
+            "request_id": request_id,
+            "known": known,
+            "status": "cancelling",
+        }
 
     return router

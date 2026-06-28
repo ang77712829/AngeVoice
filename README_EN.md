@@ -139,17 +139,17 @@ cd docker/cpu && sudo docker compose up -d
 cd docker/legacy-gpu && sudo docker compose up -d
 ```
 
-> Try `docker/gpu` first on NVIDIA hosts. Tesla P4/P40/V100 can also perform better with the standard `gpu` image when the host driver is recent; `legacy-gpu` is a compatibility fallback, not a guaranteed faster path.
+> Try `docker/gpu` first on NVIDIA hosts. `legacy-gpu` is a compatibility fallback for older drivers or CUDA/cuDNN combinations that cannot run the standard GPU image.
 
 
 ### China Mirror Acceleration
 
-Docker Compose pulls Docker Hub images (`maxblack777/angevoice-*:latest`) by default. If Docker Hub is slow from mainland China, use a Docker mirror proxy:
+Docker Compose pulls the current versioned Docker Hub images (`maxblack777/angevoice-*:2.6.614`) by default. If Docker Hub is slow from mainland China, use a Docker mirror proxy:
 
 ```bash
 # Option 1: Pull via mirror, then retag
-docker pull docker.1ms.run/maxblack777/angevoice-gpu:latest
-docker tag docker.1ms.run/maxblack777/angevoice-gpu:latest maxblack777/angevoice-gpu:latest
+docker pull docker.1ms.run/maxblack777/angevoice-gpu:2.6.614
+docker tag docker.1ms.run/maxblack777/angevoice-gpu:2.6.614 maxblack777/angevoice-gpu:2.6.614
 
 # Option 2: Configure Docker daemon global mirror (recommended)
 # Edit /etc/docker/daemon.json and add:

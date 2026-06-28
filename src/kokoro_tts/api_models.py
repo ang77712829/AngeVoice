@@ -41,5 +41,9 @@ class TTSRequest(BaseModel):
         default=None,
         description="Model-specific generation controls keyed by the model parameter schema; legacy top-level ZipVoice fields remain accepted.",
     )
+    text_normalization: str | None = Field(
+        default=None,
+        description="Request-scoped text normalization: wetext, legacy, off, or default. Omit to use server config.",
+    )
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")

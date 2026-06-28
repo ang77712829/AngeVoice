@@ -149,6 +149,11 @@ class ZipVoiceEngine:
             if self._cpu_runtime is not None:
                 self._cpu_runtime.unload()
 
+    def soft_cancel(self) -> None:
+        with self._state_lock:
+            if self._worker is not None:
+                self._worker.soft_cancel()
+
     def capabilities(self) -> EngineCapabilities:
         return EngineCapabilities(
             modes=("voice_clone", "saved_voice_profile"), voice_clone_supported=True,
@@ -187,15 +192,20 @@ class ZipVoiceEngine:
     def _timeout(self) -> float:
         return float(getattr(self.cfg, "request_timeout_seconds", 300.0))
 
-    def synthesize(self, text: str, voice: str = "", speed: float = 1.0, *, prompt_audio_path: str | None = None, prompt_text: str = "", zipvoice_num_steps: int | None = None, zipvoice_remove_long_sil: bool | None = None) -> bytes:
-        text = prepare_text_for_synthesis(text, self.cfg, model_id=self.public_id, field_name="text")
+    def synthesize(self, text: str, voice: str = "", speed: float = 1.0, *, prompt_audio_path: str | None = None, prompt_text: str = "", zipvoice_num_steps: int | None = None, zipvoice_remove_long_sil: bool | None = None, text_prepared: bool = False, prompt_text_prepared: bool = False) -> bytes:
+        if not text_prepared:
+            text = prepare_text_for_synthesis(text, self.cfg, model_id=self.public_id, field_name="text")
+            text_prepared = True
         if not prompt_audio_path or not str(prompt_text or "").strip():
             raise HTTPException(status_code=400, detail="ZipVoice 生成需要参考音频与参考文本，或选择已保存音色")
-        prompt_text = prepare_text_for_synthesis(prompt_text, self.cfg, model_id=self.public_id, field_name="prompt_text")
+        if not prompt_text_prepared:
+            prompt_text = prepare_text_for_synthesis(prompt_text, self.cfg, model_id=self.public_id, field_name="prompt_text")
+            prompt_text_prepared = True
         kwargs = {
             "text": text, "voice": voice, "speed": speed,
             "prompt_audio_path": prompt_audio_path, "prompt_text": prompt_text,
             "zipvoice_num_steps": zipvoice_num_steps, "zipvoice_remove_long_sil": zipvoice_remove_long_sil,
+            "text_prepared": text_prepared, "prompt_text_prepared": prompt_text_prepared,
         }
         with self._state_lock:
             if not self.is_loaded:
@@ -248,16 +258,21 @@ class ZipVoiceEngine:
         self, text: str, voice: str = "", speed: float = 1.0, fmt: str = "pcm_s16le", *,
         prompt_audio_path: str | None = None, prompt_text: str = "", cancel_check: Callable[[], bool] | None = None,
         zipvoice_num_steps: int | None = None, zipvoice_remove_long_sil: bool | None = None,
+        text_prepared: bool = False, prompt_text_prepared: bool = False,
     ):
         try:
-            text = prepare_text_for_synthesis(text, self.cfg, model_id=self.public_id, field_name="text")
+            if not text_prepared:
+                text = prepare_text_for_synthesis(text, self.cfg, model_id=self.public_id, field_name="text")
+                text_prepared = True
         except HTTPException as exc:
             yield websocket_error_frame_from_http(exc)
             return
         if not prompt_audio_path or not str(prompt_text or "").strip():
             yield {"type": "error", "message": "ZipVoice 流式生成需要参考音频与参考文本，或选择已保存音色"}; return
         try:
-            prompt_text = prepare_text_for_synthesis(prompt_text, self.cfg, model_id=self.public_id, field_name="prompt_text")
+            if not prompt_text_prepared:
+                prompt_text = prepare_text_for_synthesis(prompt_text, self.cfg, model_id=self.public_id, field_name="prompt_text")
+                prompt_text_prepared = True
         except HTTPException as exc:
             yield websocket_error_frame_from_http(exc)
             return
@@ -271,6 +286,7 @@ class ZipVoiceEngine:
                 "text": text, "voice": voice, "speed": speed, "fmt": fmt,
                 "prompt_audio_path": prompt_audio_path, "prompt_text": prompt_text,
                 "zipvoice_num_steps": zipvoice_num_steps, "zipvoice_remove_long_sil": zipvoice_remove_long_sil,
+                "text_prepared": text_prepared, "prompt_text_prepared": prompt_text_prepared,
             }, timeout=timeout, cancel_check=cancel_check)
             return
         if fmt not in {"pcm_s16le", "wav"}:
@@ -284,7 +300,7 @@ class ZipVoiceEngine:
             if cancel_check is not None and bool(cancel_check()):
                 break
             try:
-                wav_bytes = self.synthesize(segment, voice, speed, prompt_audio_path=prompt_audio_path, prompt_text=prompt_text, zipvoice_num_steps=zipvoice_num_steps, zipvoice_remove_long_sil=zipvoice_remove_long_sil)
+                wav_bytes = self.synthesize(segment, voice, speed, prompt_audio_path=prompt_audio_path, prompt_text=prompt_text, zipvoice_num_steps=zipvoice_num_steps, zipvoice_remove_long_sil=zipvoice_remove_long_sil, text_prepared=True, prompt_text_prepared=True)
                 import soundfile as sf
                 audio, sample_rate = sf.read(BytesIO(wav_bytes), dtype="float32", always_2d=False)
                 payload = encode_audio_segment(audio, fmt, int(sample_rate))

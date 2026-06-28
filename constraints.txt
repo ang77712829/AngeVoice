@@ -1,7 +1,7 @@
 # AngeVoice — pinned dependency constraints for source/CPU Docker builds.
 # Only packages prone to uncontrolled upgrade are pinned here.
 # torch/torchaudio are installed separately via ARGs with专用 index，不在此约束。
-# Usage: pip install -c constraints.txt -e ".[zipvoice]"
+# Usage: pip install -c constraints.txt -e ".[zipvoice,tn]"
 
 # ── core (drift-sensitive) ──────────────────────────
 kokoro==0.8.2
@@ -26,3 +26,6 @@ inflect==7.0.0
 piper_phonemize==1.1.0
 safetensors==0.4.5
 setuptools<81
+
+# ── optional[tn] ───────────────────────────────────
+wetext==0.1.4

@@ -66,6 +66,26 @@ def test_dynamic_parameter_schema_accepts_generic_and_legacy_controls(tmp_path):
         manager.stop_idle_timer()
 
 
+def test_request_scoped_text_normalization_override_does_not_mutate_config(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg.angevoice_tn_engine = "wetext"
+    manager = EngineManager(cfg)
+    state = ServiceState(cfg, model_manager=manager)
+    try:
+        request = state.synthesis.build_request(
+            text="今天 12 点",
+            voice="zm_010",
+            speed=1.0,
+            response_format="wav",
+            model_id="kokoro",
+            text_normalization="legacy",
+        )
+        assert request.text == "今天 十二 点"
+        assert cfg.angevoice_tn_engine == "wetext"
+    finally:
+        manager.stop_idle_timer()
+
+
 def test_streaming_service_passes_resolved_profile_and_schema_controls_to_adapter(tmp_path):
     manager = EngineManager(_cfg(tmp_path))
     state = ServiceState(_cfg(tmp_path), model_manager=manager)

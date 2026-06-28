@@ -44,7 +44,16 @@ def _find_models_dir() -> Path:
     运行时交给 Hugging Face / ModelScope 下载到同一个 ``models`` 根目录。
     """
 
-    for path in kokoro_model_dir_candidates():
+    env_model_dir = os.environ.get("KOKORO_MODEL_DIR")
+    env_models_root = os.environ.get("ANGEVOICE_MODELS_ROOT")
+    if env_model_dir:
+        candidates = [Path(env_model_dir).expanduser()]
+    elif env_models_root:
+        candidates = [default_kokoro_model_dir(Path(env_models_root).expanduser())]
+    else:
+        candidates = kokoro_model_dir_candidates()
+
+    for path in candidates:
         if not path or not path.exists():
             continue
         model_file = path / MODEL_FILENAME
@@ -55,7 +64,7 @@ def _find_models_dir() -> Path:
                 size_mb = 0.0
             logger.info("找到模型目录: %s (Kokoro 模型 %.1f MB)", path, size_mb)
             return path
-    fallback = default_kokoro_model_dir()
+    fallback = candidates[0] if candidates else default_kokoro_model_dir()
     logger.warning("未找到有效的 Kokoro 本地模型目录，使用推荐持久化路径: %s；运行时将尝试远程下载。", fallback)
     return fallback
 
@@ -70,12 +79,14 @@ class TTSConfig:
     host: str = "0.0.0.0"
     port: int = 8000
     workers: int = 1
+    access_log_enabled: bool = False
     max_concurrent_requests: int = 1
 
     sample_rate: int = 24000
     max_text_length: int = 10000
     segment_length: int = 160
     text_single_newline_policy: str = "auto"
+    angevoice_tn_engine: str = "wetext"
     moss_segment_length: int = 120
     default_speed: float = 1.0
     default_voice: str = "zm_010"
@@ -451,6 +462,11 @@ class TTSConfig:
         self.text_single_newline_policy = str(self.text_single_newline_policy or "auto").strip().lower()
         if self.text_single_newline_policy not in {"auto", "preserve", "space"}:
             raise ValueError("ANGEVOICE_SINGLE_NEWLINE_POLICY must be auto, preserve, or space")
+        self.angevoice_tn_engine = str(self.angevoice_tn_engine or "wetext").strip().lower()
+        if self.angevoice_tn_engine in {"0", "false", "no", "none"}:
+            self.angevoice_tn_engine = "off"
+        if self.angevoice_tn_engine not in {"wetext", "legacy", "off"}:
+            raise ValueError("ANGEVOICE_TN_ENGINE must be wetext, legacy, or off")
 
     def _normalize_audio_transcoding(self) -> None:
         # 兼容旧部署：KOKORO_MP3_ENABLED=true 继续代表允许 FFmpeg 转码。

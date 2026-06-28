@@ -68,7 +68,7 @@ COPY src/ src/
 COPY scripts/ scripts/
 COPY vendor/ZipVoice/ /opt/ZipVoice/
 
-RUN python3 -m pip install --no-cache-dir -c /app/docker/constraints-legacy-gpu.lock -e .
+RUN python3 -m pip install --no-cache-dir -c /app/docker/constraints-legacy-gpu.lock -e ".[tn]"
 
 # ZipVoice 使用已冻结的 ONNX INT8 CPU runtime。GPU 镜像复用 onnxruntime-gpu 的 CPUExecutionProvider，
 # 不额外安装 onnxruntime CPU 包，避免覆盖 MOSS 的 CUDA runtime。

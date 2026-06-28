@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 从单一 Compose 文件构建 AngeVoice fnOS/FPK 包，并校验 profile 路由。
-# 包版本来自 pyproject.toml；运行镜像固定使用 :latest。
+# 包版本来自 pyproject.toml；运行镜像固定使用同版本标签。
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG="$ROOT/packaging/fnos/AngeVoice"
@@ -17,10 +17,11 @@ mkdir -p "$(dirname "$OUT")"
   echo "fnOS 打包目录不完整" >&2
   exit 1
 }
-python3 - "$PKG" <<'PYVALIDATE'
-import json, sys
+VERSION="$VERSION" python3 - "$PKG" <<'PYVALIDATE'
+import json, os, sys
 from pathlib import Path
 p = Path(sys.argv[1])
+version = os.environ['VERSION']
 for name in ('install', 'config', 'upgrade', 'uninstall'):
     data = json.loads((p / 'wizard' / name).read_text(encoding='utf-8'))
     text = json.dumps(data, ensure_ascii=False)
@@ -32,15 +33,14 @@ json.loads((p / 'config/resource').read_text(encoding='utf-8'))
 json.loads((p / 'config/privilege').read_text(encoding='utf-8'))
 compose = (p / 'app/docker/docker-compose.yaml').read_text(encoding='utf-8')
 for profile, service, image in (
-    ('cpu', 'angevoice-cpu', 'maxblack777/angevoice-cpu:latest'),
-    ('gpu', 'angevoice-gpu', 'maxblack777/angevoice-gpu:latest'),
-    ('legacy-gpu', 'angevoice-legacy-gpu', 'maxblack777/angevoice-legacy-gpu:latest'),
+    ('cpu', 'angevoice-cpu', f'maxblack777/angevoice-cpu:{version}'),
+    ('gpu', 'angevoice-gpu', f'maxblack777/angevoice-gpu:{version}'),
+    ('legacy-gpu', 'angevoice-legacy-gpu', f'maxblack777/angevoice-legacy-gpu:{version}'),
 ):
     assert f'  {service}:' in compose
     assert f'profiles: ["{profile}"]' in compose
     assert image in compose
 assert compose.count('profiles:') == 3
-assert ':2.6.' not in compose
 for item in ('${TRIM_PKGVAR}/credentials:/app/credentials', '${TRIM_PKGVAR}/config:/app/config', '${TRIM_PKGVAR}/prompts:/app/prompts'):
     assert compose.count(item) == 3, item
 for item in ('KOKORO_PROCESS_ISOLATION_ENABLED: "true"', 'MOSS_PROCESS_ISOLATION_ENABLED: "true"', 'ZIPVOICE_PROCESS_ISOLATION_ENABLED: "true"', 'ANGEVOICE_STARTUP_PRELOAD_ENABLED: "false"'):
@@ -83,4 +83,4 @@ tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -czf "$OUT" -C 
 tar -tzf "$OUT" > "$OUT.contents.txt"
 sha256sum "$OUT" > "$OUT.sha256"
 echo "已构建 AngeVoice v${VERSION} fnOS/FPK 包：$OUT"
-echo "打包约束：单一 Compose 文件 + COMPOSE_PROFILES 路由 cpu/gpu/legacy-gpu 服务，镜像固定 :latest。"
+echo "打包约束：单一 Compose 文件 + COMPOSE_PROFILES 路由 cpu/gpu/legacy-gpu 服务，镜像固定到 v${VERSION} 标签。"

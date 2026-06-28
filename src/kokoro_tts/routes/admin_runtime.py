@@ -83,7 +83,7 @@ def security_snapshot(cfg, *, reveal: bool = False) -> dict:
         "admin_credentials": credentials,
         "admin_auth_source": "persisted_hash" if credentials["persisted"] else ("default_first_entry" if bootstrap_default else "bootstrap_environment"),
         "admin_default_credentials_active": bootstrap_default,
-        "admin_security_warning": "当前仍在使用默认管理员账号密码 admin / admin123。请在公网暴露前立即修改。" if bootstrap_default else "",
+        "admin_security_warning": "当前仍在使用首次默认管理员账号密码 admin / admin123。请先在本页修改并重新登录；在完成修改前不要暴露到公网或不可信网络。" if bootstrap_default else "",
     }
 
 

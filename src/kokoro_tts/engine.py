@@ -19,26 +19,12 @@ from typing import Optional
 
 from .audio import encode_audio_segment, normalize_audio_array, write_wav_bytes
 from .config import TTSConfig, load_config
-from .zh_rules import normalize_chinese_rules
+from .text.legacy import normalize_text_for_tts
 from .text_segmenter import segment_text_natural
 from .kokoro_assets import has_valid_kokoro_local_assets, is_valid_kokoro_voice_file, kokoro_voice_dir_candidates
 from .model_sources import ensure_kokoro_model_dir, resolve_model_source
 
 logger = logging.getLogger(__name__)
-
-_DIGITS_ZH = {
-    "0": "零",
-    "1": "一",
-    "2": "二",
-    "3": "三",
-    "4": "四",
-    "5": "五",
-    "6": "六",
-    "7": "七",
-    "8": "八",
-    "9": "九",
-}
-_DIGITS_ZH_READING = {**_DIGITS_ZH, "1": "幺"}
 
 
 @contextmanager
@@ -96,320 +82,6 @@ def _single_layer_rnn_dropout_compat():
     finally:
         for cls, original in originals:
             cls.__init__ = original
-
-
-def _spell_digits(text: str, use_yao: bool = False) -> str:
-    """逐个读取数字序列。
-
-    此处不要插入空格。空格会让中文 TTS 听起来断断续续，
-    也可能泄漏到规范化的日期/ID 中。
-    """
-    table = _DIGITS_ZH_READING if use_yao else _DIGITS_ZH
-    return "".join(table.get(ch, ch) for ch in text)
-
-
-def _read_under_10000(value: int) -> str:
-    if value == 0:
-        return "零"
-    units = ["", "十", "百", "千"]
-    parts: list[str] = []
-    zero_pending = False
-    pos = 0
-    n = value
-
-    while n > 0:
-        digit = n % 10
-        if digit == 0:
-            if parts:
-                zero_pending = True
-        else:
-            part = _DIGITS_ZH[str(digit)] + units[pos]
-            if zero_pending:
-                parts.append("零")
-                zero_pending = False
-            parts.append(part)
-        n //= 10
-        pos += 1
-
-    spoken = "".join(reversed(parts)).rstrip("零")
-    if spoken.startswith("一十"):
-        spoken = spoken[1:]
-    return spoken or "零"
-
-
-def _read_small_int(value: int) -> str:
-    """按中文习惯读取整数，覆盖金额、日期和常见数量场景。
-
-    旧实现只覆盖到亿以内金额，十亿以上会因为 ``_read_under_10000``
-    收到过大的高位组而失败。这里按 4 位一组处理，支持到京级别；
-    超过该范围时回退逐位读，避免异常中断合成。
-    """
-
-    if value < 0:
-        return "负" + _read_small_int(-value)
-    if value < 10000:
-        return _read_under_10000(value)
-
-    group_units = ["", "万", "亿", "兆", "京"]
-    groups: list[int] = []
-    number = int(value)
-    while number > 0:
-        groups.append(number % 10000)
-        number //= 10000
-
-    if len(groups) > len(group_units):
-        return _spell_digits(str(value))
-
-    parts: list[str] = []
-    zero_pending = False
-    for index in range(len(groups) - 1, -1, -1):
-        group = groups[index]
-        if group == 0:
-            if parts:
-                zero_pending = True
-            continue
-        if parts and (zero_pending or group < 1000):
-            parts.append("零")
-        zero_pending = False
-        parts.append(_read_under_10000(group) + group_units[index])
-    return "".join(parts) or "零"
-
-
-def _read_time_hour(value: int) -> str:
-    if value == 2:
-        return "两"
-    return _read_small_int(value)
-
-
-def _read_clock_time(hour: int, minute: int) -> str:
-    spoken = _read_time_hour(hour) + "点"
-    if minute == 0:
-        return spoken + "整"
-    if minute < 10:
-        return spoken + "零" + _DIGITS_ZH[str(minute)] + "分"
-    return spoken + _read_small_int(minute) + "分"
-
-
-
-
-def _read_month_day(month: int, day: int) -> str:
-    return f"{_read_small_int(month)}月{_read_small_int(day)}日"
-
-
-_DATE_CONTEXT_BEFORE = (
-    "日期", "日子", "生日", "活动", "会议", "考试", "开会", "发布", "上线", "更新",
-    "维护", "开服", "截止", "截至", "预约", "计划", "预计", "定在", "改到",
-    "推迟到", "提前到", "报名", "放假", "假期", "档期", "排期", "工期", "节日",
-)
-_DATE_CONTEXT_AFTER = (
-    "号", "日", "当天", "那天", "这天", "之前", "之后", "以前", "以后", "前", "后",
-    "开始", "结束", "上线", "发布", "更新", "开服", "维护", "截止", "截至", "报名",
-    "活动", "会议", "考试", "开会", "放假", "假期", "见", "再说",
-)
-_DATE_CONTEXT_WORDS = ("今天", "明天", "昨天", "后天", "前天", "今年", "明年", "去年", "本月", "下月", "上月")
-
-
-def _looks_like_short_date_context(text: str, start: int, end: int) -> bool:
-    """启发式判断 M.D / M-D 是否应按月-日读取。
-
-    这里有意避免转换裸小数和常见软件版本号。简写日期需要
-    显式的日期标记，例如 ``4.20号``、``4.20更新``、``活动在4.20``。
-    """
-
-    before = text[max(0, start - 8):start]
-    after = text[end:end + 8]
-    if any(after.startswith(item) for item in _DATE_CONTEXT_AFTER):
-        return True
-    if any(item in before for item in _DATE_CONTEXT_BEFORE):
-        return True
-    if any(item in before or item in after for item in _DATE_CONTEXT_WORDS):
-        return True
-    if before.endswith(("在", "于", "到", "从", "至", "距", "等到")) and not after.startswith(("版", "版本", "元", "%")):
-        return True
-    return False
-
-
-def _normalize_short_month_day(text: str) -> str:
-    """在小数处理前规范化有上下文支持的 M.D 简写日期。"""
-
-    def repl(match: re.Match[str]) -> str:
-        month = int(match.group("month"))
-        day = int(match.group("day"))
-        if not (1 <= month <= 12 and 1 <= day <= 31):
-            return match.group(0)
-        if not _looks_like_short_date_context(text, match.start(), match.end()):
-            return match.group(0)
-        return _read_month_day(month, day)
-
-    return re.sub(
-        r"(?<![\dA-Za-z])(?P<month>1[0-2]|0?[1-9])[./-](?P<day>3[01]|[12]\d|0?[1-9])(?![\dA-Za-z])",
-        repl,
-        text,
-    )
-
-def normalize_text_for_tts(text: str, model: str = "kokoro") -> str:
-    """在合成前规范化常见的中文 TTS 模式。
-
-    这里有意保持保守。它处理常见电话号码、日期、金额、百分比
-    和长数字 ID，而不试图成为一个完整的中文 TN 引擎。
-    """
-    if not text:
-        return text
-
-    def _read_decimal_amount(raw: str) -> str:
-        number = raw.replace(",", "")
-        integer, dot, frac = number.partition(".")
-        spoken = _read_small_int(int(integer))
-        if dot and frac:
-            spoken += "点" + _spell_digits(frac)
-        return spoken
-
-    def _read_money_amount(raw: str) -> str:
-        number = raw.replace(",", "")
-        integer, dot, frac = number.partition(".")
-        spoken = _read_small_int(int(integer)) + "元"
-        if dot and frac:
-            frac = (frac + "00")[:2]
-            if frac[0] != "0":
-                spoken += _DIGITS_ZH[frac[0]] + "角"
-            if frac[1] != "0":
-                spoken += _DIGITS_ZH[frac[1]] + "分"
-        return spoken
-
-    def repl_thousand_money(match):
-        _prefix, sign, amount, _suffix = match.groups()
-        spoken = _read_money_amount(amount)
-        return ("负" if sign == "-" else "") + spoken
-
-    # 货币金额要先于通用千分位处理，否则 ¥1,000 会变成 ¥一千。
-    # 仅处理明确带 ¥/￥/元 的金额，避免把普通逗号数字误读成金额。
-    text = re.sub(
-        r"(?<![\dA-Za-z])(¥|￥)?([+-]?)(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?)(元)?(?![\dA-Za-z])",
-        lambda m: repl_thousand_money(m) if (m.group(1) or m.group(4)) else m.group(0),
-        text,
-    )
-
-    def repl_thousand_number(match):
-        raw = match.group(0)
-        percent = raw.endswith("%")
-        if percent:
-            raw = raw[:-1]
-        sign = ""
-        if raw.startswith(("+", "-")):
-            sign, raw = raw[0], raw[1:]
-        try:
-            spoken = _read_decimal_amount(raw)
-        except ValueError:
-            number = raw.replace(",", "")
-            integer, dot, frac = number.partition(".")
-            spoken = _spell_digits(integer)
-            if dot and frac:
-                spoken += "点" + _spell_digits(frac)
-        negative = sign == "-"
-        if percent:
-            return ("负" if negative else "") + "百分之" + spoken
-        if negative:
-            spoken = "负" + spoken
-        return spoken
-
-    # 先处理标准千分位数字，避免 ZipVoice 把 1,000,000 读成
-    # “一逗号零零零逗号零零零”。只处理 1,234 / 1,234.56 / 1,234%
-    # 这种合法分组，不碰 1,2 或代码/列表里的逗号。
-    text = re.sub(r"(?<![\dA-Za-z¥￥])[-+]?\d{1,3}(?:,\d{3})+(?:\.\d+)?%?(?![\dA-Za-z])", repl_thousand_number, text)
-
-    def repl_date(match):
-        year, month, day = match.groups()
-        return f"{_spell_digits(year)}年{_read_small_int(int(month))}月{_read_small_int(int(day))}日"
-
-    # 中文上下文避免使用 \b。Python 正则会把许多中文字符视为
-    # 单词字符，因此 \b 在中文和数字之间的匹配不可靠。
-    text = re.sub(r"(?<!\d)(20\d{2}|19\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)", repl_date, text)
-    text = _normalize_short_month_day(text)
-
-    def repl_time(match):
-        hour = int(match.group(1))
-        minute = int(match.group(2))
-        return _read_clock_time(hour, minute)
-
-    text = re.sub(r"(?<!\d)([01]?\d|2[0-3])[:：]([0-5]\d)(?!\d)", repl_time, text)
-
-    def repl_money(match):
-        prefix, amount, suffix = match.groups()
-        if not prefix and not suffix:
-            return match.group(0)
-        return _read_money_amount(amount)
-
-    text = re.sub(r"(?<![\dA-Za-z])(¥|￥)?(\d{1,16}(?:\.\d{1,2})?)(元)?(?![\dA-Za-z])", repl_money, text)
-
-    def repl_percent(match):
-        sign = match.group(1) or ""
-        value = match.group(2)
-        integer, dot, frac = value.partition(".")
-        try:
-            spoken = _read_small_int(int(integer))
-        except ValueError:
-            spoken = _spell_digits(integer)
-        if dot and frac:
-            spoken += "点" + _spell_digits(frac)
-        return ("负" if sign == "-" else "") + "百分之" + spoken
-
-    text = re.sub(r"(?<![\dA-Za-z])([+-]?)(\d+(?:\.\d+)?)%(?!\d)", repl_percent, text)
-
-    def repl_mobile(match):
-        number = match.group(0)
-        return "，".join([
-            _spell_digits(number[:3], use_yao=True),
-            _spell_digits(number[3:7], use_yao=True),
-            _spell_digits(number[7:], use_yao=True),
-        ])
-
-    text = re.sub(r"(?<!\d)1[3-9]\d{9}(?!\d)", repl_mobile, text)
-
-    def repl_long_number(match):
-        number = match.group(0)
-        grouped = [number[i : i + 4] for i in range(0, len(number), 4)]
-        return "，".join(_spell_digits(group, use_yao=True) for group in grouped)
-
-    text = re.sub(r"(?<!\d)\d{6,}(?!\d)", repl_long_number, text)
-
-    def _signed_prefix(sign: str) -> str:
-        return "负" if sign == "-" else ""
-
-    def repl_plain_decimal(match):
-        before = match.string[max(0, match.start() - 6):match.start()]
-        after = match.string[match.end():match.end() + 6]
-        # 保持原有上下文中的小数/版本号行为，只处理裸小数输入，
-        # 解决 ZipVoice 单独输入 3.5 无 token 的问题。
-        if match.string.strip() != match.group(0):
-            return match.group(0)
-        if before.endswith(("版本", "版", "v", "V")) or after.startswith(("版", "版本")):
-            return match.group(0)
-        sign = match.group(1) or ""
-        integer = match.group(2)
-        frac = match.group(3)
-        try:
-            spoken = _read_small_int(int(integer))
-        except ValueError:
-            spoken = _spell_digits(integer)
-        return _signed_prefix(sign) + spoken + "点" + _spell_digits(frac)
-
-    # ZipVoice 等中文 tokenizer 对纯数字/小数没有可合成 token。
-    # 这里把常见裸数字表达转成自然读法，但仍避免处理版本号、URL 等技术文本。
-    text = re.sub(r"(?<![\dA-Za-z./])([+-]?)([0-9]{1,8})\.([0-9]{1,8})(?![\dA-Za-z])", repl_plain_decimal, text)
-
-    def repl_trailing_number_dot(match):
-        sign = match.group(1) or ""
-        return _signed_prefix(sign) + _read_small_int(int(match.group(2)))
-
-    text = re.sub(r"(?<![\dA-Za-z./])([+-]?)([0-9]{1,5})\.(?![\dA-Za-z])", repl_trailing_number_dot, text)
-
-    def repl_plain_int(match):
-        sign = match.group(1) or ""
-        return _signed_prefix(sign) + _read_small_int(int(match.group(2)))
-
-    text = re.sub(r"(?<![\dA-Za-z./])([+-]?)([0-9]{1,5})(?![\dA-Za-z./])", repl_plain_int, text)
-    text = normalize_chinese_rules(text, model=model)
-    return text
 
 
 class TTSEngine:
@@ -656,12 +328,13 @@ class TTSEngine:
             return "zh"
         return "en" if english / total > 0.6 else "zh"
 
-    def _segment_text(self, text: str) -> list[str]:
+    def _segment_text(self, text: str, *, flush_sentence_boundaries: bool = False) -> list[str]:
         return segment_text_natural(
             text,
             max_text_length=int(self.config.max_text_length),
             segment_length=max(20, int(self.config.segment_length)),
             single_newline_policy=str(getattr(self.config, "text_single_newline_policy", "auto")),
+            flush_sentence_boundaries=flush_sentence_boundaries,
         )
 
     def _make_speed_fn(self, speed: float):
@@ -754,7 +427,7 @@ class TTSEngine:
             yield {"type": "error", "message": "清理后文本为空"}
             return
 
-        segments = self._segment_text(text)
+        segments = self._segment_text(text, flush_sentence_boundaries=True)
         yield {
             "type": "started",
             "segments": len(segments),
@@ -768,13 +441,17 @@ class TTSEngine:
         speed_fn = self._make_speed_fn(speed)
         audio_index = 0
         for i, segment in enumerate(segments):
+            if cancel_check is not None and bool(cancel_check()):
+                break
             try:
                 with self._runtime_lock:
                     wav_seg = self._synthesize_segment(self._zh_pipeline, segment, voice, speed_fn)
                 if wav_seg is not None:
                     wav_seg = self._postprocess_segment(wav_seg)
+                    cancelled = False
                     for stream_seg in self._split_stream_audio(wav_seg):
                         if cancel_check is not None and bool(cancel_check()):
+                            cancelled = True
                             break
                         audio_bytes = self._encode_segment(stream_seg, fmt)
                         yield {
@@ -787,6 +464,8 @@ class TTSEngine:
                             "channels": 1,
                         }
                         audio_index += 1
+                    if cancelled:
+                        break
             except Exception as e:
                 logger.warning("段落 %d 合成失败: %s", i + 1, e)
                 yield {"type": "segment_error", "index": i, "message": str(e)}

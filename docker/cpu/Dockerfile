@@ -58,10 +58,10 @@ COPY vendor/ZipVoice/ /opt/ZipVoice/
 
 # 安装项目。使用 editable 模式让 Compose 挂载的模板/静态资源能立即生效。
 RUN if [ "$INSTALL_ZIPVOICE" = "true" ]; then \
-      python3 -m pip install --no-cache-dir -c /app/constraints.txt -e ".[zipvoice]" && \
+      python3 -m pip install --no-cache-dir -c /app/constraints.txt -e ".[zipvoice,tn]" && \
       mkdir -p /app/licenses && cp /opt/ZipVoice/LICENSE /app/licenses/ZipVoice-Apache-2.0-LICENSE; \
     else \
-      python3 -m pip install --no-cache-dir -c /app/constraints.txt -e .; \
+      python3 -m pip install --no-cache-dir -c /app/constraints.txt -e ".[tn]"; \
     fi
 
 # 构建阶段即验证 ZipVoice ONNX CPU 推理导入链，避免到 NAS 首次合成时才暴露遗漏依赖。

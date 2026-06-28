@@ -186,6 +186,25 @@ class TestSynthesizeStream:
             decoded = base64.b64decode(msg["data"])
             assert len(decoded) > 0
 
+    def test_stream_flushes_sentence_boundaries_without_changing_default_segmentation(self):
+        from kokoro_tts.engine import TTSEngine
+        from kokoro_tts.config import TTSConfig
+
+        engine = TTSEngine(TTSConfig(segment_length=160))
+        engine._loaded = True
+        fake_audio = np.ones(120, dtype=np.float32) * 0.1
+        engine._synthesize_segment = MagicMock(return_value=fake_audio)
+
+        text = "这是第一句。这里是第二句。最后是第三句。"
+        assert len(engine._segment_text(text)) == 1
+
+        results = list(engine.synthesize_stream(text, voice="zm_010"))
+
+        assert results[0]["type"] == "started"
+        assert results[0]["segments"] == 3
+        assert engine._synthesize_segment.call_count == 3
+        assert results[-1]["type"] == "done"
+
     def test_stream_splits_large_kokoro_segments(self):
         from kokoro_tts.engine import TTSEngine
         from kokoro_tts.config import TTSConfig
@@ -202,6 +221,28 @@ class TestSynthesizeStream:
         assert audio_msgs[0]["index"] == 0
         assert audio_msgs[0]["segment_index"] == 0
         assert results[-1]["total_audio_chunks"] == len(audio_msgs)
+
+    def test_stream_cancel_stops_before_next_sentence_segment(self):
+        from kokoro_tts.engine import TTSEngine
+        from kokoro_tts.config import TTSConfig
+
+        engine = TTSEngine(TTSConfig(segment_length=160, stream_chunk_seconds=0.01))
+        engine._loaded = True
+        fake_audio = np.ones(5000, dtype=np.float32) * 0.1
+        engine._synthesize_segment = MagicMock(return_value=fake_audio)
+        calls = 0
+
+        def cancel_after_first_chunk():
+            nonlocal calls
+            calls += 1
+            return calls > 2
+
+        text = "这是第一句。这里是第二句。最后是第三句。"
+        results = list(engine.synthesize_stream(text, voice="zm_010", cancel_check=cancel_after_first_chunk))
+
+        assert engine._synthesize_segment.call_count == 1
+        assert [item["type"] for item in results].count("audio") == 1
+        assert results[-1]["type"] == "done"
 
     def test_format_param(self):
         from kokoro_tts.engine import TTSEngine

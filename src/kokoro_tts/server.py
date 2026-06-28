@@ -27,6 +27,7 @@ _WORKER_ENV_EXPORTS = {
     "KOKORO_MODEL_DIR": "model_path",
     "KOKORO_DEVICE": "device",
     "ANGEVOICE_DEPLOYMENT_PROFILE": "deployment_profile",
+    "ANGEVOICE_ACCESS_LOG_ENABLED": "access_log_enabled",
     "KOKORO_DEFAULT_VOICE": "default_voice",
     "KOKORO_PREFETCH_VOICES": "kokoro_prefetch_voices",
     "KOKORO_STREAM_FORMAT": "stream_format",
@@ -42,6 +43,7 @@ _WORKER_ENV_EXPORTS = {
     "KOKORO_MAX_TEXT_LENGTH": "max_text_length",
     "KOKORO_SEGMENT_LENGTH": "segment_length",
     "ANGEVOICE_SINGLE_NEWLINE_POLICY": "text_single_newline_policy",
+    "ANGEVOICE_TN_ENGINE": "angevoice_tn_engine",
     "MOSS_SEGMENT_LENGTH": "moss_segment_length",
     "ZIPVOICE_EXECUTION_PROVIDER": "zipvoice_execution_provider",
     "ZIPVOICE_CUDA_ENABLED": "zipvoice_cuda_enabled",
@@ -314,8 +316,16 @@ def run_server(config: Optional[TTSConfig] = None):
             port=cfg.port,
             workers=cfg.workers,
             ws_max_size=max(1024, int(cfg.websocket_max_message_bytes)),
+            access_log=bool(cfg.access_log_enabled),
         )
         return
 
     app = create_app(config=cfg)
-    uvicorn.run(app, host=cfg.host, port=cfg.port, workers=1, ws_max_size=max(1024, int(cfg.websocket_max_message_bytes)))
+    uvicorn.run(
+        app,
+        host=cfg.host,
+        port=cfg.port,
+        workers=1,
+        ws_max_size=max(1024, int(cfg.websocket_max_message_bytes)),
+        access_log=bool(cfg.access_log_enabled),
+    )

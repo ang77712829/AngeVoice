@@ -81,16 +81,15 @@ def test_dynamic_parameter_schema_handles_one_sided_range_without_typeerror():
     assert "大于或等于 1" in exc.value.detail
 
 
-def test_fnos_keeps_verified_profiles_and_latest_image_contract():
+def test_fnos_keeps_verified_profiles_and_versioned_image_contract():
     compose = (ROOT / "packaging/fnos/AngeVoice/app/docker/docker-compose.yaml").read_text(encoding="utf-8")
     wizard = (ROOT / "packaging/fnos/AngeVoice/wizard/install").read_text(encoding="utf-8")
     assert compose.count("profiles:") == 3
     for name in ("cpu", "gpu", "legacy-gpu"):
         assert f'profiles: ["{name}"]' in compose
-        assert f"angevoice-{name}:latest" in compose
+        assert f"angevoice-{name}:2.6.614" in compose
     assert "COMPOSE_PROFILES" in wizard
     assert "wizard_run_mode" not in wizard
-    assert ":2.6." not in compose
 
 
 def test_zipvoice_missing_prompt_asset_falls_back_to_empty_recommendations(monkeypatch):

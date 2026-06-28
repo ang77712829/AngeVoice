@@ -23,7 +23,7 @@ requested_provider / actual_provider / fallback / fallback_reason
 | 画像 | Kokoro | MOSS-TTS-Nano | ZipVoice |
 |---|---|---|---|
 | CPU | CPU | CPU | CPU ONNX INT8 |
-| 标准 GPU（Tesla P4 主路径） | CUDA | CUDA 优先 / CPU 回退 | CUDA 优先 / CPU ONNX INT8 回退 |
+| 标准 GPU（NVIDIA 主路径） | CUDA | CUDA 优先 / CPU 回退 | CUDA 优先 / CPU ONNX INT8 回退 |
 | Legacy GPU | CUDA | CPU 默认 | CPU ONNX INT8 |
 
 标准 GPU 下的 ZipVoice 可使用 `cuda_pytorch`；实际性能受硬件与驱动环境影响，可通过诊断接口查看 Provider、RTF、显存/RSS 与回退状态。
@@ -60,7 +60,7 @@ ANGEVOICE_STARTUP_PRELOAD_MODEL=kokoro
 
 服务启动时默认只在 Studio 中选中 Kokoro，不把模型权重加载进 API 主进程；首次合成会显示正在唤醒/加载模型。用户可在管理后台按模型关闭隔离，或开启启动预载，但关闭隔离后属于线程内运行，主机 RAM 仅尽力释放，不能承诺回到冷启动基线。开启预载时也通过对应 Worker 加载模型，空闲释放或切换模型时结束 Worker，以便操作系统回收 RAM/VRAM。若启用“空闲后彻底清理”，系统只在空闲卸载成功且服务完全空闲后退出进程，依赖 Docker/服务管理器自动拉起，避免单纯空闲时循环重启。
 
-默认仅保留一个已加载模型运行时：从 Kokoro 切换到 ZipVoice 或 MOSS 时会先释放旧模型 Worker，避免 NAS 内存和 Tesla P4 显存叠加占用。MOSS 长文本流式使用独立空闲等待窗口与进度帧保活，避免首帧或分段之间短暂无音频时 WebSocket 被提前关闭。
+默认仅保留一个已加载模型运行时：从 Kokoro 切换到 ZipVoice 或 MOSS 时会先释放旧模型 Worker，避免内存和显存叠加占用。MOSS 长文本流式使用独立空闲等待窗口与进度帧保活，避免首帧或分段之间短暂无音频时 WebSocket 被提前关闭。
 
 ## 资产、缓存与释放
 

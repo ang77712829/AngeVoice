@@ -15,7 +15,7 @@
 
 .admin-panel {
   min-width: 0;
-  padding: 18px;
+  padding: 20px;
 }
 
 .admin-nav { display:flex; gap:8px; flex-wrap:wrap; margin: 4px 0 10px; }
@@ -63,22 +63,23 @@
 
 .model-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .model-card {
   display: grid;
   gap: 12px;
   min-width: 0;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--control-soft);
+  box-shadow: 0 12px 34px rgba(23, 32, 51, 0.06);
 }
 
 .model-card.current {
   border-color: rgba(40, 100, 255, 0.36);
-  background: rgba(40, 100, 255, 0.07);
+  background: linear-gradient(135deg, rgba(40, 100, 255, 0.08), rgba(22, 160, 133, 0.07));
 }
 
 .model-card-main {
@@ -90,7 +91,7 @@
 
 .model-card h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.25;
 }
 
@@ -120,7 +121,7 @@
 
 .model-facts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
 }
 
@@ -135,6 +136,12 @@
   color: var(--muted);
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.model-facts span {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
 }
 
 .profile-grid {
@@ -169,6 +176,53 @@
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.dictionary-admin-summary,
+.dictionary-table {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--control-soft);
+}
+
+.dictionary-admin-summary div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dictionary-admin-summary b,
+.dictionary-table b {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.dictionary-admin-summary span,
+.dictionary-table span,
+.dictionary-table p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dictionary-table {
+  display: grid;
+  align-items: stretch;
+  margin-top: 12px;
+}
+
+.dictionary-table-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .config-tabs {
@@ -207,12 +261,13 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--control-soft);
+  box-shadow: 0 10px 26px rgba(23, 32, 51, 0.04);
 }
 
 .config-field {
   display: grid;
   gap: 8px;
-  padding: 12px;
+  padding: 14px;
 }
 
 .config-field span,
@@ -246,7 +301,7 @@
   min-height: 66px;
   align-items: center;
   gap: 10px;
-  padding: 12px;
+  padding: 14px;
 }
 
 .config-toggle-copy {
@@ -443,12 +498,18 @@
   }
 
   .model-card-main,
+  .dictionary-admin-summary,
   .request-item {
     grid-template-columns: 1fr;
   }
 
   .model-card-main {
     display: grid;
+  }
+
+  .dictionary-admin-summary {
+    display: grid;
+    align-items: start;
   }
 
   .model-facts,
@@ -532,7 +593,16 @@ button:focus-visible {
 .credential-feedback.success { color: var(--success); }
 .credential-feedback.error { color: var(--danger); }
 
-.security-warning { padding: 12px 14px; border: 1px solid rgba(255, 93, 132, .5); border-radius: 12px; background: rgba(255, 93, 132, .1); color: var(--danger); font-size: 13px; line-height: 1.55; font-weight: 650; }
+.security-warning {
+  padding: 14px 16px;
+  border: 1px solid rgba(211, 66, 95, .46);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(211, 66, 95, .13), rgba(242, 195, 107, .09));
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  font-weight: 720;
+}
 
 .update-card {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;

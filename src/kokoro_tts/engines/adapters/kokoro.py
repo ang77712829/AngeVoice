@@ -66,6 +66,14 @@ class KokoroAdapter:
         else:
             self._engine.unload()
 
+    def soft_cancel(self) -> None:
+        if self._worker is not None:
+            self._worker.soft_cancel()
+            return
+        soft_cancel = getattr(self._engine, "soft_cancel", None)
+        if callable(soft_cancel):
+            soft_cancel()
+
     def synthesize(self, text: str, voice: str = "zm_010", speed: float = 1.0) -> bytes:
         if self._worker is None:
             return self._engine.synthesize(text, voice, speed)

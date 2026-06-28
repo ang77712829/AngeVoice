@@ -2,10 +2,22 @@ let lastData = null;
 let lastConfigPayload = null;
 let activeGroup = 'kokoro';
 let activeAdminTab = 'overview';
+const MIB = 1024 * 1024;
+const BYTE_FIELD_HINT = '按 MiB 显示和编辑，保存时会自动转换为后端 bytes。';
+const messages = {
+  'nav.config.text': '文本与词典',
+  'action.force_stop': '终止进程',
+  'confirm.force_unload_model': '终止 {model} 的模型进程？正在运行的请求会被中断。',
+  'confirm.force_unload_all': '终止所有模型进程？正在运行的请求会被中断。',
+  'toast.force_unloaded': '已终止模型进程',
+  'config.runtime.has_overrides': '当前有 <b>{count}</b> 项后台配置覆盖 ENV：<code>{path}</code>',
+  'config.runtime.no_overrides': '当前没有后台持久化配置，主要使用 ENV / 默认值。',
+};
 const adminSubtabs = {
   config: [
     { key: 'config.runtime', label: '运行配置' },
     { key: 'config.quality', label: '音频质量' },
+    { key: 'config.text', label: messages['nav.config.text'] },
   ],
   security: [
     { key: 'security.auth', label: '鉴权与访问' },
@@ -19,6 +31,17 @@ const adminSubtabs = {
 const activeSubtab = { config: 'config.runtime', security: 'security.auth', api: 'api.diagnostics' };
 
 const $ = id => document.getElementById(id);
+
+function t(key, params = {}) {
+  if (window.AngeVoiceI18n?.t && window.AngeVoiceLocaleMessages?.[key]) {
+    return window.AngeVoiceI18n.t(key, params);
+  }
+  let template = messages[key] || key;
+  Object.entries(params).forEach(([name, value]) => {
+    template = template.replaceAll(`{${name}}`, String(value));
+  });
+  return template;
+}
 
 async function api(path, options = {}) {
   const res = await fetch(path, options);
@@ -84,6 +107,16 @@ function formatBytes(value) {
   let idx = 0;
   while (size >= 1024 && idx < units.length - 1) { size /= 1024; idx += 1; }
   return `${size.toFixed(idx ? 1 : 0)} ${units[idx]}`;
+}
+
+function isByteConfigField(field) {
+  return field?.type === 'int' && /(^|_)bytes$|max_bytes/.test(String(field.key || ''));
+}
+
+function bytesToMiB(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round((n / MIB) * 100) / 100;
 }
 
 function shortNumber(value) {
@@ -201,9 +234,9 @@ function modelCard(m) {
       <button class="ghost-button small" data-load="${id}" type="button">加载</button>
       <button class="ghost-button small" data-switch="${id}" type="button">切换</button>
       <button class="ghost-button small" data-unload="${id}" type="button">释放</button>
-      <button class="danger-button small" data-force-unload="${id}" type="button">强制</button>
-      <button class="ghost-button small" data-asset-check="${id}" type="button">校验资产</button>
-      <button class="ghost-button small" data-asset-repair="${id}" type="button">修复资产</button>
+      <button class="danger-button small" data-force-unload="${id}" type="button">${escapeHtml(t('action.force_stop'))}</button>
+      <button class="ghost-button small" data-asset-check="${id}" type="button">检测模型文件</button>
+      <button class="ghost-button small" data-asset-repair="${id}" type="button">下载/修复模型文件</button>
     </div>
   </article>`;
 }
@@ -237,18 +270,25 @@ function fieldInput(field, value) {
     </label>`;
   }
   const type = field.type === 'int' || field.type === 'float' ? 'number' : 'text';
-  const min = field.min != null ? ` min="${escapeHtml(field.min)}"` : '';
-  const max = field.max != null ? ` max="${escapeHtml(field.max)}"` : '';
-  const step = field.step != null ? ` step="${escapeHtml(field.step)}"` : '';
+  const byteField = isByteConfigField(field);
+  const displayValue = byteField ? bytesToMiB(value) : value;
+  const minValue = byteField && field.min != null ? bytesToMiB(field.min) : field.min;
+  const maxValue = byteField && field.max != null ? bytesToMiB(field.max) : field.max;
+  const stepValue = byteField ? 1 : field.step;
+  const min = minValue != null ? ` min="${escapeHtml(minValue)}"` : '';
+  const max = maxValue != null ? ` max="${escapeHtml(maxValue)}"` : '';
+  const step = stepValue != null ? ` step="${escapeHtml(stepValue)}"` : '';
+  const unit = byteField ? ' <b class="badge">MiB</b>' : '';
+  const help = byteField ? [BYTE_FIELD_HINT, field.help].filter(Boolean).join(' ') : field.help;
   return `<label class="config-field">
-    <span>${escapeHtml(field.label)} ${fieldBadge(field)}</span>
-    <input data-config-field="${key}" type="${type}" value="${escapeHtml(value)}"${min}${max}${step}>
-    ${field.help ? `<small>${escapeHtml(field.help)}</small>` : ''}
+    <span>${escapeHtml(field.label)}${unit} ${fieldBadge(field)}</span>
+    <input data-config-field="${key}" ${byteField ? 'data-config-unit="mib"' : ''} type="${type}" value="${escapeHtml(displayValue)}"${min}${max}${step}>
+    ${help ? `<small>${escapeHtml(help)}</small>` : ''}
   </label>`;
 }
 
 function renderConfigTabs(schema) {
-  const tabs = (schema.groups || []).filter(group => group.key !== 'advanced');
+  const tabs = (schema.groups || []).filter(group => !['advanced', 'text'].includes(group.key));
   if (!tabs.some(group => group.key === activeGroup)) activeGroup = tabs[0]?.key || 'kokoro';
   $('config-tabs').innerHTML = tabs.map(group => (
     `<button class="${group.key === activeGroup ? 'active' : ''}" data-config-group="${escapeHtml(group.key)}" type="button">${escapeHtml(group.label)}</button>`
@@ -263,8 +303,8 @@ function renderConfigForms(payload) {
   if (note) {
     const count = Number(runtime.field_count || 0);
     note.innerHTML = runtime.exists
-      ? `当前有 <b>${count}</b> 项 Admin 持久化配置覆盖 ENV：<code>${escapeHtml(runtime.path || '')}</code>`
-      : `当前没有 Admin 持久化配置，主要使用 ENV / 默认值。`;
+      ? t('config.runtime.has_overrides', { count, path: escapeHtml(runtime.path || '') })
+      : t('config.runtime.no_overrides');
     note.classList.toggle('warn', runtime.exists && count > 0);
   }
   renderConfigTabs(schema);
@@ -281,6 +321,13 @@ function renderConfigForms(payload) {
   if (advancedDetails) {
     advancedDetails.classList.toggle('hidden-panel', advancedFields.length === 0);
     if (advancedFields.length === 0) advancedDetails.removeAttribute('open');
+  }
+  const textForm = $('text-config-form');
+  if (textForm) {
+    textForm.innerHTML = fields
+      .filter(field => field.group === 'text')
+      .map(field => fieldInput(field, values[field.key] ?? field.default))
+      .join('');
   }
 }
 
@@ -360,7 +407,8 @@ function collectConfigValues() {
     if (field.type === 'bool') {
       body[key] = input.checked;
     } else if (field.type === 'int') {
-      body[key] = Number.parseInt(input.value, 10);
+      const value = input.dataset.configUnit === 'mib' ? Number(input.value) * MIB : Number.parseInt(input.value, 10);
+      body[key] = Number.isFinite(value) ? Math.round(value) : value;
     } else if (field.type === 'float') {
       body[key] = Number.parseFloat(input.value);
     } else {
@@ -408,25 +456,25 @@ async function switchModel(modelId) {
 }
 
 async function unloadModel(modelId, force = false) {
-  if (force && !confirm(`强制释放 ${modelId}？正在运行的请求会被中断。`)) return;
+  if (force && !confirm(t('confirm.force_unload_model', { model: modelId }))) return;
   await api(`/admin/api/models/${encodeURIComponent(modelId)}/unload`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({force})
   });
   await refresh();
-  toast(force ? '已强制释放' : '已释放模型');
+  toast(force ? t('toast.force_unloaded') : '已释放模型');
 }
 
 async function checkAsset(modelId) {
   const data = await api('/admin/api/assets?full_verify_zipvoice=true');
   const key = modelId.startsWith('moss') ? 'moss' : modelId;
   const asset = data.models?.[key] || {};
-  toast(`${modelId} 资产状态：${asset.ready ? '完整' : '缺失/待修复'}`, !asset.ready);
+  toast(`${modelId} 模型文件：${asset.ready ? '完整' : '缺失或需要修复'}`, !asset.ready);
 }
 
 async function repairAsset(modelId) {
-  if (!confirm(`修复 ${modelId} 资产？空闲模型将先释放，并可能重新下载缺失文件。`)) return;
+  if (!confirm(`下载或修复 ${modelId} 模型文件？空闲模型将先释放，并可能重新下载缺失文件。`)) return;
   const data = await api(`/admin/api/assets/${encodeURIComponent(modelId)}/repair`, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({force_unload: false})
   });
@@ -519,10 +567,10 @@ $('unload-btn').onclick = async () => {
   toast('已释放空闲模型');
 };
 $('force-unload-btn').onclick = async () => {
-  if (!confirm('强制释放所有模型？正在运行的请求会被中断。')) return;
+  if (!confirm(t('confirm.force_unload_all'))) return;
   await api('/admin/api/models/unload', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({include_current: true, force: true})});
   await refresh();
-  toast('已强制释放模型');
+  toast(t('toast.force_unloaded'));
 };
 $('save-config-btn').onclick = () => saveConfig().catch(err => toast(err.message, true));
 $('reveal-key-btn').onclick = async () => {

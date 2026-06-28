@@ -2,7 +2,7 @@ name: angevoice-gpu
 
 services:
   angevoice-gpu:
-    image: maxblack777/angevoice-gpu:latest
+    image: maxblack777/angevoice-gpu:2.6.614
     container_name: angevoice-gpu
     build:
       context: ../..
@@ -68,7 +68,7 @@ services:
       ZIPVOICE_EXECUTION_PROVIDER: cuda
       ZIPVOICE_CUDA_ENABLED: "true"
       ZIPVOICE_AUTO_FALLBACK_CPU: "true"
-      # Tesla P4 8GB 初始保守预算；出现 OOM 时应保留 fallback 证据并进一步调低。
+      # 8GB 显存初始保守预算；出现 OOM 时应保留 fallback 证据并进一步调低。
       ZIPVOICE_CUDA_MAX_DURATION: "36"
       ZIPVOICE_CUDA_DEVICE_INDEX: "0"
       ZIPVOICE_CPU_THREADS: "4"

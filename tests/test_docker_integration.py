@@ -10,6 +10,44 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 
 
+def _route_paths(app):
+    """Return registered route paths without assuming every route object exposes .path.
+
+    FastAPI/Starlette may include router or mount sentinel objects whose public
+    attributes vary between versions.  _IncludedRouter objects (Starlette ≥0.46)
+    wrap an ``original_router`` whose inner routes *do* expose .path, so we
+    recurse into those as well.
+    """
+    paths = []
+    for route in app.routes:
+        p = getattr(route, "path", None)
+        if isinstance(p, str):
+            paths.append(p)
+        # _IncludedRouter wraps an APIRouter — recurse into it
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            for ir in getattr(inner, "routes", []):
+                p = getattr(ir, "path", None)
+                if isinstance(p, str):
+                    paths.append(p)
+    return paths
+
+
+def _websocket_routes(app, path: str):
+    from fastapi.routing import APIWebSocketRoute
+
+    matches = []
+    for route in app.routes:
+        if getattr(route, "path", None) == path and isinstance(route, APIWebSocketRoute):
+            matches.append(route)
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            for ir in getattr(inner, "routes", []):
+                if getattr(ir, "path", None) == path and isinstance(ir, APIWebSocketRoute):
+                    matches.append(ir)
+    return matches
+
+
 @pytest.fixture
 def mock_engine():
     """创建完全 mock 的 TTSEngine"""
@@ -196,7 +234,7 @@ class TestHTTPEndpoints:
 
     def test_routes_intact(self, app_with_mock):
         """验证所有原有路由未被破坏"""
-        routes = [route.path for route in app_with_mock.routes]
+        routes = _route_paths(app_with_mock)
         assert "/v1/audio/speech" in routes
         assert "/api/tts" in routes
         assert "/health" in routes
@@ -209,12 +247,12 @@ class TestWebSocketStructure:
     """WebSocket 端点结构验证"""
 
     def test_ws_route_exists(self, app_with_mock):
-        routes = [route.path for route in app_with_mock.routes]
+        routes = _route_paths(app_with_mock)
         assert "/ws/v1/tts" in routes
 
     def test_ws_handler_is_websocket(self, app_with_mock):
         """验证 WebSocket handler 注册正确"""
-        ws_routes = [r for r in app_with_mock.routes if hasattr(r, 'path') and r.path == '/ws/v1/tts']
+        ws_routes = _websocket_routes(app_with_mock, '/ws/v1/tts')
         assert len(ws_routes) == 1
         route = ws_routes[0]
         # WebSocket 路由应支持 websocket 方法。
