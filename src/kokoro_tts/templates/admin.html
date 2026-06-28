@@ -68,7 +68,7 @@
           <div class="button-row">
             <button class="secondary-button small-action" id="clear-cache-btn" type="button">清缓存</button>
             <button class="danger-button small-action" id="unload-btn" type="button">释放</button>
-            <button class="danger-button small-action" id="force-unload-btn" type="button">强制</button>
+            <button class="danger-button small-action" id="force-unload-btn" type="button">终止进程</button>
           </div>
         </div>
         <div class="model-list" id="models-body"></div>
@@ -101,6 +101,29 @@
           </div>
         </div>
         <div class="profile-grid" id="profile-grid"></div>
+      </article>
+      <article class="panel admin-panel tuning-panel" data-admin-panel="config" data-admin-subpanel="config.text">
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">文本预处理</p>
+            <h2>文本与词典</h2>
+          </div>
+        </div>
+        <div class="dictionary-admin-summary">
+          <div>
+            <b>当前阶段：实验性文本处理</b>
+            <span>默认策略可在这里持久化；Studio 前台仍可按单次合成覆盖。用户词典、品牌改写和多音字词库管理尚未默认启用。</span>
+          </div>
+          <a class="ghost-button small" href="/">前往 Studio</a>
+        </div>
+        <div class="config-form" id="text-config-form"></div>
+        <div class="dictionary-table">
+          <div class="dictionary-table-head">
+            <b>词典分页</b>
+            <span>预留管理面板</span>
+          </div>
+          <p class="empty-state">当前 recovery 线未启用用户词典。后续接入时应独立分页、独立开关，并继续保持 Kokoro / MOSS / ZipVoice 隔离。</p>
+        </div>
       </article>
 
       <article class="panel admin-panel security-panel" data-admin-panel="security" data-admin-subpanel="security.auth">
@@ -175,6 +198,8 @@
 
     <div class="admin-toast" id="admin-toast" role="status" aria-live="polite"></div>
   </main>
+  <script src="/static/locale/messages.zh-cn.js?h=1" defer></script>
+  <script src="/static/locale/translate.js?h=1" defer></script>
   <script src="/static/admin.js?h=e07f1e9c7b33" defer></script>
 </body>
 </html>

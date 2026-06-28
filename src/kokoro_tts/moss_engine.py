@@ -330,6 +330,10 @@ class MossNanoEngine(MossStreamingMixin):
         except Exception:
             logger.debug("MOSS CUDA cache cleanup skipped", exc_info=True)
 
+    def soft_cancel(self) -> None:
+        if self._process_client is not None:
+            self._process_client.soft_cancel()
+
     def synthesize(self, text: str, voice: str = "", speed: float = 1.0, prompt_audio_path: str | None = None) -> bytes:
         waveform = self.synthesize_array(text=text, voice=voice, speed=speed, prompt_audio_path=prompt_audio_path)
         return write_wav_bytes(waveform, self.sample_rate)

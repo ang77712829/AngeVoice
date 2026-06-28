@@ -150,7 +150,7 @@ MOSS_CUDA_ENABLED=true
 MOSS_EXECUTION_PROVIDER=cuda
 ```
 
-Tesla P4 / P40 / V100 等老卡如果宿主机驱动较新，也建议优先尝试通用 `gpu` 画像。MOSS CUDA 推荐组合：
+旧款 NVIDIA GPU 如果宿主机驱动较新，也建议优先尝试通用 `gpu` 画像。MOSS CUDA 推荐组合：
 
 ```text
 onnxruntime-gpu==1.20.2
@@ -309,7 +309,7 @@ nvidia-smi
 docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 ```
 
-单张 8GB 卡不建议同时跑多个会加载 GPU 模型的容器。`MOSS_CUDA_MEMORY_LIMIT_MB` 默认保持 `0`；只有在 Tesla P4、RTX 3070 这类紧张环境排障时，才建议手动设置成 `4096` 或更低测试。
+单张 8GB 显存设备不建议同时跑多个会加载 GPU 模型的容器。`MOSS_CUDA_MEMORY_LIMIT_MB` 默认保持 `0`；只有在显存紧张环境排障时，才建议手动设置成 `4096` 或更低测试。
 
 正式 Docker 与 fnOS 模板默认对三模型开启进程级隔离；它和播放音质不是同一个开关，而是空闲 RAM/VRAM 回收与卡死恢复策略：
 
@@ -633,7 +633,7 @@ KOKORO_TRUST_PROXY_HEADERS=true
 
 ## MOSS 长文本仍有卡顿/爆音
 
-优先确认 `MOSS_SEGMENT_LENGTH=120` 和 `MOSS_MIXED_ENGLISH_POLICY=translate` 已生效。它只影响 MOSS 分段，不影响 Kokoro。P4/NAS 默认用较短分段降低中英文混合尾部变调、卡顿和失真；高显存机器可在后台尝试 180~260。
+优先确认 `MOSS_SEGMENT_LENGTH=120` 和 `MOSS_MIXED_ENGLISH_POLICY=translate` 已生效。它只影响 MOSS 分段，不影响 Kokoro。默认较短分段用于降低中英文混合尾部变调、卡顿和失真；高显存机器可在后台尝试 180~260。
 
 
 ## MOSS 切换时报 browser_onnx model assets not found

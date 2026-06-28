@@ -75,6 +75,17 @@ def _normalize_response_encoding(value: str | None) -> str:
     raise HTTPException(status_code=400, detail="response_encoding must be binary or base64")
 
 
+def _text_normalization_from(data) -> str | None:
+    if not hasattr(data, "get"):
+        return None
+    value = data.get("text_normalization")
+    if value in {None, ""}:
+        value = data.get("tn_engine")
+    if value in {None, ""}:
+        return None
+    return str(value)
+
+
 def _audio_metadata_for_model(state: ServiceState, model_id: str) -> dict:
     """尽力获取音频元数据，不强制加载模型。"""
     try:
@@ -88,6 +99,14 @@ def _audio_metadata_for_model(state: ServiceState, model_id: str) -> dict:
         "sample_rate": snapshot.get("sample_rate") or state.cfg.sample_rate,
         "channels": snapshot.get("channels") or 1,
     }
+
+
+def _request_id_for_http_request(request: Request, state: ServiceState) -> str:
+    return state.request_id_from_client(
+        request.headers.get("X-Client-Request-ID")
+        or request.headers.get("X-Request-ID")
+        or request.query_params.get("request_id")
+    )
 
 
 def _audio_json_response(
@@ -176,6 +195,7 @@ async def _parse_json_tts_parameters(request: Request, cfg) -> dict:
         "prompt_audio_path": None,
         "prompt_audio_id": "",
         "engine_params": data.get("engine_params") if isinstance(data.get("engine_params"), dict) else {},
+        "text_normalization": _text_normalization_from(data),
         "parameter_source": data,
     }
 
@@ -208,6 +228,7 @@ async def _parse_form_tts_parameters(request: Request, state: ServiceState, requ
         "prompt_audio_path": prompt_audio_path,
         "prompt_audio_id": prompt_audio_id,
         "engine_params": {},
+        "text_normalization": _text_normalization_from(form),
         "parameter_source": form,
     }
 
@@ -225,7 +246,7 @@ def create_audio_router(state: ServiceState, verify_api_key) -> APIRouter:
 
     @router.post("/v1/audio/speech")
     async def openai_tts(request: Request, _=Depends(verify_api_key)):
-        request_id = state.new_request_id()
+        request_id = _request_id_for_http_request(request, state)
         req = _build_openai_request(await _read_limited_json(request, cfg.tts_request_max_bytes))
         response_encoding = _normalize_response_encoding(req.response_encoding)
         internal_request = state.synthesis.build_request(
@@ -237,6 +258,7 @@ def create_audio_router(state: ServiceState, verify_api_key) -> APIRouter:
             model_id=req.model,
             engine_params=req.engine_params,
             parameter_source=req.model_dump(),
+            text_normalization=req.text_normalization,
             request_id=request_id,
         )
         model = internal_request.model_id
@@ -257,7 +279,7 @@ def create_audio_router(state: ServiceState, verify_api_key) -> APIRouter:
 
     @router.post("/api/tts")
     async def tts_post(request: Request, _=Depends(verify_api_key)):
-        request_id = state.new_request_id()
+        request_id = _request_id_for_http_request(request, state)
         params = await _parse_tts_post_parameters(request, state, request_id, cfg)
         prompt_audio_path = params["prompt_audio_path"]
 
@@ -268,7 +290,7 @@ def create_audio_router(state: ServiceState, verify_api_key) -> APIRouter:
                 response_encoding=response_encoding, model_id=params["model"], request_id=request_id,
                 prompt_audio_path=prompt_audio_path, prompt_audio_id=params["prompt_audio_id"],
                 prompt_text=params["prompt_text"], engine_params=params["engine_params"],
-                parameter_source=params["parameter_source"],
+                parameter_source=params["parameter_source"], text_normalization=params["text_normalization"],
             )
             model = internal_request.model_id
             audio_bytes, media_type = await _run_tts_call(
@@ -300,13 +322,16 @@ def create_audio_router(state: ServiceState, verify_api_key) -> APIRouter:
         model: str | None = None,
         zipvoice_num_steps: int | None = None,
         zipvoice_remove_long_sil: bool | None = None,
+        text_normalization: str | None = None,
+        request_id: str | None = None,
         _=Depends(verify_api_key),
     ):
-        request_id = state.new_request_id()
+        request_id = state.request_id_from_client(request_id)
         response_encoding = _normalize_response_encoding(response_encoding)
         internal_request = state.synthesis.build_request(
             text=text, voice=voice, speed=speed, response_format=response_format,
             response_encoding=response_encoding, model_id=model, request_id=request_id,
+            text_normalization=text_normalization,
             parameter_source={"zipvoice_num_steps": zipvoice_num_steps, "zipvoice_remove_long_sil": zipvoice_remove_long_sil},
         )
         model = internal_request.model_id

@@ -212,12 +212,16 @@ class TtsWebSocketSession:
                     )
 
             supplied = msg.get("engine_params") if isinstance(msg.get("engine_params"), dict) else {}
+            text_normalization = msg.get("text_normalization")
+            if text_normalization in {None, ""}:
+                text_normalization = msg.get("tn_engine")
             return self.state.streaming.build_request(
                 text=msg.get("text", ""), model_id=model, voice=voice,
                 speed=msg.get("speed", self.cfg.default_speed), audio_format=fmt, binary=binary,
                 prompt_audio_path=self.prompt_audio_path, prompt_audio_id=self.prompt_audio_id,
                 prompt_text=str(msg.get("prompt_text") or "").strip(),
-                engine_params=supplied, parameter_source=msg, request_id=self.request_id,
+                engine_params=supplied, parameter_source=msg, text_normalization=text_normalization,
+                request_id=self.request_id,
             )
         except HTTPException as exc:
             await self.websocket.send_json(websocket_error_frame_from_http(exc, request_id=self.request_id))
@@ -248,6 +252,9 @@ class TtsWebSocketSession:
         )
 
         async with self.state.tts_semaphore:
+            if self.state.is_cancelled(self.request_id):
+                self.state.finish_request(self.request_id, "cancelled")
+                return
             self._transition(WsSessionState.RUNNING, model=request.model_id)
             self.state.mark_request(self.request_id, "running")
             self.control_task = asyncio.create_task(self._control_listener())

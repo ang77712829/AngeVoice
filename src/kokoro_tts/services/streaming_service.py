@@ -7,8 +7,11 @@ import logging
 from dataclasses import replace
 from typing import Any, Callable, Iterator, TYPE_CHECKING
 
+from fastapi import HTTPException
+
 from ..contracts import CancellationContext, GenerationParameters, StreamingRequest, StreamingResult
-from ..validation import prepare_text_for_synthesis, validate_model_speed, validate_tts_text
+from ..text.frontend import cfg_with_tn_engine
+from ..validation import prepare_text_for_synthesis, validate_model_speed
 
 if TYPE_CHECKING:
     from ..service_state import ServiceState
@@ -35,9 +38,14 @@ class StreamingService:
         prompt_text: str = "",
         engine_params: dict[str, Any] | None = None,
         parameter_source: Any | None = None,
+        text_normalization: str | None = None,
         request_id: str = "",
     ) -> StreamingRequest:
         model = self.state.model_manager.normalize_model_id(model_id)
+        try:
+            text_cfg = cfg_with_tn_engine(self.cfg, text_normalization)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         condition = self.state.voice_profiles.resolve_condition(
             model,
             voice,
@@ -45,17 +53,14 @@ class StreamingService:
             prompt_audio_id=prompt_audio_id,
             prompt_text=prompt_text,
         )
-        if model == "zipvoice":
-            clean_text = prepare_text_for_synthesis(text, self.cfg, model_id=model, field_name="text", request_id=request_id)
-            if condition.prompt_text:
-                condition = replace(
-                    condition,
-                    prompt_text=prepare_text_for_synthesis(
-                        condition.prompt_text, self.cfg, model_id=model, field_name="prompt_text", request_id=request_id
-                    ),
-                )
-        else:
-            clean_text = validate_tts_text(text, self.cfg)
+        clean_text = prepare_text_for_synthesis(text, text_cfg, model_id=model, field_name="text", request_id=request_id)
+        if model == "zipvoice" and condition.prompt_text:
+            condition = replace(
+                condition,
+                prompt_text=prepare_text_for_synthesis(
+                    condition.prompt_text, text_cfg, model_id=model, field_name="prompt_text", request_id=request_id
+                ),
+            )
         return StreamingRequest(
             text=clean_text,
             model_id=model,
@@ -87,6 +92,10 @@ class StreamingService:
                 candidates["prompt_text"] = request.condition.prompt_text
             if cancel_check is not None:
                 candidates["cancel_check"] = cancellation.cancelled
+            if request.model_id == "zipvoice":
+                candidates["text_prepared"] = True
+                if request.condition.prompt_text:
+                    candidates["prompt_text_prepared"] = True
             kwargs = self._supported_kwargs(engine.synthesize_stream, candidates)
             saw_terminal_frame = False
             for chunk in engine.synthesize_stream(request.text, request.voice, request.speed, request.audio_format, **kwargs):

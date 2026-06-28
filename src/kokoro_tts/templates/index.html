@@ -26,38 +26,70 @@
   <main class="app-shell">
     <header class="topbar">
       <div class="brand-mark brand-wordmark" aria-hidden="true"><span class="name-ange">Ange</span><span class="name-voice">Voice</span></div>
-      <div class="brand-copy"><p class="eyebrow">AngeVoice Studio</p><h1>中文 TTS 控制台</h1></div>
+      <div class="brand-copy"><p class="eyebrow" data-i18n="top.studio">AngeVoice Studio</p><h1 data-i18n="top.title">中文 TTS 控制台</h1></div>
       <div class="topbar-actions">
-        <a href="/admin" class="ghost-button small" style="display:inline-flex;align-items:center;text-decoration:none;">管理后台</a>
-        <a href="/api-docs" class="ghost-button small" style="display:inline-flex;align-items:center;text-decoration:none;">API 文档</a>
-        <span class="status-pill" id="health-pill"><span></span><b>连接中</b></span>
-        <button type="button" class="icon-button" id="theme-btn" title="切换主题" aria-label="切换主题">☾</button>
-        <button type="button" class="icon-button" id="settings-btn" title="服务设置" aria-label="服务设置">⚙</button>
+        <a href="/admin" class="ghost-button small topbar-link" data-i18n="top.admin">管理后台</a>
+        <a href="/api-docs" class="ghost-button small topbar-link" data-i18n="top.api">API 文档</a>
+        <span class="status-pill" id="health-pill"><span></span><b data-i18n="top.connecting">连接中</b></span>
+        <details class="locale-menu" data-locale-menu>
+          <summary class="icon-button locale-summary" data-i18n-title="top.language"><span aria-hidden="true">文</span><b data-current-locale>简体中文</b></summary>
+          <div class="locale-options">
+            <button type="button" data-locale-choice="zh-CN" data-i18n="language.zh">简体中文</button>
+            <button type="button" data-locale-choice="en" data-i18n="language.en">English</button>
+          </div>
+        </details>
+        <button type="button" class="icon-button" id="theme-btn" data-i18n-title="top.theme">☾</button>
+        <button type="button" class="icon-button" id="settings-btn" data-i18n-title="top.settings">⚙</button>
       </div>
     </header>
 
+    <section class="security-banner" id="security-banner" hidden>
+      <div>
+        <p class="eyebrow" data-i18n="security.eyebrow">Security</p>
+        <h2 data-i18n="security.default_title">请修改默认管理密码</h2>
+        <p id="security-banner-message" data-i18n="security.default_desc">当前仍在使用首次默认管理员账号密码。请进入管理后台安全页修改后再暴露到不可信网络。</p>
+      </div>
+      <a href="/admin" class="primary-button small" data-i18n="security.open_admin">打开管理后台</a>
+    </section>
+
     <section class="stats-drawer" id="stats-drawer">
-      <div class="stats-header"><div><p class="eyebrow">Telemetry</p><h2>服务统计</h2></div><button type="button" class="ghost-button small" id="metrics-toggle">收起</button></div>
+      <div class="stats-header"><div><p class="eyebrow" data-i18n="stats.eyebrow">Telemetry</p><h2 data-i18n="stats.title">服务统计</h2></div><button type="button" class="ghost-button small" id="metrics-toggle" data-i18n="stats.collapse">收起</button></div>
       <div class="metrics-grid" id="metrics-grid">
-        <article class="metric-card spotlight"><span>请求</span><strong id="metric-requests">0</strong></article>
-        <article class="metric-card spotlight"><span>缓存</span><strong id="metric-cache">0</strong></article>
-        <article class="metric-card spotlight"><span>音色</span><strong id="metric-voices">0</strong></article>
-        <article class="metric-card spotlight"><span>并发</span><strong id="metric-active">0</strong></article>
+        <article class="metric-card spotlight"><span data-i18n="stats.requests">请求</span><strong id="metric-requests">0</strong></article>
+        <article class="metric-card spotlight"><span data-i18n="stats.cache">缓存</span><strong id="metric-cache">0</strong></article>
+        <article class="metric-card spotlight"><span data-i18n="stats.voices">音色</span><strong id="metric-voices">0</strong></article>
+        <article class="metric-card spotlight"><span data-i18n="stats.active">并发</span><strong id="metric-active">0</strong></article>
       </div>
     </section>
 
     <section class="workspace">
       <form class="composer panel spotlight" id="tts-form">
-        <div class="section-head"><div><p class="eyebrow">Compose</p><h2>文本与参数</h2></div><span class="counter"><b id="char-count">0</b>/<span id="max-count">10000</span></span></div>
-        <textarea id="text" maxlength="10000" spellcheck="false">你好，欢迎使用 AngeVoice。</textarea>
+        <div class="section-head"><div><p class="eyebrow" data-i18n="compose.eyebrow">Compose</p><h2 data-i18n="compose.title">文本与参数</h2></div><span class="counter"><b id="char-count">0</b>/<span id="max-count">10000</span></span></div>
+        <textarea id="text" maxlength="10000" spellcheck="false" data-i18n-placeholder="compose.placeholder">你好，欢迎使用 AngeVoice。</textarea>
+        <section class="text-tools-card" aria-label="文本预处理">
+          <div>
+            <p class="eyebrow" data-i18n="text_tools.eyebrow">文本预处理</p>
+            <h3 data-i18n="text_tools.title">数字与日期处理</h3>
+            <p data-i18n="text_tools.desc">为本次合成处理数字、日期、金额等文本；不会修改后台默认配置。</p>
+          </div>
+          <label class="field text-normalization-field">
+            <span data-i18n="text_tools.mode">处理方式</span>
+            <select id="text-normalization">
+              <option value="default" data-i18n="text_tools.default">跟随后台默认</option>
+              <option value="wetext" data-i18n="text_tools.wetext">标准：数字/日期/金额</option>
+              <option value="legacy" data-i18n="text_tools.legacy">保守：2.6.613 规则</option>
+              <option value="off" data-i18n="text_tools.off">关闭：仅基础清理</option>
+            </select>
+          </label>
+        </section>
         <div class="controls-grid">
-          <label class="field"><span>模型 <b id="model-status">当前</b></span><select id="model-select"></select></label>
-          <label class="field"><span>音色</span><select id="voice"></select></label>
-          <label class="field"><span>语速 <b id="speed-value">1.0</b></span><input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0" /></label>
-          <label class="toggle-row"><input type="checkbox" id="stream-toggle" checked /><span>流式播放</span></label>
+          <label class="field"><span><span data-i18n="field.model">模型</span> <b id="model-status" data-i18n="field.current">当前</b></span><select id="model-select"></select></label>
+          <label class="field"><span data-i18n="field.voice">音色</span><select id="voice"></select></label>
+          <label class="field"><span><span data-i18n="field.speed">语速</span> <b id="speed-value">1.0</b></span><input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0" /></label>
+          <label class="toggle-row"><input type="checkbox" id="stream-toggle" checked /><span data-i18n="field.stream">流式播放</span></label>
         </div>
         <section class="engine-parameters" id="engine-parameters" hidden>
-          <div class="engine-parameters-title"><p class="eyebrow">Engine Parameters</p><span>由模型 schema 动态提供</span></div>
+          <div class="engine-parameters-title"><p class="eyebrow" data-i18n="engine.eyebrow">Engine Parameters</p><span data-i18n="engine.dynamic">由模型 schema 动态提供</span></div>
           <div class="engine-parameter-fields" id="engine-parameter-fields"></div>
         </section>
         <div class="clone-panel" id="clone-panel" hidden>
@@ -93,22 +125,22 @@
           </section>
         </div>
         <div class="button-row">
-          <button type="submit" class="primary-button glare" id="generate-btn">生成语音</button>
-          <button type="button" class="secondary-button" id="preview-btn">试听</button>
-          <button type="button" class="danger-button" id="stop-btn" disabled>停止</button>
-          <button type="button" class="ghost-button" id="clear-btn">清空</button>
+          <button type="submit" class="primary-button glare" id="generate-btn" data-i18n="action.generate">生成语音</button>
+          <button type="button" class="secondary-button" id="preview-btn" data-i18n="action.preview">试听</button>
+          <button type="button" class="danger-button" id="stop-btn" disabled data-i18n="action.stop">停止</button>
+          <button type="button" class="ghost-button" id="clear-btn" data-i18n="action.clear">清空</button>
         </div>
         <div class="progress-track" id="progress-track" aria-live="polite"></div>
       </form>
       <aside class="side-panel">
         <section class="panel voice-panel spotlight">
-          <div class="section-head compact"><div><p class="eyebrow">Voices</p><h2>音色库</h2></div><button type="button" class="ghost-button small" id="favorite-btn">收藏</button></div>
-          <input class="search-input" id="voice-search" type="search" placeholder="搜索音色" />
+          <div class="section-head compact"><div><p class="eyebrow" data-i18n="voices.eyebrow">Voices</p><h2 data-i18n="voices.title">音色库</h2></div><button type="button" class="ghost-button small" id="favorite-btn" data-i18n="voices.favorite">收藏</button></div>
+          <input class="search-input" id="voice-search" type="search" placeholder="搜索音色" data-i18n-placeholder="voices.search" />
           <div class="voice-tabs" id="voice-tabs"></div>
           <div class="voice-list" id="voice-list"></div>
         </section>
         <section class="panel player-panel spotlight">
-          <div class="section-head compact"><div><p class="eyebrow">Playback</p><h2>播放</h2></div><button type="button" class="ghost-button small" id="download-btn" disabled>下载</button></div>
+          <div class="section-head compact"><div><p class="eyebrow" data-i18n="playback.eyebrow">Playback</p><h2 data-i18n="playback.title">播放</h2></div><button type="button" class="ghost-button small" id="download-btn" disabled data-i18n="playback.download">下载</button></div>
           <audio id="audio-player" controls></audio>
           <div class="request-log" id="request-log"></div>
         </section>
@@ -118,12 +150,16 @@
 
   <dialog class="settings-dialog" id="settings-dialog">
     <form method="dialog" class="settings-card">
-      <div class="section-head"><div><p class="eyebrow">Access</p><h2>API Key</h2></div><button type="submit" class="icon-button" aria-label="关闭">×</button></div>
-      <label class="field"><span>API Key（Bearer Token）</span><input type="password" id="api-token" autocomplete="off" placeholder="KOKORO_API_KEY" /></label>
-      <p class="hint">生产模板可使用 <code>KOKORO_API_KEY=auto</code> 自动生成；如果已开启管理后台，可在 <a href="/admin">管理后台</a> 查看或轮换；未开启时请查看启动日志或 <code>ANGEVOICE_API_KEY_FILE</code>。</p>
-      <div class="button-row"><button type="button" class="primary-button" id="save-token-btn">保存</button><button type="button" class="ghost-button" id="clear-token-btn">移除</button></div>
+      <div class="section-head"><div><p class="eyebrow" data-i18n="settings.eyebrow">Access</p><h2 data-i18n="settings.title">API Key</h2></div><button type="submit" class="icon-button" data-i18n-title="settings.close">×</button></div>
+      <label class="field"><span data-i18n="settings.token">API Key（Bearer Token）</span><input type="password" id="api-token" autocomplete="off" placeholder="KOKORO_API_KEY" /></label>
+      <p class="hint" data-i18n-html="settings.hint">生产模板可使用 <code>KOKORO_API_KEY=auto</code> 自动生成；如果已开启管理后台，可在 <a href="/admin">管理后台</a> 查看或轮换；未开启时请查看启动日志或 <code>ANGEVOICE_API_KEY_FILE</code>。</p>
+      <div class="button-row"><button type="button" class="primary-button" id="save-token-btn" data-i18n="settings.save">保存</button><button type="button" class="ghost-button" id="clear-token-btn" data-i18n="settings.remove">移除</button></div>
     </form>
   </dialog>
+  <script src="/static/locale/messages.zh-cn.js?h=2f20fb8652af" defer></script>
+  <script src="/static/locale/messages.en.js?h=2f20fb8652af" defer></script>
+  <script src="/static/locale/translate.js?h=2f20fb8652af" defer></script>
+  <script src="/static/security_notice.js?h=2f20fb8652af" defer></script>
   <script src="/static/app.js?h=9a5ef1b41eb2" defer></script>
 </body>
 </html>

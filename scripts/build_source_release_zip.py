@@ -59,6 +59,8 @@ def _git_source_files(root: Path, output: Path) -> list[Path] | None:
         path = root / name
         if not path.is_file() or path.resolve() == output:
             continue
+        if any(part.startswith(".tmp_") for part in path.relative_to(root).parts):
+            continue
         if (
             name in _EXCLUDED_FILES
             or any(fnmatch.fnmatch(name, pattern) for pattern in _EXCLUDED_PATTERNS)
@@ -78,6 +80,8 @@ def _release_tree_files(root: Path, output: Path) -> list[Path]:
             continue
         rel = path.relative_to(root)
         if any(part in _EXCLUDED_DIRS for part in rel.parts):
+            continue
+        if any(part.startswith(".tmp_") for part in rel.parts):
             continue
         rel_posix = rel.as_posix()
         if (

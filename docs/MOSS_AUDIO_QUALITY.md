@@ -40,7 +40,7 @@ MOSS_VRAM_SNAPSHOT_TTL_SECONDS=10
 ## 这些参数分别解决什么
 
 - `MOSS_MIXED_ENGLISH_POLICY`：MOSS 中英文混排策略。默认 `translate` 会把 deadline、work-life balance、personal growth 等常见英文词组转成自然中文，优先减少长停顿、怪声和尾部漂移；需要保留英文原文时改为 `preserve`。
-- `MOSS_SEGMENT_LENGTH`：AngeVoice 外层自然切片长度。默认 120 是 NAS/P4 稳定值，用较短分段降低中英文混合尾部变调、卡顿和失真；高显存机器可在后台切到 180-260。
+- `MOSS_SEGMENT_LENGTH`：AngeVoice 外层自然切片长度。默认 120 是面向稳定性的保守值，用较短分段降低中英文混合尾部变调、卡顿和失真；高显存机器可在后台切到 180-260。
 - `MOSS_VOICE_CLONE_MAX_TEXT_TOKENS`：MOSS runtime 内部切片 token 上限。太小会让一句话被拆成多段，太大则可能增加显存和生成不稳。
 - `MOSS_MAX_NEW_FRAMES`：生成帧预算。长句过低可能吞尾、突然断；过高可能拖慢或尾部重复。
 - `MOSS_AUDIO_POLISH_ENABLED`：开启最终音频自然化后处理。
@@ -49,7 +49,7 @@ MOSS_VRAM_SNAPSHOT_TTL_SECONDS=10
 - `MOSS_CROSSFADE_MS`：HTTP 非流式拼接时的短 crossfade，减少硬切电流感。默认 12ms，过大可能抹掉辅音和边界动态。
 - `MOSS_SEGMENT_PAUSE_MS`：AngeVoice 外层文本段之间补的短停顿。推荐 80-180。
 - `MOSS_RUNTIME_PAUSE_MAX_MS`：MOSS runtime 估算出的内部 chunk pause 上限，避免出现 2-5 秒异常空白。
-- `MOSS_STREAM_PREBUFFER_SECONDS`：浏览器开始播放前的初始缓冲。NAS/P4 默认 3.0，用更充足首包等待降低长文本断续；低延迟短句可降到 2.0。
+- `MOSS_STREAM_PREBUFFER_SECONDS`：浏览器开始播放前的初始缓冲。默认 3.0，用更充足首包等待降低长文本断续；低延迟短句可降到 2.0。
 - `MOSS_REALTIME_STREAMING_DECODE`：逐帧实时解码开关。默认开启，保持低延迟流式体验；若特定设备出现边界噪声或显存压力，可在后台关闭。
 - `ANGEVOICE_WEBSOCKET_STREAM_IDLE_TIMEOUT_SECONDS` / `ANGEVOICE_ENGINE_PROCESS_STREAM_IDLE_TIMEOUT_SECONDS`：长文本首帧或分段之间等待下一帧音频的空闲窗口。默认 120 秒，避免 MOSS 慢帧被普通请求超时误判断开。
 

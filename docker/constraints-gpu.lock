@@ -27,3 +27,8 @@ cn2an==0.5.22
 inflect==7.0.0
 piper_phonemize==1.1.0
 setuptools<81
+
+# ── optional[tn] ───────────────────────────────────
+WeTextProcessing==1.2.0
+pynini==2.1.7
+importlib_resources==7.1.0

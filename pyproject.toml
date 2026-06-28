@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "angevoice"
-version = "2.6.613"
+version = "2.6.614"
 description = "AngeVoice: self-hosted TTS service integrating Kokoro, MOSS-TTS-Nano and ZipVoice"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -64,6 +64,9 @@ zipvoice = [
     "safetensors>=0.4.0",
     "setuptools<81",
 ]
+tn = [
+    "WeTextProcessing>=1.0.4",
+]
 moss-gpu = [
     "torchaudio>=2.0.0",
     "sentencepiece>=0.1.99",
@@ -94,4 +97,4 @@ Changelog = "https://github.com/ang77712829/AngeVoice/releases"
 where = ["src"]
 
 [tool.setuptools.package-data]
-kokoro_tts = ["templates/*.html", "static/*", "zipvoice/*.json"]
+kokoro_tts = ["templates/*.html", "static/*", "static/locale/*.js", "zipvoice/*.json"]

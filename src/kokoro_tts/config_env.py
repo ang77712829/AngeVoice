@@ -85,6 +85,7 @@ STR_ENV: dict[str, str] = {
     "ANGEVOICE_MODEL_SOURCE_PROBE_MODELSCOPE_URL": "model_source_probe_modelscope_url",
     "ANGEVOICE_API_KEY_FILE": "api_key_file",
     "ANGEVOICE_SINGLE_NEWLINE_POLICY": "text_single_newline_policy",
+    "ANGEVOICE_TN_ENGINE": "angevoice_tn_engine",
     "KOKORO_HF_REPO": "kokoro_hf_repo",
     "KOKORO_MODELSCOPE_REPO": "kokoro_modelscope_repo",
     "MOSS_MODELSCOPE_REPO": "moss_modelscope_repo",
@@ -189,6 +190,7 @@ FLOAT_ENV: dict[str, FloatEnvSpec] = {
 
 BOOL_ENV: dict[str, str] = {
     "KOKORO_STREAM_BINARY_ENABLED": "stream_binary_enabled",
+    "ANGEVOICE_ACCESS_LOG_ENABLED": "access_log_enabled",
     "KOKORO_CACHE_ENABLED": "cache_enabled",
     "KOKORO_QUEUE_STATUS_ENABLED": "queue_status_enabled",
     "KOKORO_METRICS_ENABLED": "metrics_enabled",

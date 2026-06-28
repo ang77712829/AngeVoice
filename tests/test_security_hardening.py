@@ -48,6 +48,22 @@ def test_api_key_rotation_uses_durable_file_without_process_env_leak(monkeypatch
     assert effective_api_key(other_worker) == rotated
 
 
+def test_studio_bootstrap_reports_default_admin_warning_without_secrets(tmp_path):
+    from kokoro_tts.routes.status import _bootstrap_base
+
+    cfg = TTSConfig(
+        admin_enabled=True,
+        credentials_dir=tmp_path / "credentials",
+        api_key_file=tmp_path / "credentials" / ".angevoice-api-key",
+        admin_credentials_file=tmp_path / "credentials" / "admin-credentials.json",
+    )
+    payload = _bootstrap_base(cfg)
+
+    assert payload["adminDefaultCredentialsActive"] is True
+    assert "admin / admin123" in payload["adminSecurityWarning"]
+    assert "api_key" not in payload
+
+
 def test_admin_voice_upload_rejects_symlink_target_and_writes_regular_file(tmp_path):
     model_dir = tmp_path / "models"
     voices_dir = model_dir / "voices"
@@ -96,6 +112,51 @@ def test_websocket_cancellation_uses_threading_event():
     assert not hasattr(session, "cancel_flag")
     session.cancel_event.set()
     assert session.cancel_event.is_set()
+
+
+def test_client_request_id_is_sanitized_and_reused():
+    state = ServiceState(TTSConfig())
+
+    assert state.request_id_from_client("av_stop_123") == "av_stop_123"
+    generated = state.request_id_from_client("../bad")
+    assert generated != "../bad"
+    assert len(generated) == 12
+
+
+def test_cancel_endpoint_marks_request_without_touching_model_runtime(tmp_path):
+    cfg = TTSConfig(model_dir=tmp_path, enabled_models=["kokoro"], default_model="kokoro")
+    app = create_app(config=cfg, engine=_fake_engine())
+    client = TestClient(app)
+    state = app.state.angevoice
+    state.mark_request("av_cancel_123", "running", model="kokoro")
+    state.model_manager.cancel_model_request = MagicMock()
+
+    response = client.post("/v1/audio/requests/av_cancel_123/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["known"] is True
+    assert response.json()["status"] == "cancelling"
+    assert "runtime_cancel" not in response.json()
+    state.model_manager.cancel_model_request.assert_not_called()
+
+
+def test_websocket_client_cancel_only_marks_request_state():
+    from kokoro_tts.routes.ws import TtsWebSocketSession
+
+    state = MagicMock()
+    state.cfg = TTSConfig()
+    state.new_request_id.return_value = "av_ws_cancel"
+    state.request_info.return_value = {"model": "kokoro", "status": "running"}
+    state.model_manager.cancel_model_request.return_value = {"soft_cancelled": True}
+    websocket = MagicMock()
+    websocket.send_json = MagicMock()
+    session = TtsWebSocketSession(websocket=websocket, state=state)
+
+    import asyncio
+    asyncio.run(session._mark_client_cancelled())
+
+    state.request_cancel.assert_called_once_with("av_ws_cancel")
+    state.model_manager.cancel_model_request.assert_not_called()
 
 
 def test_multipart_prompt_audio_upload_streams_in_chunks_and_enforces_cap(monkeypatch, tmp_path):

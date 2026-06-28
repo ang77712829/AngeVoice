@@ -199,11 +199,11 @@ def prepare_text_for_synthesis(value: object, cfg, *, model_id: str = "", field_
     text = validate_tts_text(value, cfg, field_name=field_name)
     if not _looks_like_convertible_numeric_text(text) and _looks_like_non_natural_text(text):
         raise_no_synthesizable_text(request_id=request_id, reason=f"{field_name}: non-natural text")
-    from .engine import normalize_text_for_tts
+    from .text.frontend import normalize_for_model
     from .text_segmenter import normalize_text_for_segmentation
 
     cleaned = normalize_text_for_segmentation(text)
-    cleaned = normalize_text_for_tts(cleaned, model=str(model_id or "kokoro"))
+    cleaned = normalize_for_model(cleaned, cfg, model=str(model_id or "kokoro"), field_name=field_name)
     cleaned = normalize_text_for_segmentation(cleaned)
     if not cleaned or _looks_like_non_natural_text(cleaned) or not _has_speech_characters(cleaned):
         raise_no_synthesizable_text(request_id=request_id, reason=f"{field_name}: no tokenizable speech after normalization")

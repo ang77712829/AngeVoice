@@ -112,18 +112,28 @@ def kokoro_voice_dir_candidates(model_dir: Path | None = None) -> list[Path]:
     root = models_root()
     repo_dir = default_kokoro_model_dir(root)
     candidates: list[Path] = []
+    include_shared_dirs = model_dir is None
     if model_dir:
         base = Path(model_dir).expanduser()
         candidates.append(base / "voices")
         candidates.extend(sorted((base / "snapshots").glob("*/voices")))
-    candidates.extend(
-        [
-            repo_dir / "voices",
-            root / "voices",
-        ]
-    )
-    candidates.extend(sorted((repo_dir / "snapshots").glob("*/voices")))
-    candidates.extend(sorted((root / "models--hexgrad--Kokoro-82M-v1.1-zh" / "snapshots").glob("*/voices")))
+        try:
+            base_resolved = base.resolve(strict=False)
+            include_shared_dirs = base_resolved in {
+                root.resolve(strict=False),
+                repo_dir.resolve(strict=False),
+            }
+        except OSError:
+            include_shared_dirs = False
+    if include_shared_dirs:
+        candidates.extend(
+            [
+                repo_dir / "voices",
+                root / "voices",
+            ]
+        )
+        candidates.extend(sorted((repo_dir / "snapshots").glob("*/voices")))
+        candidates.extend(sorted((root / "models--hexgrad--Kokoro-82M-v1.1-zh" / "snapshots").glob("*/voices")))
 
     seen: set[str] = set()
     deduped: list[Path] = []

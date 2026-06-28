@@ -138,7 +138,7 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 - Agent、阅读器、有声书、配音工具的 TTS 后端
 - OpenAI 兼容 TTS API 后端
 - 需要逐段播放、停止生成、批量导出 ZIP 的 Web 应用
-- CPU、NVIDIA GPU、老架构 GPU（如 Tesla P4）/ 保守 CUDA 环境
+- CPU、NVIDIA GPU 与需要保守 CUDA 兼容路径的设备
 
 > 核心上游：默认引擎基于 Kokoro v1.1 / Kokoro-82M 中文模型；MOSS-TTS-Nano 集成使用 OpenMOSS 官方运行时；ZipVoice 集成用于零样本音色克隆。三项核心上游均采用 Apache License 2.0，来源与致谢见 `THIRD_PARTY_NOTICES.md` 与 `ACKNOWLEDGEMENTS.md`。
 
@@ -202,17 +202,17 @@ cd docker/cpu && sudo docker compose up -d
 cd docker/legacy-gpu && sudo docker compose up -d
 ```
 
-> 有 NVIDIA GPU 时建议先试 `docker/gpu`。Tesla P4/P40/V100 等老卡如果宿主机驱动较新，也可能在通用 `gpu` 画像下表现更好；`legacy-gpu` 面向无法使用标准 GPU 镜像的兼容环境。
+> 有 NVIDIA GPU 时建议先试 `docker/gpu`；`legacy-gpu` 面向无法使用标准 GPU 镜像的旧驱动或兼容环境。
 
 
 ### 国内镜像加速
 
-Docker Compose 默认使用 Docker Hub（`maxblack777/angevoice-*:latest`）拉取镜像。国内网络访问 Docker Hub 较慢时，可通过 Docker 镜像站加速：
+Docker Compose 默认使用 Docker Hub（`maxblack777/angevoice-*:2.6.614`）拉取当前版本镜像。国内网络访问 Docker Hub 较慢时，可通过 Docker 镜像站加速：
 
 ```bash
 # 方案 1：临时使用镜像站拉取（替换 registry-1.docker.io 为镜像站地址）
-docker pull docker.1ms.run/maxblack777/angevoice-gpu:latest
-docker tag docker.1ms.run/maxblack777/angevoice-gpu:latest maxblack777/angevoice-gpu:latest
+docker pull docker.1ms.run/maxblack777/angevoice-gpu:2.6.614
+docker tag docker.1ms.run/maxblack777/angevoice-gpu:2.6.614 maxblack777/angevoice-gpu:2.6.614
 
 # 方案 2：配置 Docker daemon 全局镜像加速（推荐）
 # 编辑 /etc/docker/daemon.json，添加：

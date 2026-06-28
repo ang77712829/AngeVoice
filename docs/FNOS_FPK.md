@@ -2,17 +2,19 @@
 
 AngeVoice 的 fnOS 包采用经过真实安装验证的 **单一 Compose 文件 + 三个互斥 profile service** 机制：`app/docker/docker-compose.yaml` 同时声明 `angevoice-cpu`、`angevoice-gpu` 与 `angevoice-legacy-gpu`，安装向导通过 `COMPOSE_PROFILES=cpu | gpu | legacy-gpu` 在 docker-project 启动前选择且仅选择一个运行路径。
 
-这仍然只有一份 Docker 编排配置文件，不依赖 callback 在容器创建后改写镜像，也不会引入未经验证的单 service 动态镜像/运行时路由。三类镜像默认从 Docker Hub 的 `maxblack777/angevoice-*` 仓库拉取，全部固定使用 `:latest` 标签，发布补丁版本时无需在部署链路反复替换版本号。
+这仍然只有一份 Docker 编排配置文件，不依赖 callback 在容器创建后改写镜像，也不会引入未经验证的单 service 动态镜像/运行时路由。三类镜像默认从 Docker Hub 的 `maxblack777/angevoice-*` 仓库拉取，并固定使用当前版本标签，避免安装时被浮动镜像影响。
 
 ## 安装运行模式
 
 | 向导选项 | Profile / service | 镜像 | Provider 策略 |
 |---|---|---|---|
-| CPU | `cpu` / `angevoice-cpu` | `maxblack777/angevoice-cpu:latest` | Kokoro、MOSS-TTS-Nano、ZipVoice 均走 CPU |
-| 标准 GPU | `gpu` / `angevoice-gpu` | `maxblack777/angevoice-gpu:latest` | NVIDIA 主路径；Kokoro、MOSS、ZipVoice 请求 CUDA，ZipVoice/MOSS 可按策略回退 CPU |
-| Legacy GPU | `legacy-gpu` / `angevoice-legacy-gpu` | `maxblack777/angevoice-legacy-gpu:latest` | 仅标准 GPU 无法可靠运行时回退；Kokoro CUDA，MOSS/ZipVoice 默认 CPU 稳定路径 |
+| CPU | `cpu` / `angevoice-cpu` | `maxblack777/angevoice-cpu:2.6.614` | Kokoro、MOSS-TTS-Nano、ZipVoice 均走 CPU |
+| NVIDIA GPU | `gpu` / `angevoice-gpu` | `maxblack777/angevoice-gpu:2.6.614` | NVIDIA 主路径；Kokoro、MOSS、ZipVoice 请求 CUDA，ZipVoice/MOSS 可按策略回退 CPU |
+| Legacy GPU | `legacy-gpu` / `angevoice-legacy-gpu` | `maxblack777/angevoice-legacy-gpu:2.6.614` | 仅标准 GPU 无法可靠运行时回退；Kokoro CUDA，MOSS/ZipVoice 默认 CPU 稳定路径 |
 
-Tesla P4 的首选路径是 **标准 GPU**；`legacy-gpu` 不是默认推荐路线，仅作为兼容保底。
+有 NVIDIA GPU 时优先选择 **NVIDIA GPU**；`legacy-gpu` 不是默认推荐路线，仅作为旧驱动或兼容问题的保底。
+
+推荐 4 核 CPU 与 8GB 内存起步。资源较低的设备可以优先使用 Kokoro、降低并发或关闭预载，以获得更稳定的首次下载与长文本合成体验。
 
 ## 进程隔离与启动策略
 
@@ -51,7 +53,7 @@ ANGEVOICE_AUDIO_OPUS_BITRATE=32k
 ANGEVOICE_AUDIO_AAC_BITRATE=96k
 ```
 
-默认关闭，避免普通用户在不了解转码依赖时误用。需要 Telegram voice / OGG Opus、MP3 或 M4A 输出时，可以在 fnOS 向导或 AngeVoice 管理后台开启。Compose 镜像仍固定拉取 `maxblack777/angevoice-*:latest`。
+默认关闭，避免普通用户在不了解转码依赖时误用。需要 Telegram voice / OGG Opus、MP3 或 M4A 输出时，可以在 fnOS 向导或 AngeVoice 管理后台开启。Compose 镜像固定拉取 `maxblack777/angevoice-*:2.6.614`。
 
 ## 持久化目录
 
@@ -72,4 +74,4 @@ ANGEVOICE_AUDIO_AAC_BITRATE=96k
 
 - fnOS 使用 `config/resource` 的 `docker-project` 管理容器生命周期。
 - callback 只校验向导输入并准备持久化目录，不在 docker-project 已解析后重写 Compose 或镜像。
-- CI 必须校验：只有一份 `docker-compose.yaml`；存在三个互斥 profiles；三种镜像均使用 `:latest`；GPU profile 启用 CUDA/GPU 配置；所有 profile 的持久化和 Worker 默认策略一致。
+- CI 必须校验：只有一份 `docker-compose.yaml`；存在三个互斥 profiles；三种镜像均使用当前版本标签；GPU profile 启用 CUDA/GPU 配置；所有 profile 的持久化和 Worker 默认策略一致。

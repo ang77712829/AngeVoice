@@ -24,6 +24,29 @@ def test_admin_config_rejects_unknown_field():
         AdminConfigPatch(not_a_real_field=1)
 
 
+def test_admin_config_exposes_text_dictionary_group_and_tn_engine():
+    from kokoro_tts.admin_config_schema import schema_payload
+
+    schema = schema_payload()
+    groups = {group["key"]: group["label"] for group in schema["groups"]}
+    fields = {field["key"]: field for field in schema["fields"]}
+    assert groups["text"] == "文本与词典"
+    assert fields["angevoice_tn_engine"]["group"] == "text"
+    assert {choice["value"] for choice in fields["angevoice_tn_engine"]["choices"]} == {"wetext", "legacy", "off"}
+    assert fields["text_single_newline_policy"]["group"] == "text"
+    assert fields["moss_apply_angevoice_rules"]["group"] == "text"
+
+
+def test_admin_frontend_uses_mib_for_byte_fields_and_i18n_lite():
+    root = Path(__file__).resolve().parents[1] / "src" / "kokoro_tts"
+    admin_js = (root / "static" / "admin.js").read_text(encoding="utf-8")
+    admin_html = (root / "templates" / "admin.html").read_text(encoding="utf-8")
+    assert "data-config-unit=\"mib\"" in admin_js
+    assert "Number(input.value) * MIB" in admin_js
+    assert "/static/locale/messages.zh-cn.js" in admin_html
+    assert "/static/locale/translate.js" in admin_html
+
+
 def test_admin_profile_values_are_valid_and_apply():
     cfg = TTSConfig()
     values = profile_values("long_narration")

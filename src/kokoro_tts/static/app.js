@@ -47,7 +47,8 @@ const state = {
   engineParams: {},
   referenceRecorder: null,
   toastTimer: null,
-  zipvoiceExpanded: false
+  zipvoiceExpanded: false,
+  textNormalization: localStorage.getItem('angevoice.textNormalization.v1') || 'default'
 };
 
 const els = {
@@ -65,6 +66,7 @@ const els = {
   speed: document.getElementById('speed'),
   speedValue: document.getElementById('speed-value'),
   streamToggle: document.getElementById('stream-toggle'),
+  textNormalization: document.getElementById('text-normalization'),
   engineParameters: document.getElementById('engine-parameters'),
   engineParameterFields: document.getElementById('engine-parameter-fields'),
   clonePanel: document.getElementById('clone-panel'),
@@ -112,13 +114,17 @@ const els = {
   metricActive: document.getElementById('metric-active')
 };
 
+function t(key, params) {
+  return window.AngeVoiceI18n?.t?.(key, params) || key;
+}
+
 const groups = [
-  { id: 'all', label: '全部', match: () => true },
-  { id: 'female-zh', label: '中文女声', match: voice => voice.startsWith('zf_') },
-  { id: 'male-zh', label: '中文男声', match: voice => voice.startsWith('zm_') },
-  { id: 'en', label: '英文', match: voice => /^[ab][fm]_/.test(voice) },
-  { id: 'favorites', label: '收藏', match: voice => state.favorites.includes(voice) },
-  { id: 'recent', label: '最近', match: voice => state.recent.includes(voice) }
+  { id: 'all', labelKey: 'voices.all', match: () => true },
+  { id: 'female-zh', labelKey: 'voices.female_zh', match: voice => voice.startsWith('zf_') },
+  { id: 'male-zh', labelKey: 'voices.male_zh', match: voice => voice.startsWith('zm_') },
+  { id: 'en', labelKey: 'voices.en', match: voice => /^[ab][fm]_/.test(voice) },
+  { id: 'favorites', labelKey: 'voices.favorite', match: voice => state.favorites.includes(voice) },
+  { id: 'recent', labelKey: 'voices.recent', match: voice => state.recent.includes(voice) }
 ];
 
 class StreamPlayer {
@@ -308,7 +314,7 @@ function applyTheme(theme) {
 function setMetricsCollapsed(collapsed) {
   state.metricsCollapsed = collapsed;
   els.statsDrawer.classList.toggle('collapsed', collapsed);
-  els.metricsToggle.textContent = collapsed ? '展开' : '收起';
+  els.metricsToggle.textContent = collapsed ? t('stats.expand') : t('stats.collapse');
   localStorage.setItem('angevoice.metricsCollapsed.v1', String(collapsed));
 }
 
@@ -390,7 +396,7 @@ function setZipVoiceExpanded(expanded) {
   if (!els.zipvoiceCard || !els.zipvoiceDetails || !els.zipvoiceToggle) return;
   els.zipvoiceCard.classList.toggle('collapsed', !state.zipvoiceExpanded);
   els.zipvoiceDetails.hidden = !state.zipvoiceExpanded;
-  els.zipvoiceToggle.textContent = state.zipvoiceExpanded ? '收起' : '展开';
+  els.zipvoiceToggle.textContent = state.zipvoiceExpanded ? t('stats.collapse') : t('stats.expand');
   els.zipvoiceToggle.setAttribute('aria-expanded', String(state.zipvoiceExpanded));
 }
 
@@ -417,9 +423,21 @@ function setBusy(value) {
   updateButtons();
 }
 
+function makeClientRequestId() {
+  const randomPart = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/[^A-Za-z0-9]/g, '').slice(0, 18);
+  return `av_${randomPart || Date.now().toString(36)}`;
+}
+
+function cancelRequestById(requestId) {
+  if (!requestId) return Promise.resolve(null);
+  return apiFetch(`/v1/audio/requests/${encodeURIComponent(requestId)}/cancel`, {
+    method: 'POST'
+  });
+}
+
 function updateButtons() {
   els.generateBtn.disabled = state.busy;
-  els.generateBtn.textContent = state.busy ? '处理中...' : (currentModelNeedsWake() ? '立即唤醒' : '立即生成');
+  els.generateBtn.textContent = state.busy ? t('action.processing') : (currentModelNeedsWake() ? t('action.wake') : t('action.generate'));
   els.previewBtn.disabled = state.busy;
   if (els.model) {
     els.model.disabled = state.busy || bootstrap.modelSwitchEnabled === false;
@@ -524,6 +542,11 @@ function collectEngineParams(model = currentModel()) {
     }
   });
   return params;
+}
+
+function currentTextNormalization() {
+  const value = String(els.textNormalization?.value || state.textNormalization || 'default').trim().toLowerCase();
+  return ['default', 'wetext', 'legacy', 'off'].includes(value) ? value : 'default';
 }
 
 function modelSupportsVoiceClone(model = currentModel()) {
@@ -1187,7 +1210,7 @@ function renderVoiceTabs() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = group.id === state.activeFilter ? 'active' : '';
-    button.textContent = `${group.label} ${state.voices.filter(group.match).length}`;
+    button.textContent = `${t(group.labelKey)} ${state.voices.filter(group.match).length}`;
     button.addEventListener('click', () => {
       state.activeFilter = group.id;
       renderVoices();
@@ -1231,7 +1254,7 @@ function renderVoices() {
   if (!list.length) {
     const empty = document.createElement('div');
     empty.className = 'request-log-item';
-    empty.textContent = '没有匹配的音色';
+    empty.textContent = t('voices.none');
     els.voiceList.appendChild(empty);
   }
   renderFavorite();
@@ -1239,7 +1262,7 @@ function renderVoices() {
 
 function renderFavorite() {
   const active = state.favorites.includes(state.selectedVoice);
-  els.favoriteBtn.textContent = active ? '已收藏' : '收藏';
+  els.favoriteBtn.textContent = active ? t('voices.favorited') : t('voices.favorite');
 }
 
 function addRecent(voice) {
@@ -1355,7 +1378,7 @@ async function refreshServiceState() {
 
 async function synthesizeHttp(text, voice, speed, autoplay = true) {
   state.currentAbort = new AbortController();
-  state.currentRequestId = '';
+  state.currentRequestId = makeClientRequestId();
   state.lastBlob = null;
   updateButtons();
   setBusy(true);
@@ -1368,6 +1391,7 @@ async function synthesizeHttp(text, voice, speed, autoplay = true) {
     form.append('voice', voice);
     form.append('speed', speed);
     form.append('response_format', 'wav');
+    form.append('text_normalization', currentTextNormalization());
     Object.entries(collectEngineParams()).forEach(([key, value]) => form.append(key, String(value)));
     const useUploadedReference = modelSupportsVoiceClone() && state.promptAudioFile && (!modelSupportsProfiles() || !voice);
     if (useUploadedReference) {
@@ -1385,9 +1409,10 @@ async function synthesizeHttp(text, voice, speed, autoplay = true) {
     const response = await apiFetch('/api/tts', {
       method: 'POST',
       body: form,
+      headers: { 'X-Client-Request-ID': state.currentRequestId },
       signal: state.currentAbort.signal
     });
-    state.currentRequestId = response.headers.get('X-Request-ID') || '';
+    state.currentRequestId = response.headers.get('X-Request-ID') || state.currentRequestId;
     if (!response.ok) {
       throw new Error(await readError(response));
     }
@@ -1404,6 +1429,8 @@ async function synthesizeHttp(text, voice, speed, autoplay = true) {
   } catch (error) {
     if (error.name !== 'AbortError') {
       setProgress(error.message || '生成失败', true);
+    } else {
+      setProgress('已停止', true);
     }
   } finally {
     state.currentAbort = null;
@@ -1474,6 +1501,7 @@ async function synthesizeStream(text, voice, speed) {
       speed: Number(speed),
       format: 'pcm_s16le',
       binary: false,
+      text_normalization: currentTextNormalization(),
       token: state.token
     };
     const engineParams = collectEngineParams();
@@ -1604,6 +1632,7 @@ async function readError(response) {
 }
 
 async function stopCurrent() {
+  const requestId = state.currentRequestId;
   if (state.currentPlayer) {
     state.currentPlayer.stop();
   }
@@ -1618,24 +1647,31 @@ async function stopCurrent() {
     state.currentAbort.abort();
     state.currentAbort = null;
   }
-  // 先解绑当前 WebSocket 事件，再发送取消并关闭连接。
+  if (requestId) {
+    cancelRequestById(requestId).then(() => refreshServiceState()).catch(() => {});
+  }
+  // 先通知当前 WebSocket 取消，再隔离旧连接事件。
   // 避免旧连接的 onclose 回调清理掉刚刚开始的新合成。
   const ws = state.currentWs;
   if (ws) {
-    ws.onopen = null;
+    const cancelAndClose = () => {
+      try { ws.send(JSON.stringify({ type: 'cancel' })); } catch (_) {}
+      try { ws.close(); } catch (_) {}
+    };
+    if (ws.readyState === WebSocket.OPEN) {
+      cancelAndClose();
+      ws.onopen = null;
+    } else if (ws.readyState === WebSocket.CONNECTING) {
+      ws.onopen = cancelAndClose;
+    } else {
+      ws.onopen = null;
+    }
     ws.onmessage = null;
     ws.onerror = null;
     ws.onclose = null;
     state.currentWs = null;
-    if (ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify({ type: 'cancel' })); } catch (_) {}
-    }
-    try { ws.close(); } catch (_) {}
   }
-  if (state.currentRequestId) {
-    apiFetch(`/v1/audio/requests/${state.currentRequestId}/cancel`, { method: 'POST' }).catch(() => {});
-    state.currentRequestId = '';
-  }
+  state.currentRequestId = '';
   // 立即恢复空闲状态，让用户可以马上开始下一次合成。
   setBusy(false);
   setProgress('已停止', true);
@@ -1774,6 +1810,10 @@ function bindEvents() {
   els.speed.addEventListener('input', () => {
     els.speedValue.textContent = Number(els.speed.value).toFixed(1);
   });
+  els.textNormalization?.addEventListener('change', () => {
+    state.textNormalization = currentTextNormalization();
+    localStorage.setItem('angevoice.textNormalization.v1', state.textNormalization);
+  });
   els.text.addEventListener('input', updateCounter);
   els.audio.addEventListener('ended', () => {
     state.playing = false;
@@ -1824,6 +1864,13 @@ function bindEvents() {
     localStorage.removeItem('angevoice.apiToken.v1');
     refreshServiceState();
   });
+  document.addEventListener('angevoice:locale-changed', () => {
+    setMetricsCollapsed(state.metricsCollapsed);
+    setZipVoiceExpanded(state.zipvoiceExpanded);
+    renderVoiceTabs();
+    renderFavorite();
+    updateButtons();
+  });
 }
 
 function init() {
@@ -1833,6 +1880,9 @@ function init() {
   if (Number(bootstrap.defaultSpeed)) {
     els.speed.value = String(bootstrap.defaultSpeed);
     els.speedValue.textContent = Number(bootstrap.defaultSpeed).toFixed(1);
+  }
+  if (els.textNormalization) {
+    els.textNormalization.value = currentTextNormalization();
   }
   applyStreamToggleState();
   applyTheme(state.theme);

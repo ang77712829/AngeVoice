@@ -423,11 +423,12 @@ def ensure_kokoro_model_dir(config, *, logger: logging.Logger) -> Path | None:
             return True
         return _kokoro_voice_count(path) >= _KOKORO_MIN_PREFETCHED_VOICES
 
-    if _is_good_enough(current_dir):
+    current_has_assets = has_valid_kokoro_local_assets(current_dir, log=logger)
+    if current_has_assets and (not prefetch_voices or _kokoro_voice_count(current_dir) >= _KOKORO_MIN_PREFETCHED_VOICES):
         return current_dir
 
     target_dir = default_kokoro_model_dir()
-    if _is_good_enough(target_dir):
+    if not current_has_assets and _is_good_enough(target_dir):
         config.model_dir = target_dir
         return target_dir
 
@@ -440,7 +441,7 @@ def ensure_kokoro_model_dir(config, *, logger: logging.Logger) -> Path | None:
         return current_dir if has_valid_kokoro_local_assets(current_dir, log=logger) else None
 
     # 若模型已有效但音色不足，仍尝试在同一目录补齐 voices/*.pt。
-    download_target = current_dir if has_valid_kokoro_local_assets(current_dir, log=logger) else target_dir
+    download_target = current_dir if current_has_assets else target_dir
     path = _download_kokoro_assets(config, download_target, logger=logger)
     for candidate in [Path(path).expanduser()] if path else []:
         if has_valid_kokoro_local_assets(candidate, log=logger):
