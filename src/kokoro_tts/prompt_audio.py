@@ -48,16 +48,18 @@ def delete_prompt_audio_path(path: str | Path) -> bool:
         root = prompt_audio_temp_dir().resolve(strict=False)
     except (OSError, RuntimeError, ValueError):
         return False
-    candidate = root / name
     try:
-        if candidate.is_symlink():
-            return False
-        if not candidate.exists():
-            return False
-        if not candidate.is_file():
-            return False
-        candidate.unlink()
-        return True
+        with os.scandir(root) as entries:
+            for entry in entries:
+                if entry.name != name:
+                    continue
+                if entry.is_symlink():
+                    return False
+                if not entry.is_file(follow_symlinks=False):
+                    return False
+                os.unlink(entry.path)
+                return True
+        return False
     except OSError:
         return False
 
