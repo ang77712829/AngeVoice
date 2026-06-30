@@ -481,7 +481,7 @@ def test_zipvoice_frontend_skips_protected_polling_without_token_and_resets_audi
     from pathlib import Path
 
     js = (Path(__file__).resolve().parents[1] / "src" / "kokoro_tts" / "static" / "app.js").read_text(encoding="utf-8")
-    assert "bootstrap.authRequired && (!state.token || state.authRejected)" in js
+    assert "bootstrap.authRequired && ((!state.token && !state.hasCookieSession) || state.authRejected)" in js
     assert "const blob = await response.blob();" in js
     assert "els.zipvoiceReferencePreview.removeAttribute('src');" in js
     assert "API Key 无效或已轮换" in js
