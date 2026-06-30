@@ -109,9 +109,8 @@ def test_admin_toast_is_visible_horizontal_and_mobile_safe():
     html = (ROOT / "src" / "kokoro_tts" / "templates" / "admin.html").read_text(encoding="utf-8")
     assert ".admin-toast {" in css
     assert ".toast {" not in css
-    assert "top: 94px;" in css and "right: 22px;" in css
+    assert "top: 132px;" in css and "right: 22px;" in css
     assert "z-index: 1300;" in css
-    assert "top: 112px;" in css
     assert "width: min(420px, calc(100vw - 44px));" in css
     assert "min-width: min(280px, calc(100vw - 44px));" in css
     assert "overflow-wrap: break-word;" in css
