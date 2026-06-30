@@ -452,9 +452,9 @@
 
 .admin-toast {
   position: fixed;
-  top: 22px;
+  top: 94px;
   right: 22px;
-  z-index: 20;
+  z-index: 1300;
   width: min(420px, calc(100vw - 44px));
   min-width: min(280px, calc(100vw - 44px));
   padding: 12px 14px;
@@ -499,7 +499,7 @@
   }
 
   .admin-toast {
-    top: 10px;
+    top: 112px;
     right: 10px;
     width: calc(100vw - 20px);
     min-width: 0;
