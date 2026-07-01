@@ -4,7 +4,7 @@
 
 [English](README_EN.md) | 中文 | [文档目录](docs/README.md)
 
-[![CI](https://github.com/ang77712829/AngeVoice/actions/workflows/ci.yml/badge.svg)](https://github.com/AngeVox/AngeVoice/actions/workflows/ci.yml)
+[![CI](https://github.com/AngeVox/AngeVoice/actions/workflows/ci.yml/badge.svg)](https://github.com/AngeVox/AngeVoice/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
@@ -13,13 +13,13 @@
 服务器已安装 Docker 和 Docker Compose V2 后，可直接运行交互式安装脚本。脚本会自动检测 CPU/GPU、Docker/Compose、GitHub、Docker Hub 与本机 Docker registry mirror。检测到 NVIDIA GPU 时默认推荐通用 `gpu` 画像；`legacy-gpu` 仅用于 `gpu` 无法启动或 CUDA/cuDNN 不兼容的环境。
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/scripts/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/AngeVox/AngeVoice/main/scripts/install.sh)
 ```
 
 如果你在国内网络访问 GitHub 或 Docker Hub 较慢，可以先下载源码包后执行本地脚本：
 
 ```bash
-git clone https://github.com/ang77712829/AngeVoice.git
+git clone https://github.com/AngeVox/AngeVoice.git
 cd AngeVoice
 bash scripts/install.sh
 ```
@@ -79,7 +79,7 @@ bash scripts/install.sh --uninstall
 
 ```bash
 cd /path/to/xiaozhi-server
-bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/AngeVox/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh)
 ```
 
 安装脚本是交互式的，普通用户一路按回车会采用推荐默认值。脚本会自动识别 `docker-compose_all.yml` / `docker-compose.yml` / `compose.yml`，支持群晖等 NAS 面板改名后的 compose 文件。
@@ -102,7 +102,7 @@ docker compose -f <compose文件> up -d --no-deps --force-recreate xiaozhi-esp32
 MOSS 克隆流式示例：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh) \
+bash <(curl -fsSL https://raw.githubusercontent.com/AngeVox/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh) \
   --mode moss-clone-stream \
   --prompt-audio ./reference.wav
 ```
@@ -110,7 +110,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/x
 ZipVoice 克隆流式示例：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/ang77712829/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh) \
+bash <(curl -fsSL https://raw.githubusercontent.com/AngeVox/AngeVoice/main/xiaozhi/scripts/install-xiaozhi-adapter.sh) \
   --mode zipvoice-stream \
   --prompt-audio ./reference.wav \
   --prompt-text "参考音频实际朗读文本"
@@ -171,7 +171,7 @@ AngeVoice 不是重新训练的新模型，而是面向低配设备、NAS 和长
 ### Docker GPU
 
 ```bash
-git clone https://github.com/ang77712829/AngeVoice.git
+git clone https://github.com/AngeVox/AngeVoice.git
 cd AngeVoice/docker/gpu
 sudo docker compose up -d
 ```
